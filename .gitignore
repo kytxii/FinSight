@@ -205,3 +205,15 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# FastAPI / Alembic
+alembic/versions/*.pyc
+
+# Local dev secrets
+.env.local
+*.key
+*.pem
+
+# OS
+.DS_Store
+Thumbs.db
