@@ -1,0 +1,2 @@
+# Render deployment — install from pyproject.toml
+-e .
