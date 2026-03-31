@@ -23,14 +23,14 @@ export default function CategoryTabs({ activeTab, onTabChange, activeColor }) {
             onMouseLeave={() => setHovered(null)}
             className="px-4 py-2 text-sm font-semibold rounded-xl border whitespace-nowrap transition-all duration-150 cursor-pointer active:scale-95"
             style={isActive ? {
-              color: catColor,
+              color: cat === "ALL" && !dark ? "#000000" : catColor,
               borderColor: catColor,
               backgroundColor: dark ? `color-mix(in srgb, ${catColor} ${isHovered ? "20%" : "12%"}, transparent)` : `var(--light-surface)`,
               boxShadow: `0 0 0 2px color-mix(in srgb, ${catColor} 20%, transparent)`,
             } : {
-              borderColor: isHovered ? catColor : border,
+              borderColor: isHovered ? catColor : (dark ? border : `color-mix(in srgb, ${text} 45%, transparent)`),
               color: isHovered ? catColor : text,
-              opacity: isHovered ? 1 : 0.4,
+              opacity: isHovered ? 1 : (dark ? 0.4 : 0.85),
               backgroundColor: isHovered ? `color-mix(in srgb, ${catColor} 8%, transparent)` : "transparent",
             }}
           >

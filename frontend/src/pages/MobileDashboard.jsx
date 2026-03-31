@@ -13,7 +13,8 @@ import {
   YAxis,
   CartesianGrid,
 } from "recharts";
-import { getTransactions, createTransaction } from "../api/transactions";
+// import { getTransactions, createTransaction } from "../api/transactions";
+import { TEMP_DB } from "../utils/temp_db";
 import {
   CATEGORIES,
   CATEGORY_CONFIG,
@@ -21,6 +22,8 @@ import {
   fmt,
 } from "../utils/finance";
 import { useTheme } from "../hooks/useTheme";
+import { PRESETS, getPresetRange } from "../components/DateRangeFilter";
+import Footer from "../components/Footer";
 
 export default function MobileDashboard() {
   const dark = useTheme();
@@ -31,7 +34,7 @@ export default function MobileDashboard() {
   const text = dark ? "var(--dark-text)" : "var(--light-text)";
   const muted = `color-mix(in srgb, ${text} 50%, transparent)`;
 
-  const [transactions, setTransactions] = useState([]);
+  const [transactions, setTransactions] = useState(TEMP_DB);
   const [quickMode, setQuickMode] = useState(true);
   const [quickCat, setQuickCat] = useState("EXPENSE");
   const [quickForm, setQuickForm] = useState({
@@ -42,25 +45,50 @@ export default function MobileDashboard() {
   const [quickLoading, setQuickLoading] = useState(false);
   const [quickError, setQuickError] = useState("");
   const [activeTab, setActiveTab] = useState("ALL");
+  const [activePreset, setActivePreset] = useState("Current Month");
+  const [fromVal, setFromVal] = useState("");
+  const [toVal, setToVal] = useState("");
+  const [dateRange, setDateRange] = useState(() => {
+    const now = new Date();
+    const from = new Date(now);
+    from.setDate(1);
+    from.setHours(0, 0, 0, 0);
+    const to = new Date(now);
+    to.setHours(23, 59, 59, 999);
+    return { from, to };
+  });
 
-  function refresh() {
-    getTransactions()
-      .then((res) => setTransactions(Array.isArray(res.data) ? res.data : []))
-      .catch((err) =>
-        console.error(
-          "Failed to load transactions:",
-          err?.response?.status,
-          err?.response?.data,
-        ),
-      );
+  function handlePreset(label) {
+    setActivePreset(label);
+    setFromVal("");
+    setToVal("");
+    setDateRange(getPresetRange(label));
   }
 
-  useEffect(() => {
-    refresh();
-  }, []);
+  function handleCustom(from, to) {
+    setActivePreset(null);
+    setDateRange({
+      from: from ? new Date(from + "T00:00:00") : null,
+      to: to ? new Date(to + "T23:59:59") : null,
+    });
+  }
+
+  function refresh() {
+    setTransactions(TEMP_DB);
+  }
 
   const activeColor = `var(--category-${activeTab.toLowerCase()})`;
   const quickColor = `var(--category-${quickCat.toLowerCase()})`;
+  const tooltipProps = {
+    contentStyle: {
+      backgroundColor: dark ? "var(--dark-surface)" : "var(--light-surface)",
+      borderColor: dark ? "var(--dark-border)" : "var(--light-border)",
+      borderRadius: "12px",
+      color: text,
+    },
+    labelStyle: { color: text },
+    itemStyle: { color: text },
+  };
 
   const handleQuickSubmit = async (e) => {
     e.preventDefault();
@@ -91,13 +119,23 @@ export default function MobileDashboard() {
     [transactions],
   );
 
-  const filtered = useMemo(
-    () =>
+  const filtered = useMemo(() => {
+    let result =
       activeTab === "ALL"
         ? transactions
-        : transactions.filter((t) => t.category === activeTab),
-    [transactions, activeTab],
-  );
+        : transactions.filter((t) => t.category === activeTab);
+
+    if (dateRange.from || dateRange.to) {
+      result = result.filter((t) => {
+        const date = new Date(t.transaction_date + "T00:00:00");
+        if (dateRange.from && date < dateRange.from) return false;
+        if (dateRange.to && date > dateRange.to) return false;
+        return true;
+      });
+    }
+
+    return result;
+  }, [transactions, activeTab, dateRange]);
 
   const summary = useMemo(() => {
     const totalIn = filtered
@@ -106,13 +144,80 @@ export default function MobileDashboard() {
     const totalOut = filtered
       .filter((t) => !INCOME_TYPES.has(t.category))
       .reduce((s, t) => s + parseFloat(t.amount), 0);
-    return {
-      totalIn,
-      totalOut,
-      net: totalIn - totalOut,
-      count: filtered.length,
-    };
-  }, [filtered]);
+
+    const savingsRate = totalIn > 0 ? ((totalIn - totalOut) / totalIn) * 100 : null;
+
+    let days = 1;
+    if (dateRange.from && dateRange.to) {
+      days = Math.max(1, Math.round((dateRange.to - dateRange.from) / (1000 * 60 * 60 * 24)));
+    } else if (filtered.length > 0) {
+      const timestamps = filtered.map((t) => new Date(t.transaction_date).getTime());
+      days = Math.max(1, Math.round((Math.max(...timestamps) - Math.min(...timestamps)) / (1000 * 60 * 60 * 24)) + 1);
+    }
+    const avgDailySpend = totalOut / days;
+
+    let savingsRateDelta = null;
+    if (dateRange.from) {
+      const periodMs = (dateRange.to ?? new Date()).getTime() - dateRange.from.getTime();
+      const prevFrom = new Date(dateRange.from.getTime() - periodMs);
+      const prevTo = dateRange.from;
+      const prevFiltered = transactions
+        .filter((t) => activeTab === "ALL" || t.category === activeTab)
+        .filter((t) => {
+          const d = new Date(t.transaction_date + "T00:00:00");
+          return d >= prevFrom && d < prevTo;
+        });
+      const prevIn = prevFiltered.filter((t) => INCOME_TYPES.has(t.category)).reduce((s, t) => s + parseFloat(t.amount), 0);
+      const prevOut = prevFiltered.filter((t) => !INCOME_TYPES.has(t.category)).reduce((s, t) => s + parseFloat(t.amount), 0);
+      if (prevIn > 0 && savingsRate !== null) {
+        savingsRateDelta = savingsRate - ((prevIn - prevOut) / prevIn) * 100;
+      }
+    }
+
+    let avgDailySpendDelta = null;
+    if (dateRange.from) {
+      const periodMs = (dateRange.to ?? new Date()).getTime() - dateRange.from.getTime();
+      const prevFrom = new Date(dateRange.from.getTime() - periodMs);
+      const prevTo = dateRange.from;
+      const prevTotalOut = transactions
+        .filter((t) => activeTab === "ALL" || t.category === activeTab)
+        .filter((t) => { const d = new Date(t.transaction_date + "T00:00:00"); return d >= prevFrom && d < prevTo; })
+        .filter((t) => !INCOME_TYPES.has(t.category))
+        .reduce((s, t) => s + parseFloat(t.amount), 0);
+      avgDailySpendDelta = avgDailySpend - prevTotalOut / days;
+    }
+
+    const categoryTotal = totalIn + totalOut;
+    let categoryDelta = null;
+    let pctOfTotal = null;
+    if (activeTab !== "ALL") {
+      const isIncomeCategory = INCOME_TYPES.has(activeTab);
+      const allPeriodTotal = transactions
+        .filter((t) => {
+          if (!dateRange.from && !dateRange.to) return true;
+          const d = new Date(t.transaction_date + "T00:00:00");
+          if (dateRange.from && d < dateRange.from) return false;
+          if (dateRange.to && d > dateRange.to) return false;
+          return true;
+        })
+        .filter((t) => isIncomeCategory ? INCOME_TYPES.has(t.category) : !INCOME_TYPES.has(t.category))
+        .reduce((s, t) => s + parseFloat(t.amount), 0);
+      if (allPeriodTotal > 0) pctOfTotal = (categoryTotal / allPeriodTotal) * 100;
+
+      if (dateRange.from) {
+        const periodMs = (dateRange.to ?? new Date()).getTime() - dateRange.from.getTime();
+        const prevFrom = new Date(dateRange.from.getTime() - periodMs);
+        const prevTo = dateRange.from;
+        const prevTotal = transactions
+          .filter((t) => t.category === activeTab)
+          .filter((t) => { const d = new Date(t.transaction_date + "T00:00:00"); return d >= prevFrom && d < prevTo; })
+          .reduce((s, t) => s + parseFloat(t.amount), 0);
+        if (prevTotal > 0) categoryDelta = ((categoryTotal - prevTotal) / prevTotal) * 100;
+      }
+    }
+
+    return { totalIn, totalOut, savingsRate, savingsRateDelta, avgDailySpend, avgDailySpendDelta, categoryTotal, pctOfTotal, categoryDelta };
+  }, [filtered, transactions, activeTab, dateRange]);
 
   const pieData = useMemo(() => {
     if (activeTab !== "ALL") {
@@ -159,13 +264,19 @@ export default function MobileDashboard() {
         month: "short",
         year: "2-digit",
       });
-      grouped[month] = (grouped[month] ?? 0) + parseFloat(t.amount);
+      if (!grouped[month]) grouped[month] = { income: 0, expense: 0 };
+      if (INCOME_TYPES.has(t.category)) {
+        grouped[month].income += parseFloat(t.amount);
+      } else {
+        grouped[month].expense += parseFloat(t.amount);
+      }
     });
     return Object.entries(grouped)
       .sort((a, b) => new Date("1 " + a[0]) - new Date("1 " + b[0]))
-      .map(([month, total]) => ({
+      .map(([month, { income, expense }]) => ({
         month,
-        total: parseFloat(total.toFixed(2)),
+        income: parseFloat(income.toFixed(2)),
+        expense: parseFloat(expense.toFixed(2)),
       }));
   }, [filtered, activeTab]);
 
@@ -183,7 +294,7 @@ export default function MobileDashboard() {
           style={{
             backgroundImage: dark
               ? "linear-gradient(to right, #ffffff, #d1d5db, #9ca3af)"
-              : "linear-gradient(to right, #111827, #374151, #6b7280)",
+              : "linear-gradient(to right, #000000, #374151, #6b7280)",
           }}
         >
           FinSight
@@ -238,7 +349,7 @@ export default function MobileDashboard() {
       </header>
 
       {/* Mode toggle */}
-      <div className="px-4 pt-4 pb-2 flex justify-center">
+      <div className="px-4 pt-4 pb-0 flex justify-center">
         <div
           className="rounded-xl p-1 flex w-full max-w-xs"
           style={{ backgroundColor: bg, border: `1px solid ${border}` }}
@@ -254,7 +365,8 @@ export default function MobileDashboard() {
                   backgroundColor: active ? surface : "transparent",
                   color: active ? text : muted,
                   boxShadow: active ? "0 1px 6px rgba(0,0,0,0.18)" : "none",
-                  transition: "background-color 200ms ease, color 200ms ease, box-shadow 200ms ease",
+                  transition:
+                    "background-color 200ms ease, color 200ms ease, box-shadow 200ms ease",
                 }}
               >
                 {label}
@@ -264,7 +376,7 @@ export default function MobileDashboard() {
         </div>
       </div>
 
-      <main className="px-4 pb-8 space-y-4">
+      <main className="px-4 pt-4 pb-8 space-y-4">
         {quickMode ? (
           <>
             {/* Quick entry card */}
@@ -354,7 +466,7 @@ export default function MobileDashboard() {
                 >
                   {quickLoading
                     ? "Saving…"
-                    : `Add ${CATEGORY_CONFIG[quickCat].label}`}
+                    : `Add ${["DEBT", "INCOME"].includes(quickCat) ? CATEGORY_CONFIG[quickCat].label : CATEGORY_CONFIG[quickCat].label.replace(/s$/, "")}`}
                 </button>
               </form>
             </div>
@@ -423,35 +535,107 @@ export default function MobileDashboard() {
           </>
         ) : (
           <>
-            {/* Category tabs */}
-            <div className="flex gap-2 overflow-x-auto pb-1 [&::-webkit-scrollbar]:hidden [scrollbar-width:none]">
-              {CATEGORIES.map((cat) => {
-                const catColor = `var(--category-${cat.toLowerCase()})`;
-                const isActive = activeTab === cat;
-                return (
-                  <button
-                    key={cat}
-                    onClick={() => setActiveTab(cat)}
-                    className="px-3 py-1.5 text-xs font-semibold rounded-xl border whitespace-nowrap transition-all cursor-pointer active:scale-95 shrink-0"
-                    style={
-                      isActive
-                        ? {
-                            color: catColor,
-                            borderColor: catColor,
-                            backgroundColor: `color-mix(in srgb, ${catColor} 12%, transparent)`,
-                            boxShadow: `0 0 0 2px color-mix(in srgb, ${catColor} 20%, transparent)`,
-                          }
-                        : {
-                            borderColor: border,
-                            color: text,
-                            opacity: 0.4,
-                          }
-                    }
-                  >
-                    {cat === "ALL" ? "All" : CATEGORY_CONFIG[cat].label}
-                  </button>
-                );
-              })}
+            {/* Category + date preset dropdowns */}
+            <div className="flex flex-col gap-2">
+              <div className="grid grid-cols-2 gap-3">
+                <select
+                  value={activeTab}
+                  onChange={(e) => setActiveTab(e.target.value)}
+                  className="rounded-xl px-3 py-2 text-xs font-semibold border cursor-pointer w-full"
+                  style={{
+                    color: activeColor,
+                    borderColor: activeColor,
+                    backgroundColor: dark
+                      ? `color-mix(in srgb, ${activeColor} 12%, transparent)`
+                      : "var(--light-surface)",
+                    boxShadow: `0 0 0 2px color-mix(in srgb, ${activeColor} 20%, transparent)`,
+                    colorScheme: dark ? "dark" : "light",
+                  }}
+                >
+                  {CATEGORIES.map((cat) => (
+                    <option
+                      key={cat}
+                      value={cat}
+                      style={{ backgroundColor: "#1a1a1a", color: "#fff" }}
+                    >
+                      {cat === "ALL" ? "All" : CATEGORY_CONFIG[cat].label}
+                    </option>
+                  ))}
+                </select>
+
+                <select
+                  value={activePreset ?? "custom"}
+                  onChange={(e) => handlePreset(e.target.value)}
+                  className="rounded-xl px-3 py-2 text-xs font-semibold border cursor-pointer w-full"
+                  style={{
+                    color: activeColor,
+                    borderColor: activeColor,
+                    backgroundColor: dark
+                      ? `color-mix(in srgb, ${activeColor} 12%, transparent)`
+                      : "var(--light-surface)",
+                    boxShadow: `0 0 0 2px color-mix(in srgb, ${activeColor} 20%, transparent)`,
+                    colorScheme: dark ? "dark" : "light",
+                  }}
+                >
+                  {PRESETS.map((label) => (
+                    <option
+                      key={label}
+                      value={label}
+                      style={{ backgroundColor: "#1a1a1a", color: "#fff" }}
+                    >
+                      {label}
+                    </option>
+                  ))}
+                  {!activePreset && (
+                    <option
+                      value="custom"
+                      disabled
+                      style={{ backgroundColor: "#1a1a1a", color: "#fff" }}
+                    >
+                      Custom
+                    </option>
+                  )}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 text-xs" style={{ color: muted }}>
+                <div className="flex items-center gap-2">
+                  <span>from</span>
+                  <input
+                    type="date"
+                    value={fromVal}
+                    onChange={(e) => {
+                      setFromVal(e.target.value);
+                      handleCustom(e.target.value, toVal);
+                    }}
+                    className="rounded-xl px-3 py-1.5 text-xs font-semibold border flex-1 min-w-0"
+                    style={{
+                      backgroundColor: dark ? "var(--dark-bg)" : "var(--light-bg)",
+                      border: `1px solid ${border}`,
+                      color: text,
+                      colorScheme: dark ? "dark" : "light",
+                    }}
+                  />
+                </div>
+                <div className="flex items-center gap-2">
+                  <span>to</span>
+                  <input
+                    type="date"
+                    value={toVal}
+                    onChange={(e) => {
+                      setToVal(e.target.value);
+                      handleCustom(fromVal, e.target.value);
+                    }}
+                    className="rounded-xl px-3 py-1.5 text-xs font-semibold border flex-1 min-w-0"
+                    style={{
+                      backgroundColor: dark ? "var(--dark-bg)" : "var(--light-bg)",
+                      border: `1px solid ${border}`,
+                      color: text,
+                      colorScheme: dark ? "dark" : "light",
+                    }}
+                  />
+                </div>
+              </div>
             </div>
 
             {/* Summary 2×2 */}
@@ -459,9 +643,13 @@ export default function MobileDashboard() {
               {[
                 { label: "INCOME", value: fmt(summary.totalIn) },
                 { label: "EXPENSES", value: fmt(summary.totalOut) },
-                { label: "NET", value: fmt(summary.net) },
-                { label: "TRANSACTIONS", value: summary.count },
-              ].map(({ label, value }) => (
+                activeTab === "ALL"
+                  ? { label: "SAVINGS RATE", value: summary.savingsRate !== null ? `${summary.savingsRate.toFixed(1)}%` : "—", deltaLabel: summary.savingsRateDelta != null ? `${summary.savingsRateDelta >= 0 ? "↑" : "↓"} ${Math.abs(summary.savingsRateDelta).toFixed(1)}% vs last month` : null, deltaUp: summary.savingsRateDelta >= 0}
+                  : { label: "VS LAST MONTH", value: summary.categoryDelta != null ? `${summary.categoryDelta >= 0 ? "+" : ""}${summary.categoryDelta.toFixed(1)}%` : "—", deltaLabel: summary.categoryDelta != null ? (summary.categoryDelta >= 0 ? "↑ higher than last month" : "↓ lower than last month") : null, deltaUp: INCOME_TYPES.has(activeTab) ? summary.categoryDelta >= 0 : summary.categoryDelta <= 0, valueColor: summary.categoryDelta != null ? ((INCOME_TYPES.has(activeTab) ? summary.categoryDelta >= 0 : summary.categoryDelta <= 0) ? "var(--category-income)" : "var(--category-expense)") : undefined },
+                activeTab === "ALL"
+                  ? { label: "AVG DAILY SPEND", value: fmt(summary.avgDailySpend), deltaLabel: summary.avgDailySpendDelta != null ? `${summary.avgDailySpendDelta >= 0 ? "↑" : "↓"} ${fmt(Math.abs(summary.avgDailySpendDelta))} vs last month` : null, deltaUp: summary.avgDailySpendDelta <= 0 }
+                  : { label: INCOME_TYPES.has(activeTab) ? "% OF INCOME" : "% OF SPENDING", value: summary.pctOfTotal != null ? `${summary.pctOfTotal.toFixed(1)}%` : "—" },
+              ].map(({ label, value, deltaLabel, deltaUp, valueColor }) => (
                 <div
                   key={label}
                   className="rounded-2xl px-4 py-4 border"
@@ -473,15 +661,13 @@ export default function MobileDashboard() {
                     borderTopWidth: "3px",
                   }}
                 >
-                  <p
-                    className="text-xs font-medium mb-1"
-                    style={{ color: muted }}
-                  >
-                    {label}
-                  </p>
-                  <p className="text-lg font-bold tracking-tight">
-                    {value}
-                  </p>
+                  <p className="text-xs font-medium mb-1" style={{ color: muted }}>{label}</p>
+                  <p className="text-lg font-bold tracking-tight" style={valueColor ? { color: valueColor } : undefined}>{value}</p>
+                  {deltaLabel != null && (
+                    <p className="text-xs font-semibold mt-1" style={{ color: deltaUp ? "var(--category-income)" : "var(--category-expense)" }}>
+                      {deltaLabel}
+                    </p>
+                  )}
                 </div>
               ))}
             </div>
@@ -515,7 +701,7 @@ export default function MobileDashboard() {
                         <Cell key={entry.name} fill={entry.color} />
                       ))}
                     </Pie>
-                    <Tooltip formatter={(v) => fmt(v)} />
+                    <Tooltip {...tooltipProps} formatter={(v) => fmt(v)} />
                     <Legend iconType="circle" iconSize={8} />
                   </PieChart>
                 </ResponsiveContainer>
@@ -545,7 +731,7 @@ export default function MobileDashboard() {
                       tick={
                         activeTab !== "ALL"
                           ? (props) => {
-                              const val = props.value ?? "";
+                              const val = props.payload?.value ?? "";
                               const label =
                                 val.length > 10 ? val.slice(0, 10) + "…" : val;
                               return (
@@ -570,12 +756,15 @@ export default function MobileDashboard() {
                       tickFormatter={(v) => `$${v}`}
                       tick={{ fontSize: 10 }}
                     />
-                    <Tooltip formatter={(v) => fmt(v)} cursor={false} />
-                    <Bar
-                      dataKey="total"
-                      fill={activeColor}
-                      radius={[5, 5, 0, 0]}
-                    />
+                    <Tooltip {...tooltipProps} formatter={(v) => fmt(v)} cursor={false} />
+                    {activeTab === "ALL" ? (
+                      <>
+                        <Bar dataKey="income" fill="var(--category-income)" radius={[5, 5, 0, 0]} barSize={14} />
+                        <Bar dataKey="expense" fill="var(--category-expense)" radius={[5, 5, 0, 0]} barSize={14} />
+                      </>
+                    ) : (
+                      <Bar dataKey="total" fill={activeColor} radius={[5, 5, 0, 0]} barSize={20} />
+                    )}
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -657,6 +846,8 @@ export default function MobileDashboard() {
           </>
         )}
       </main>
+
+      <Footer />
     </div>
   );
 }
