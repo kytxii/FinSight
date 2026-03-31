@@ -3,7 +3,6 @@ import { useTheme } from "../hooks/useTheme";
 import {
   PieChart,
   Pie,
-  Sector,
   Cell,
   Tooltip,
   Legend,
@@ -163,10 +162,10 @@ export default function Dashboard() {
       });
       return Object.entries(grouped)
         .sort((a, b) => b[1] - a[1])
-        .map(([name, value]) => ({
+        .map(([name, value], i) => ({
           name,
           value: parseFloat(value.toFixed(2)),
-          color: `var(--category-${activeTab.toLowerCase()})`,
+          color: `color-mix(in srgb, var(--category-${activeTab.toLowerCase()}) ${100 - i * 10}%, black)`,
         }));
     }
     const grouped = {};
@@ -311,7 +310,7 @@ export default function Dashboard() {
             activeColor={activeColor}
           >
             {pieData.length > 0 ? (
-              <ResponsiveContainer width="100%" height={280}>
+              <ResponsiveContainer width="100%" height={280} style={{ pointerEvents: "none" }}>
                 <PieChart>
                   <Pie
                     data={pieData}
@@ -321,9 +320,6 @@ export default function Dashboard() {
                     cy="50%"
                     outerRadius={100}
                     strokeWidth={0}
-                    activeShape={(props) => (
-                      <Sector {...props} outerRadius={props.outerRadius} />
-                    )}
                   >
                     {pieData.map((entry) => (
                       <Cell key={entry.name} fill={entry.color} />
@@ -347,7 +343,7 @@ export default function Dashboard() {
             activeColor={activeColor}
           >
             {barData.length > 0 ? (
-              <ResponsiveContainer width="100%" height={280}>
+              <ResponsiveContainer width="100%" height={280} style={{ pointerEvents: "none" }}>
                 <BarChart data={barData}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} />
                   <XAxis
