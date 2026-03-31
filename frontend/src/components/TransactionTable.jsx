@@ -2,9 +2,10 @@ import { useState } from "react";
 import { CATEGORY_CONFIG, INCOME_TYPES, fmt } from "../utils/finance";
 import { useTheme } from "../hooks/useTheme";
 
-export default function TransactionTable({ filtered, onAdd, activeColor }) {
+export default function TransactionTable({ rows, onAdd, activeColor, page, perPage, total, onPageChange, onPerPageChange }) {
   const dark = useTheme();
   const [addHovered, setAddHovered] = useState(false);
+  const [hoveredBtn, setHoveredBtn] = useState(null);
 
   const bg     = dark ? "var(--dark-surface)" : "var(--light-surface)";
   const border = dark ? "var(--dark-border)"  : "var(--light-border)";
@@ -44,16 +45,14 @@ export default function TransactionTable({ filtered, onAdd, activeColor }) {
           </tr>
         </thead>
         <tbody>
-          {filtered.length === 0 ? (
+          {rows.length === 0 ? (
             <tr>
               <td colSpan={5} className="px-6 py-14 text-center text-base" style={{ color: muted }}>
                 No transactions
               </td>
             </tr>
           ) : (
-            [...filtered]
-              .sort((a, b) => new Date(b.transaction_date) - new Date(a.transaction_date))
-              .map((t) => (
+            rows.map((t) => (
                 <tr key={t.id} className="border-t" style={{ borderColor: border }}>
                   <td className="px-6 py-4 text-base whitespace-nowrap" style={{ color: muted }}>
                     {new Date(t.transaction_date).toLocaleDateString("en-US", {
@@ -86,6 +85,66 @@ export default function TransactionTable({ filtered, onAdd, activeColor }) {
           )}
         </tbody>
       </table>
+
+      <div className="px-6 py-3 border-t flex items-center justify-between text-sm flex-wrap gap-3" style={{ borderColor: border, color: muted }}>
+        <div className="flex items-center gap-2">
+          <span className="text-xs">Rows per page:</span>
+          {[10, 20, 50].map((n) => {
+            const active = perPage === n;
+            const hov = hoveredBtn === `pp-${n}`;
+            return (
+              <button
+                key={n}
+                onClick={() => onPerPageChange(n)}
+                onMouseEnter={() => setHoveredBtn(`pp-${n}`)}
+                onMouseLeave={() => setHoveredBtn(null)}
+                className="px-2.5 py-1 rounded-lg border text-xs font-semibold cursor-pointer transition-all duration-150"
+                style={{
+                  color: active || hov ? activeColor : muted,
+                  borderColor: active || hov ? activeColor : border,
+                  backgroundColor: active
+                    ? dark ? `color-mix(in srgb, ${activeColor} ${hov ? "20%" : "12%"}, transparent)` : "var(--light-surface)"
+                    : hov
+                    ? `color-mix(in srgb, ${activeColor} 12%, transparent)`
+                    : "transparent",
+                  boxShadow: active || hov ? `0 0 0 2px color-mix(in srgb, ${activeColor} 20%, transparent)` : "none",
+                }}
+              >
+                {n}
+              </button>
+            );
+          })}
+        </div>
+        <div className="flex items-center gap-3 text-xs">
+          <span>
+            {total === 0 ? "0" : `${(page - 1) * perPage + 1}–${Math.min(page * perPage, total)}`} of {total}
+          </span>
+          {[
+            { key: "prev", label: "←", disabled: page === 1, onClick: () => onPageChange(page - 1) },
+            { key: "next", label: "→", disabled: page * perPage >= total, onClick: () => onPageChange(page + 1) },
+          ].map(({ key, label, disabled, onClick }) => {
+            const hov = hoveredBtn === key && !disabled;
+            return (
+              <button
+                key={key}
+                onClick={onClick}
+                disabled={disabled}
+                onMouseEnter={() => !disabled && setHoveredBtn(key)}
+                onMouseLeave={() => setHoveredBtn(null)}
+                className="px-2.5 py-1 rounded-lg border text-xs font-semibold cursor-pointer disabled:opacity-30 transition-all duration-150"
+                style={{
+                  color: hov ? activeColor : `color-mix(in srgb, ${text} 60%, transparent)`,
+                  borderColor: hov ? activeColor : `color-mix(in srgb, ${text} 60%, transparent)`,
+                  backgroundColor: hov ? `color-mix(in srgb, ${activeColor} 12%, transparent)` : "transparent",
+                  boxShadow: hov ? `0 0 0 2px color-mix(in srgb, ${activeColor} 20%, transparent)` : "none",
+                }}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }
