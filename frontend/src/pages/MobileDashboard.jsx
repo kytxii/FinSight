@@ -2,7 +2,6 @@ import { useState, useEffect, useMemo } from "react";
 import {
   PieChart,
   Pie,
-  Sector,
   Cell,
   Tooltip,
   Legend,
@@ -44,6 +43,8 @@ export default function MobileDashboard() {
   });
   const [quickLoading, setQuickLoading] = useState(false);
   const [quickError, setQuickError] = useState("");
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(10);
   const [activeTab, setActiveTab] = useState("ALL");
   const [activePreset, setActivePreset] = useState("Current Month");
   const [fromVal, setFromVal] = useState("");
@@ -145,20 +146,33 @@ export default function MobileDashboard() {
       .filter((t) => !INCOME_TYPES.has(t.category))
       .reduce((s, t) => s + parseFloat(t.amount), 0);
 
-    const savingsRate = totalIn > 0 ? ((totalIn - totalOut) / totalIn) * 100 : null;
+    const savingsRate =
+      totalIn > 0 ? ((totalIn - totalOut) / totalIn) * 100 : null;
 
     let days = 1;
     if (dateRange.from && dateRange.to) {
-      days = Math.max(1, Math.round((dateRange.to - dateRange.from) / (1000 * 60 * 60 * 24)));
+      days = Math.max(
+        1,
+        Math.round((dateRange.to - dateRange.from) / (1000 * 60 * 60 * 24)),
+      );
     } else if (filtered.length > 0) {
-      const timestamps = filtered.map((t) => new Date(t.transaction_date).getTime());
-      days = Math.max(1, Math.round((Math.max(...timestamps) - Math.min(...timestamps)) / (1000 * 60 * 60 * 24)) + 1);
+      const timestamps = filtered.map((t) =>
+        new Date(t.transaction_date).getTime(),
+      );
+      days = Math.max(
+        1,
+        Math.round(
+          (Math.max(...timestamps) - Math.min(...timestamps)) /
+            (1000 * 60 * 60 * 24),
+        ) + 1,
+      );
     }
     const avgDailySpend = totalOut / days;
 
     let savingsRateDelta = null;
     if (dateRange.from) {
-      const periodMs = (dateRange.to ?? new Date()).getTime() - dateRange.from.getTime();
+      const periodMs =
+        (dateRange.to ?? new Date()).getTime() - dateRange.from.getTime();
       const prevFrom = new Date(dateRange.from.getTime() - periodMs);
       const prevTo = dateRange.from;
       const prevFiltered = transactions
@@ -167,8 +181,12 @@ export default function MobileDashboard() {
           const d = new Date(t.transaction_date + "T00:00:00");
           return d >= prevFrom && d < prevTo;
         });
-      const prevIn = prevFiltered.filter((t) => INCOME_TYPES.has(t.category)).reduce((s, t) => s + parseFloat(t.amount), 0);
-      const prevOut = prevFiltered.filter((t) => !INCOME_TYPES.has(t.category)).reduce((s, t) => s + parseFloat(t.amount), 0);
+      const prevIn = prevFiltered
+        .filter((t) => INCOME_TYPES.has(t.category))
+        .reduce((s, t) => s + parseFloat(t.amount), 0);
+      const prevOut = prevFiltered
+        .filter((t) => !INCOME_TYPES.has(t.category))
+        .reduce((s, t) => s + parseFloat(t.amount), 0);
       if (prevIn > 0 && savingsRate !== null) {
         savingsRateDelta = savingsRate - ((prevIn - prevOut) / prevIn) * 100;
       }
@@ -176,12 +194,16 @@ export default function MobileDashboard() {
 
     let avgDailySpendDelta = null;
     if (dateRange.from) {
-      const periodMs = (dateRange.to ?? new Date()).getTime() - dateRange.from.getTime();
+      const periodMs =
+        (dateRange.to ?? new Date()).getTime() - dateRange.from.getTime();
       const prevFrom = new Date(dateRange.from.getTime() - periodMs);
       const prevTo = dateRange.from;
       const prevTotalOut = transactions
         .filter((t) => activeTab === "ALL" || t.category === activeTab)
-        .filter((t) => { const d = new Date(t.transaction_date + "T00:00:00"); return d >= prevFrom && d < prevTo; })
+        .filter((t) => {
+          const d = new Date(t.transaction_date + "T00:00:00");
+          return d >= prevFrom && d < prevTo;
+        })
         .filter((t) => !INCOME_TYPES.has(t.category))
         .reduce((s, t) => s + parseFloat(t.amount), 0);
       avgDailySpendDelta = avgDailySpend - prevTotalOut / days;
@@ -200,23 +222,43 @@ export default function MobileDashboard() {
           if (dateRange.to && d > dateRange.to) return false;
           return true;
         })
-        .filter((t) => isIncomeCategory ? INCOME_TYPES.has(t.category) : !INCOME_TYPES.has(t.category))
+        .filter((t) =>
+          isIncomeCategory
+            ? INCOME_TYPES.has(t.category)
+            : !INCOME_TYPES.has(t.category),
+        )
         .reduce((s, t) => s + parseFloat(t.amount), 0);
-      if (allPeriodTotal > 0) pctOfTotal = (categoryTotal / allPeriodTotal) * 100;
+      if (allPeriodTotal > 0)
+        pctOfTotal = (categoryTotal / allPeriodTotal) * 100;
 
       if (dateRange.from) {
-        const periodMs = (dateRange.to ?? new Date()).getTime() - dateRange.from.getTime();
+        const periodMs =
+          (dateRange.to ?? new Date()).getTime() - dateRange.from.getTime();
         const prevFrom = new Date(dateRange.from.getTime() - periodMs);
         const prevTo = dateRange.from;
         const prevTotal = transactions
           .filter((t) => t.category === activeTab)
-          .filter((t) => { const d = new Date(t.transaction_date + "T00:00:00"); return d >= prevFrom && d < prevTo; })
+          .filter((t) => {
+            const d = new Date(t.transaction_date + "T00:00:00");
+            return d >= prevFrom && d < prevTo;
+          })
           .reduce((s, t) => s + parseFloat(t.amount), 0);
-        if (prevTotal > 0) categoryDelta = ((categoryTotal - prevTotal) / prevTotal) * 100;
+        if (prevTotal > 0)
+          categoryDelta = ((categoryTotal - prevTotal) / prevTotal) * 100;
       }
     }
 
-    return { totalIn, totalOut, savingsRate, savingsRateDelta, avgDailySpend, avgDailySpendDelta, categoryTotal, pctOfTotal, categoryDelta };
+    return {
+      totalIn,
+      totalOut,
+      savingsRate,
+      savingsRateDelta,
+      avgDailySpend,
+      avgDailySpendDelta,
+      categoryTotal,
+      pctOfTotal,
+      categoryDelta,
+    };
   }, [filtered, transactions, activeTab, dateRange]);
 
   const pieData = useMemo(() => {
@@ -227,10 +269,10 @@ export default function MobileDashboard() {
       });
       return Object.entries(grouped)
         .sort((a, b) => b[1] - a[1])
-        .map(([name, value]) => ({
+        .map(([name, value], i) => ({
           name,
           value: parseFloat(value.toFixed(2)),
-          color: activeColor,
+          color: `color-mix(in srgb, ${activeColor} ${100 - i * 10}%, black)`,
         }));
     }
     const grouped = {};
@@ -279,6 +321,19 @@ export default function MobileDashboard() {
         expense: parseFloat(expense.toFixed(2)),
       }));
   }, [filtered, activeTab]);
+
+  const sorted = useMemo(
+    () =>
+      [...filtered].sort(
+        (a, b) => new Date(b.transaction_date) - new Date(a.transaction_date),
+      ),
+    [filtered],
+  );
+  const paginated = sorted.slice((page - 1) * perPage, page * perPage);
+
+  useEffect(() => {
+    setPage(1);
+  }, [filtered, perPage]);
 
   const inputStyle = { backgroundColor: bg, borderColor: border, color: text };
 
@@ -422,7 +477,7 @@ export default function MobileDashboard() {
                       : inputStyle
                   }
                 />
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-[auto_1fr] gap-3">
                   <input
                     type="number"
                     placeholder="0.00"
@@ -446,7 +501,7 @@ export default function MobileDashboard() {
                       }))
                     }
                     required
-                    className="w-full min-w-0 rounded-xl px-3 py-2.5 text-sm focus:outline-none border"
+                    className="min-w-0 rounded-xl px-3 py-2.5 text-sm focus:outline-none border"
                     style={inputStyle}
                   />
                 </div>
@@ -598,42 +653,62 @@ export default function MobileDashboard() {
                 </select>
               </div>
 
-              <div className="grid grid-cols-2 gap-3 text-xs" style={{ color: muted }}>
-                <div className="flex items-center gap-2">
-                  <span>from</span>
-                  <input
-                    type="date"
-                    value={fromVal}
-                    onChange={(e) => {
-                      setFromVal(e.target.value);
-                      handleCustom(e.target.value, toVal);
-                    }}
-                    className="rounded-xl px-3 py-1.5 text-xs font-semibold border flex-1 min-w-0"
-                    style={{
-                      backgroundColor: dark ? "var(--dark-bg)" : "var(--light-bg)",
-                      border: `1px solid ${border}`,
-                      color: text,
-                      colorScheme: dark ? "dark" : "light",
-                    }}
-                  />
+              {/* Date Range Inputs */}
+              <div className="grid grid-cols-2 gap-3 items-center">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span
+                    className="text-[10px] uppercase font-bold w-7 shrink-0 pr-10"
+                    style={{ color: muted }}
+                  >
+                    From
+                  </span>
+                  <div className="relative flex-1 min-w-0 overflow-hidden">
+                    <input
+                      type="date"
+                      value={fromVal}
+                      onChange={(e) => {
+                        setFromVal(e.target.value);
+                        handleCustom(e.target.value, toVal);
+                      }}
+                      className="rounded-xl px-1 py-2 text-[10px] font-semibold border w-[93%]"
+                      style={{
+                        backgroundColor: dark
+                          ? "var(--dark-bg)"
+                          : "var(--light-bg)",
+                        borderColor: border,
+                        color: text,
+                        colorScheme: dark ? "dark" : "light",
+                      }}
+                    />
+                  </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span>to</span>
-                  <input
-                    type="date"
-                    value={toVal}
-                    onChange={(e) => {
-                      setToVal(e.target.value);
-                      handleCustom(fromVal, e.target.value);
-                    }}
-                    className="rounded-xl px-3 py-1.5 text-xs font-semibold border flex-1 min-w-0"
-                    style={{
-                      backgroundColor: dark ? "var(--dark-bg)" : "var(--light-bg)",
-                      border: `1px solid ${border}`,
-                      color: text,
-                      colorScheme: dark ? "dark" : "light",
-                    }}
-                  />
+
+                <div className="flex items-center gap-2 min-w-0">
+                  <span
+                    className="text-[10px] uppercase font-bold w-7 shrink-0"
+                    style={{ color: muted }}
+                  >
+                    To
+                  </span>
+                  <div className="relative flex-1 min-w-0 overflow-hidden">
+                    <input
+                      type="date"
+                      value={toVal}
+                      onChange={(e) => {
+                        setToVal(e.target.value);
+                        handleCustom(fromVal, e.target.value);
+                      }}
+                      className="rounded-xl px-1 py-2 text-[10px] font-semibold border w-[93%]"
+                      style={{
+                        backgroundColor: dark
+                          ? "var(--dark-bg)"
+                          : "var(--light-bg)",
+                        borderColor: border,
+                        color: text,
+                        colorScheme: dark ? "dark" : "light",
+                      }}
+                    />
+                  </div>
                 </div>
               </div>
             </div>
@@ -644,11 +719,63 @@ export default function MobileDashboard() {
                 { label: "INCOME", value: fmt(summary.totalIn) },
                 { label: "EXPENSES", value: fmt(summary.totalOut) },
                 activeTab === "ALL"
-                  ? { label: "SAVINGS RATE", value: summary.savingsRate !== null ? `${summary.savingsRate.toFixed(1)}%` : "—", deltaLabel: summary.savingsRateDelta != null ? `${summary.savingsRateDelta >= 0 ? "↑" : "↓"} ${Math.abs(summary.savingsRateDelta).toFixed(1)}% vs last month` : null, deltaUp: summary.savingsRateDelta >= 0}
-                  : { label: "VS LAST MONTH", value: summary.categoryDelta != null ? `${summary.categoryDelta >= 0 ? "+" : ""}${summary.categoryDelta.toFixed(1)}%` : "—", deltaLabel: summary.categoryDelta != null ? (summary.categoryDelta >= 0 ? "↑ higher than last month" : "↓ lower than last month") : null, deltaUp: INCOME_TYPES.has(activeTab) ? summary.categoryDelta >= 0 : summary.categoryDelta <= 0, valueColor: summary.categoryDelta != null ? ((INCOME_TYPES.has(activeTab) ? summary.categoryDelta >= 0 : summary.categoryDelta <= 0) ? "var(--category-income)" : "var(--category-expense)") : undefined },
+                  ? {
+                      label: "SAVINGS RATE",
+                      value:
+                        summary.savingsRate !== null
+                          ? `${summary.savingsRate.toFixed(1)}%`
+                          : "—",
+                      deltaLabel:
+                        summary.savingsRateDelta != null
+                          ? `${summary.savingsRateDelta >= 0 ? "↑" : "↓"} ${Math.abs(summary.savingsRateDelta).toFixed(1)}% vs last month`
+                          : null,
+                      deltaUp: summary.savingsRateDelta >= 0,
+                    }
+                  : {
+                      label: "VS LAST MONTH",
+                      value:
+                        summary.categoryDelta != null
+                          ? `${summary.categoryDelta >= 0 ? "+" : ""}${summary.categoryDelta.toFixed(1)}%`
+                          : "—",
+                      deltaLabel:
+                        summary.categoryDelta != null
+                          ? summary.categoryDelta >= 0
+                            ? "↑ higher than last month"
+                            : "↓ lower than last month"
+                          : null,
+                      deltaUp: INCOME_TYPES.has(activeTab)
+                        ? summary.categoryDelta >= 0
+                        : summary.categoryDelta <= 0,
+                      valueColor:
+                        summary.categoryDelta != null
+                          ? (
+                              INCOME_TYPES.has(activeTab)
+                                ? summary.categoryDelta >= 0
+                                : summary.categoryDelta <= 0
+                            )
+                            ? "var(--category-income)"
+                            : "var(--category-expense)"
+                          : undefined,
+                    },
                 activeTab === "ALL"
-                  ? { label: "AVG DAILY SPEND", value: fmt(summary.avgDailySpend), deltaLabel: summary.avgDailySpendDelta != null ? `${summary.avgDailySpendDelta >= 0 ? "↑" : "↓"} ${fmt(Math.abs(summary.avgDailySpendDelta))} vs last month` : null, deltaUp: summary.avgDailySpendDelta <= 0 }
-                  : { label: INCOME_TYPES.has(activeTab) ? "% OF INCOME" : "% OF SPENDING", value: summary.pctOfTotal != null ? `${summary.pctOfTotal.toFixed(1)}%` : "—" },
+                  ? {
+                      label: "AVG DAILY SPEND",
+                      value: fmt(summary.avgDailySpend),
+                      deltaLabel:
+                        summary.avgDailySpendDelta != null
+                          ? `${summary.avgDailySpendDelta >= 0 ? "↑" : "↓"} ${fmt(Math.abs(summary.avgDailySpendDelta))} vs last month`
+                          : null,
+                      deltaUp: summary.avgDailySpendDelta <= 0,
+                    }
+                  : {
+                      label: INCOME_TYPES.has(activeTab)
+                        ? "% OF INCOME"
+                        : "% OF SPENDING",
+                      value:
+                        summary.pctOfTotal != null
+                          ? `${summary.pctOfTotal.toFixed(1)}%`
+                          : "—",
+                    },
               ].map(({ label, value, deltaLabel, deltaUp, valueColor }) => (
                 <div
                   key={label}
@@ -661,10 +788,27 @@ export default function MobileDashboard() {
                     borderTopWidth: "3px",
                   }}
                 >
-                  <p className="text-xs font-medium mb-1" style={{ color: muted }}>{label}</p>
-                  <p className="text-lg font-bold tracking-tight" style={valueColor ? { color: valueColor } : undefined}>{value}</p>
+                  <p
+                    className="text-xs font-medium mb-1"
+                    style={{ color: muted }}
+                  >
+                    {label}
+                  </p>
+                  <p
+                    className="text-lg font-bold tracking-tight"
+                    style={valueColor ? { color: valueColor } : undefined}
+                  >
+                    {value}
+                  </p>
                   {deltaLabel != null && (
-                    <p className="text-xs font-semibold mt-1" style={{ color: deltaUp ? "var(--category-income)" : "var(--category-expense)" }}>
+                    <p
+                      className="text-xs font-semibold mt-1"
+                      style={{
+                        color: deltaUp
+                          ? "var(--category-income)"
+                          : "var(--category-expense)",
+                      }}
+                    >
                       {deltaLabel}
                     </p>
                   )}
@@ -683,19 +827,20 @@ export default function MobileDashboard() {
                     ? "Breakdown By Category"
                     : `${CATEGORY_CONFIG[activeTab].label} Breakdown`}
                 </p>
-                <ResponsiveContainer width="100%" height={220}>
+                <ResponsiveContainer
+                  width="100%"
+                  height={280}
+                  style={{ pointerEvents: "none" }}
+                >
                   <PieChart>
                     <Pie
                       data={pieData}
                       dataKey="value"
                       nameKey="name"
                       cx="50%"
-                      cy="50%"
+                      cy="40%"
                       outerRadius={80}
                       strokeWidth={0}
-                      activeShape={(props) => (
-                        <Sector {...props} outerRadius={props.outerRadius} />
-                      )}
                     >
                       {pieData.map((entry) => (
                         <Cell key={entry.name} fill={entry.color} />
@@ -719,7 +864,11 @@ export default function MobileDashboard() {
                     ? "Monthly Totals"
                     : `Top ${CATEGORY_CONFIG[activeTab].label} by Name`}
                 </p>
-                <ResponsiveContainer width="100%" height={200}>
+                <ResponsiveContainer
+                  width="100%"
+                  height={200}
+                  style={{ pointerEvents: "none" }}
+                >
                   <BarChart data={barData} barSize={20}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} />
                     <XAxis
@@ -741,29 +890,49 @@ export default function MobileDashboard() {
                                   dy={6}
                                   textAnchor="end"
                                   fontSize={11}
+                                  style={{ fill: text }}
                                   transform={`rotate(-35, ${props.x}, ${props.y})`}
                                 >
                                   {label}
                                 </text>
                               );
                             }
-                          : { fontSize: 11 }
+                          : { fontSize: 11, fill: text }
                       }
                     />
                     <YAxis
                       axisLine={false}
                       tickLine={false}
                       tickFormatter={(v) => `$${v}`}
-                      tick={{ fontSize: 10 }}
+                      tick={{ fontSize: 10, fill: text }}
                     />
-                    <Tooltip {...tooltipProps} formatter={(v) => fmt(v)} cursor={false} />
+                    <Tooltip
+                      {...tooltipProps}
+                      formatter={(v) => fmt(v)}
+                      cursor={false}
+                    />
                     {activeTab === "ALL" ? (
                       <>
-                        <Bar dataKey="income" fill="var(--category-income)" radius={[5, 5, 0, 0]} barSize={14} />
-                        <Bar dataKey="expense" fill="var(--category-expense)" radius={[5, 5, 0, 0]} barSize={14} />
+                        <Bar
+                          dataKey="income"
+                          fill="var(--category-income)"
+                          radius={[5, 5, 0, 0]}
+                          barSize={14}
+                        />
+                        <Bar
+                          dataKey="expense"
+                          fill="var(--category-expense)"
+                          radius={[5, 5, 0, 0]}
+                          barSize={14}
+                        />
                       </>
                     ) : (
-                      <Bar dataKey="total" fill={activeColor} radius={[5, 5, 0, 0]} barSize={20} />
+                      <Bar
+                        dataKey="total"
+                        fill={activeColor}
+                        radius={[5, 5, 0, 0]}
+                        barSize={20}
+                      />
                     )}
                   </BarChart>
                 </ResponsiveContainer>
@@ -781,7 +950,7 @@ export default function MobileDashboard() {
               >
                 Transactions
               </p>
-              {filtered.length === 0 ? (
+              {sorted.length === 0 ? (
                 <p
                   className="px-4 py-8 text-center text-sm"
                   style={{ color: muted }}
@@ -789,58 +958,99 @@ export default function MobileDashboard() {
                   No transactions
                 </p>
               ) : (
-                [...filtered]
-                  .sort(
-                    (a, b) =>
-                      new Date(b.transaction_date) -
-                      new Date(a.transaction_date),
-                  )
-                  .map((t) => {
-                    const isIncome = INCOME_TYPES.has(t.category);
-                    return (
-                      <div
-                        key={t.id}
-                        className="px-4 py-3 border-t flex items-center gap-3"
-                        style={{ borderColor: border }}
-                      >
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium truncate">
-                            {t.name}
-                          </p>
-                          <p className="text-xs" style={{ color: muted }}>
-                            <span
-                              className="font-medium"
-                              style={{
-                                color: `var(--category-${t.category.toLowerCase()})`,
-                              }}
-                            >
-                              {CATEGORY_CONFIG[t.category]?.label}
-                            </span>
-                            {" · "}
-                            {new Date(t.transaction_date).toLocaleDateString(
-                              "en-US",
-                              {
-                                month: "short",
-                                day: "numeric",
-                                year: "numeric",
-                              },
-                            )}
-                          </p>
-                        </div>
-                        <p
-                          className="text-sm font-bold shrink-0"
-                          style={{
-                            color: isIncome
-                              ? "var(--category-income)"
-                              : "var(--category-expense)",
-                          }}
-                        >
-                          {isIncome ? "+" : "-"}
-                          {fmt(t.amount)}
+                paginated.map((t) => {
+                  const isIncome = INCOME_TYPES.has(t.category);
+                  return (
+                    <div
+                      key={t.id}
+                      className="px-4 py-3 border-t flex items-center gap-3"
+                      style={{ borderColor: border }}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{t.name}</p>
+                        <p className="text-xs" style={{ color: muted }}>
+                          <span
+                            className="font-medium"
+                            style={{
+                              color: `var(--category-${t.category.toLowerCase()})`,
+                            }}
+                          >
+                            {CATEGORY_CONFIG[t.category]?.label}
+                          </span>
+                          {" · "}
+                          {new Date(t.transaction_date).toLocaleDateString(
+                            "en-US",
+                            {
+                              month: "short",
+                              day: "numeric",
+                              year: "numeric",
+                            },
+                          )}
                         </p>
                       </div>
-                    );
-                  })
+                      <p
+                        className="text-sm font-bold shrink-0"
+                        style={{
+                          color: isIncome
+                            ? "var(--category-income)"
+                            : "var(--category-expense)",
+                        }}
+                      >
+                        {isIncome ? "+" : "-"}
+                        {fmt(t.amount)}
+                      </p>
+                    </div>
+                  );
+                })
+              )}
+              {sorted.length > 0 && (
+                <div
+                  className="px-4 py-3 border-t flex items-center justify-between text-xs"
+                  style={{ borderColor: border, color: muted }}
+                >
+                  <div className="flex items-center gap-2">
+                    <span>Rows:</span>
+                    {[10, 20, 50].map((n) => (
+                      <button
+                        key={n}
+                        onClick={() => setPerPage(n)}
+                        className="px-2 py-1 rounded-lg border font-semibold cursor-pointer transition-all duration-150"
+                        style={{
+                          color: perPage === n ? activeColor : muted,
+                          borderColor: perPage === n ? activeColor : border,
+                          backgroundColor:
+                            perPage === n
+                              ? `color-mix(in srgb, ${activeColor} 12%, transparent)`
+                              : "transparent",
+                        }}
+                      >
+                        {n}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span>
+                      {`${(page - 1) * perPage + 1}–${Math.min(page * perPage, sorted.length)}`}{" "}
+                      of {sorted.length}
+                    </span>
+                    <button
+                      onClick={() => setPage(page - 1)}
+                      disabled={page === 1}
+                      className="px-2 py-1 rounded-lg border font-semibold cursor-pointer disabled:opacity-30"
+                      style={{ color: muted, borderColor: border }}
+                    >
+                      ←
+                    </button>
+                    <button
+                      onClick={() => setPage(page + 1)}
+                      disabled={page * perPage >= sorted.length}
+                      className="px-2 py-1 rounded-lg border font-semibold cursor-pointer disabled:opacity-30"
+                      style={{ color: muted, borderColor: border }}
+                    >
+                      →
+                    </button>
+                  </div>
+                </div>
               )}
             </div>
           </>
