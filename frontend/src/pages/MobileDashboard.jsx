@@ -1,0 +1,1063 @@
+import { useState, useEffect, useMemo } from "react";
+import {
+  PieChart,
+  Pie,
+  Cell,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+} from "recharts";
+// import { getTransactions, createTransaction } from "../api/transactions";
+import { TEMP_DB } from "../utils/temp_db";
+import {
+  CATEGORIES,
+  CATEGORY_CONFIG,
+  INCOME_TYPES,
+  fmt,
+} from "../utils/finance";
+import { useTheme } from "../hooks/useTheme";
+import { PRESETS, getPresetRange } from "../components/DateRangeFilter";
+import Footer from "../components/Footer";
+
+export default function MobileDashboard() {
+  const dark = useTheme();
+
+  const bg = dark ? "var(--dark-bg)" : "var(--light-bg)";
+  const surface = dark ? "var(--dark-surface)" : "var(--light-surface)";
+  const border = dark ? "var(--dark-border)" : "var(--light-border)";
+  const text = dark ? "var(--dark-text)" : "var(--light-text)";
+  const muted = `color-mix(in srgb, ${text} 50%, transparent)`;
+
+  const [transactions, setTransactions] = useState(TEMP_DB);
+  const [quickMode, setQuickMode] = useState(true);
+  const [quickCat, setQuickCat] = useState("EXPENSE");
+  const [quickForm, setQuickForm] = useState({
+    name: "",
+    amount: "",
+    transaction_date: new Date().toISOString().split("T")[0],
+  });
+  const [quickLoading, setQuickLoading] = useState(false);
+  const [quickError, setQuickError] = useState("");
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(10);
+  const [activeTab, setActiveTab] = useState("ALL");
+  const [activePreset, setActivePreset] = useState("Current Month");
+  const [fromVal, setFromVal] = useState("");
+  const [toVal, setToVal] = useState("");
+  const [dateRange, setDateRange] = useState(() => {
+    const now = new Date();
+    const from = new Date(now);
+    from.setDate(1);
+    from.setHours(0, 0, 0, 0);
+    const to = new Date(now);
+    to.setHours(23, 59, 59, 999);
+    return { from, to };
+  });
+
+  function handlePreset(label) {
+    setActivePreset(label);
+    setFromVal("");
+    setToVal("");
+    setDateRange(getPresetRange(label));
+  }
+
+  function handleCustom(from, to) {
+    setActivePreset(null);
+    setDateRange({
+      from: from ? new Date(from + "T00:00:00") : null,
+      to: to ? new Date(to + "T23:59:59") : null,
+    });
+  }
+
+  function refresh() {
+    setTransactions(TEMP_DB);
+  }
+
+  const activeColor = `var(--category-${activeTab.toLowerCase()})`;
+  const quickColor = `var(--category-${quickCat.toLowerCase()})`;
+  const tooltipProps = {
+    contentStyle: {
+      backgroundColor: dark ? "var(--dark-surface)" : "var(--light-surface)",
+      borderColor: dark ? "var(--dark-border)" : "var(--light-border)",
+      borderRadius: "12px",
+      color: text,
+    },
+    labelStyle: { color: text },
+    itemStyle: { color: text },
+  };
+
+  const handleQuickSubmit = async (e) => {
+    e.preventDefault();
+    setQuickError("");
+    setQuickLoading(true);
+    try {
+      await createTransaction({
+        ...quickForm,
+        category: quickCat,
+        amount: parseFloat(quickForm.amount),
+      });
+      setQuickForm((f) => ({ ...f, name: "", amount: "" }));
+      refresh();
+    } catch (err) {
+      setQuickError(err.response?.data?.detail ?? "Something went wrong");
+    } finally {
+      setQuickLoading(false);
+    }
+  };
+
+  const recent = useMemo(
+    () =>
+      [...transactions]
+        .sort(
+          (a, b) => new Date(b.transaction_date) - new Date(a.transaction_date),
+        )
+        .slice(0, 5),
+    [transactions],
+  );
+
+  const filtered = useMemo(() => {
+    let result =
+      activeTab === "ALL"
+        ? transactions
+        : transactions.filter((t) => t.category === activeTab);
+
+    if (dateRange.from || dateRange.to) {
+      result = result.filter((t) => {
+        const date = new Date(t.transaction_date + "T00:00:00");
+        if (dateRange.from && date < dateRange.from) return false;
+        if (dateRange.to && date > dateRange.to) return false;
+        return true;
+      });
+    }
+
+    return result;
+  }, [transactions, activeTab, dateRange]);
+
+  const summary = useMemo(() => {
+    const totalIn = filtered
+      .filter((t) => INCOME_TYPES.has(t.category))
+      .reduce((s, t) => s + parseFloat(t.amount), 0);
+    const totalOut = filtered
+      .filter((t) => !INCOME_TYPES.has(t.category))
+      .reduce((s, t) => s + parseFloat(t.amount), 0);
+
+    const savingsRate =
+      totalIn > 0 ? ((totalIn - totalOut) / totalIn) * 100 : null;
+
+    let days = 1;
+    if (dateRange.from && dateRange.to) {
+      days = Math.max(
+        1,
+        Math.round((dateRange.to - dateRange.from) / (1000 * 60 * 60 * 24)),
+      );
+    } else if (filtered.length > 0) {
+      const timestamps = filtered.map((t) =>
+        new Date(t.transaction_date).getTime(),
+      );
+      days = Math.max(
+        1,
+        Math.round(
+          (Math.max(...timestamps) - Math.min(...timestamps)) /
+            (1000 * 60 * 60 * 24),
+        ) + 1,
+      );
+    }
+    const avgDailySpend = totalOut / days;
+
+    let savingsRateDelta = null;
+    if (dateRange.from) {
+      const periodMs =
+        (dateRange.to ?? new Date()).getTime() - dateRange.from.getTime();
+      const prevFrom = new Date(dateRange.from.getTime() - periodMs);
+      const prevTo = dateRange.from;
+      const prevFiltered = transactions
+        .filter((t) => activeTab === "ALL" || t.category === activeTab)
+        .filter((t) => {
+          const d = new Date(t.transaction_date + "T00:00:00");
+          return d >= prevFrom && d < prevTo;
+        });
+      const prevIn = prevFiltered
+        .filter((t) => INCOME_TYPES.has(t.category))
+        .reduce((s, t) => s + parseFloat(t.amount), 0);
+      const prevOut = prevFiltered
+        .filter((t) => !INCOME_TYPES.has(t.category))
+        .reduce((s, t) => s + parseFloat(t.amount), 0);
+      if (prevIn > 0 && savingsRate !== null) {
+        savingsRateDelta = savingsRate - ((prevIn - prevOut) / prevIn) * 100;
+      }
+    }
+
+    let avgDailySpendDelta = null;
+    if (dateRange.from) {
+      const periodMs =
+        (dateRange.to ?? new Date()).getTime() - dateRange.from.getTime();
+      const prevFrom = new Date(dateRange.from.getTime() - periodMs);
+      const prevTo = dateRange.from;
+      const prevTotalOut = transactions
+        .filter((t) => activeTab === "ALL" || t.category === activeTab)
+        .filter((t) => {
+          const d = new Date(t.transaction_date + "T00:00:00");
+          return d >= prevFrom && d < prevTo;
+        })
+        .filter((t) => !INCOME_TYPES.has(t.category))
+        .reduce((s, t) => s + parseFloat(t.amount), 0);
+      avgDailySpendDelta = avgDailySpend - prevTotalOut / days;
+    }
+
+    const categoryTotal = totalIn + totalOut;
+    let categoryDelta = null;
+    let pctOfTotal = null;
+    if (activeTab !== "ALL") {
+      const isIncomeCategory = INCOME_TYPES.has(activeTab);
+      const allPeriodTotal = transactions
+        .filter((t) => {
+          if (!dateRange.from && !dateRange.to) return true;
+          const d = new Date(t.transaction_date + "T00:00:00");
+          if (dateRange.from && d < dateRange.from) return false;
+          if (dateRange.to && d > dateRange.to) return false;
+          return true;
+        })
+        .filter((t) =>
+          isIncomeCategory
+            ? INCOME_TYPES.has(t.category)
+            : !INCOME_TYPES.has(t.category),
+        )
+        .reduce((s, t) => s + parseFloat(t.amount), 0);
+      if (allPeriodTotal > 0)
+        pctOfTotal = (categoryTotal / allPeriodTotal) * 100;
+
+      if (dateRange.from) {
+        const periodMs =
+          (dateRange.to ?? new Date()).getTime() - dateRange.from.getTime();
+        const prevFrom = new Date(dateRange.from.getTime() - periodMs);
+        const prevTo = dateRange.from;
+        const prevTotal = transactions
+          .filter((t) => t.category === activeTab)
+          .filter((t) => {
+            const d = new Date(t.transaction_date + "T00:00:00");
+            return d >= prevFrom && d < prevTo;
+          })
+          .reduce((s, t) => s + parseFloat(t.amount), 0);
+        if (prevTotal > 0)
+          categoryDelta = ((categoryTotal - prevTotal) / prevTotal) * 100;
+      }
+    }
+
+    return {
+      totalIn,
+      totalOut,
+      savingsRate,
+      savingsRateDelta,
+      avgDailySpend,
+      avgDailySpendDelta,
+      categoryTotal,
+      pctOfTotal,
+      categoryDelta,
+    };
+  }, [filtered, transactions, activeTab, dateRange]);
+
+  const pieData = useMemo(() => {
+    if (activeTab !== "ALL") {
+      const grouped = {};
+      filtered.forEach((t) => {
+        grouped[t.name] = (grouped[t.name] ?? 0) + parseFloat(t.amount);
+      });
+      return Object.entries(grouped)
+        .sort((a, b) => b[1] - a[1])
+        .map(([name, value], i) => ({
+          name,
+          value: parseFloat(value.toFixed(2)),
+          color: `color-mix(in srgb, ${activeColor} ${100 - i * 10}%, black)`,
+        }));
+    }
+    const grouped = {};
+    filtered.forEach((t) => {
+      grouped[t.category] = (grouped[t.category] ?? 0) + parseFloat(t.amount);
+    });
+    return Object.entries(grouped).map(([cat, value]) => ({
+      name: CATEGORY_CONFIG[cat]?.label ?? cat,
+      value: parseFloat(value.toFixed(2)),
+      color: `var(--category-${cat.toLowerCase()})`,
+    }));
+  }, [filtered, activeTab]);
+
+  const barData = useMemo(() => {
+    if (activeTab !== "ALL") {
+      const grouped = {};
+      filtered.forEach((t) => {
+        grouped[t.name] = (grouped[t.name] ?? 0) + parseFloat(t.amount);
+      });
+      return Object.entries(grouped)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 10)
+        .map(([name, total]) => ({
+          month: name,
+          total: parseFloat(total.toFixed(2)),
+        }));
+    }
+    const grouped = {};
+    filtered.forEach((t) => {
+      const month = new Date(t.transaction_date).toLocaleDateString("en-US", {
+        month: "short",
+        year: "2-digit",
+      });
+      if (!grouped[month]) grouped[month] = { income: 0, expense: 0 };
+      if (INCOME_TYPES.has(t.category)) {
+        grouped[month].income += parseFloat(t.amount);
+      } else {
+        grouped[month].expense += parseFloat(t.amount);
+      }
+    });
+    return Object.entries(grouped)
+      .sort((a, b) => new Date("1 " + a[0]) - new Date("1 " + b[0]))
+      .map(([month, { income, expense }]) => ({
+        month,
+        income: parseFloat(income.toFixed(2)),
+        expense: parseFloat(expense.toFixed(2)),
+      }));
+  }, [filtered, activeTab]);
+
+  const sorted = useMemo(
+    () =>
+      [...filtered].sort(
+        (a, b) => new Date(b.transaction_date) - new Date(a.transaction_date),
+      ),
+    [filtered],
+  );
+  const paginated = sorted.slice((page - 1) * perPage, page * perPage);
+
+  useEffect(() => {
+    setPage(1);
+  }, [filtered, perPage]);
+
+  const inputStyle = { backgroundColor: bg, borderColor: border, color: text };
+
+  return (
+    <div className="min-h-dvh" style={{ backgroundColor: bg, color: text }}>
+      {/* Header */}
+      <header
+        className="border-b sticky top-0 z-20 px-4 py-3 flex items-center gap-3"
+        style={{ backgroundColor: surface, borderColor: border }}
+      >
+        <span
+          className="font-mono text-2xl font-bold bg-clip-text text-transparent shrink-0"
+          style={{
+            backgroundImage: dark
+              ? "linear-gradient(to right, #ffffff, #d1d5db, #9ca3af)"
+              : "linear-gradient(to right, #000000, #374151, #6b7280)",
+          }}
+        >
+          FinSight
+        </span>
+        <input
+          disabled
+          placeholder="Search coming soon..."
+          className="flex-1 min-w-0 rounded-xl px-3 py-1.5 text-sm cursor-not-allowed"
+          style={{
+            backgroundColor: bg,
+            borderColor: border,
+            color: muted,
+            border: `1px solid ${border}`,
+          }}
+        />
+        <button
+          onClick={() => document.documentElement.classList.toggle("dark")}
+          className="p-2 rounded-lg cursor-pointer shrink-0"
+          aria-label="Toggle theme"
+        >
+          {dark ? (
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <circle cx="12" cy="12" r="4" />
+              <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
+            </svg>
+          ) : (
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
+            </svg>
+          )}
+        </button>
+      </header>
+
+      {/* Mode toggle */}
+      <div className="px-4 pt-4 pb-0 flex justify-center">
+        <div
+          className="rounded-xl p-1 flex w-full max-w-xs"
+          style={{ backgroundColor: bg, border: `1px solid ${border}` }}
+        >
+          {["Quick Entry", "Analytics"].map((label, i) => {
+            const active = i === 0 ? quickMode : !quickMode;
+            return (
+              <button
+                key={label}
+                onClick={() => setQuickMode(i === 0)}
+                className="flex-1 py-2 rounded-lg text-sm font-semibold cursor-pointer"
+                style={{
+                  backgroundColor: active ? surface : "transparent",
+                  color: active ? text : muted,
+                  boxShadow: active ? "0 1px 6px rgba(0,0,0,0.18)" : "none",
+                  transition:
+                    "background-color 200ms ease, color 200ms ease, box-shadow 200ms ease",
+                }}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <main className="px-4 pt-4 pb-8 space-y-4">
+        {quickMode ? (
+          <>
+            {/* Quick entry card */}
+            <div
+              className="rounded-2xl border p-4"
+              style={{ backgroundColor: surface, borderColor: quickColor }}
+            >
+              <p className="text-base font-semibold mb-3">Quick Entry</p>
+
+              <select
+                value={quickCat}
+                onChange={(e) => setQuickCat(e.target.value)}
+                className="w-full rounded-xl px-4 py-2.5 text-sm font-semibold focus:outline-none mb-3 cursor-pointer border"
+                style={inputStyle}
+              >
+                {Object.entries(CATEGORY_CONFIG).map(([key, cfg]) => (
+                  <option key={key} value={key}>
+                    {cfg.label}
+                  </option>
+                ))}
+              </select>
+
+              <form onSubmit={handleQuickSubmit} className="space-y-3">
+                <input
+                  type="text"
+                  placeholder="Name (e.g. Groceries, Utilities…)"
+                  value={quickForm.name}
+                  onChange={(e) =>
+                    quickCat !== "TIPS" &&
+                    setQuickForm((f) => ({ ...f, name: e.target.value }))
+                  }
+                  required={quickCat !== "TIPS"}
+                  disabled={quickCat === "TIPS"}
+                  className="w-full rounded-xl px-4 py-2.5 text-sm focus:outline-none border"
+                  style={
+                    quickCat === "TIPS"
+                      ? {
+                          ...inputStyle,
+                          backgroundImage: `repeating-linear-gradient(45deg, transparent, transparent 5px, color-mix(in srgb, ${text} 10%, transparent) 5px, color-mix(in srgb, ${text} 10%, transparent) 10px)`,
+                          cursor: "not-allowed",
+                          opacity: 0.5,
+                        }
+                      : inputStyle
+                  }
+                />
+                <div className="grid grid-cols-[auto_1fr] gap-3">
+                  <input
+                    type="number"
+                    placeholder="0.00"
+                    value={quickForm.amount}
+                    onChange={(e) =>
+                      setQuickForm((f) => ({ ...f, amount: e.target.value }))
+                    }
+                    required
+                    min="0.01"
+                    step="0.01"
+                    className="w-full min-w-0 rounded-xl px-4 py-2.5 text-sm focus:outline-none border"
+                    style={inputStyle}
+                  />
+                  <input
+                    type="date"
+                    value={quickForm.transaction_date}
+                    onChange={(e) =>
+                      setQuickForm((f) => ({
+                        ...f,
+                        transaction_date: e.target.value,
+                      }))
+                    }
+                    required
+                    className="min-w-0 rounded-xl px-3 py-2.5 text-sm focus:outline-none border"
+                    style={inputStyle}
+                  />
+                </div>
+                {quickError && (
+                  <p className="text-xs text-red-500">{quickError}</p>
+                )}
+                <button
+                  type="submit"
+                  disabled={quickLoading}
+                  className="w-full py-2.5 rounded-xl text-sm font-bold tracking-wide disabled:opacity-50 transition-all cursor-pointer active:scale-95 border"
+                  style={{
+                    color: quickColor,
+                    borderColor: quickColor,
+                    backgroundColor: `color-mix(in srgb, ${quickColor} 12%, transparent)`,
+                    boxShadow: `0 0 0 2px color-mix(in srgb, ${quickColor} 20%, transparent)`,
+                  }}
+                >
+                  {quickLoading
+                    ? "Saving…"
+                    : `Add ${["DEBT", "INCOME"].includes(quickCat) ? CATEGORY_CONFIG[quickCat].label : CATEGORY_CONFIG[quickCat].label.replace(/s$/, "")}`}
+                </button>
+              </form>
+            </div>
+
+            {/* Recent */}
+            <div
+              className="rounded-2xl border"
+              style={{ backgroundColor: surface, borderColor: border }}
+            >
+              <p
+                className="px-4 py-3 text-base font-semibold border-b"
+                style={{ borderColor: border }}
+              >
+                Recent
+              </p>
+              {recent.length === 0 ? (
+                <p
+                  className="px-4 py-8 text-center text-sm"
+                  style={{ color: muted }}
+                >
+                  No transactions yet
+                </p>
+              ) : (
+                recent.map((t) => {
+                  const isIncome = INCOME_TYPES.has(t.category);
+                  return (
+                    <div
+                      key={t.id}
+                      className="px-4 py-3 border-t flex items-center gap-3"
+                      style={{ borderColor: border }}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{t.name}</p>
+                        <p className="text-xs" style={{ color: muted }}>
+                          <span
+                            className="font-medium"
+                            style={{
+                              color: `var(--category-${t.category.toLowerCase()})`,
+                            }}
+                          >
+                            {CATEGORY_CONFIG[t.category]?.label}
+                          </span>
+                          {" · "}
+                          {new Date(t.transaction_date).toLocaleDateString(
+                            "en-US",
+                            { month: "short", day: "numeric" },
+                          )}
+                        </p>
+                      </div>
+                      <p
+                        className="text-sm font-bold shrink-0"
+                        style={{
+                          color: isIncome
+                            ? "var(--category-income)"
+                            : "var(--category-expense)",
+                        }}
+                      >
+                        {isIncome ? "+" : "-"}
+                        {fmt(t.amount)}
+                      </p>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </>
+        ) : (
+          <>
+            {/* Category + date preset dropdowns */}
+            <div className="flex flex-col gap-2">
+              <div className="grid grid-cols-2 gap-3">
+                <select
+                  value={activeTab}
+                  onChange={(e) => setActiveTab(e.target.value)}
+                  className="rounded-xl px-3 py-2 text-xs font-semibold border cursor-pointer w-full"
+                  style={{
+                    color: activeColor,
+                    borderColor: activeColor,
+                    backgroundColor: dark
+                      ? `color-mix(in srgb, ${activeColor} 12%, transparent)`
+                      : "var(--light-surface)",
+                    boxShadow: `0 0 0 2px color-mix(in srgb, ${activeColor} 20%, transparent)`,
+                    colorScheme: dark ? "dark" : "light",
+                  }}
+                >
+                  {CATEGORIES.map((cat) => (
+                    <option
+                      key={cat}
+                      value={cat}
+                      style={{ backgroundColor: "#1a1a1a", color: "#fff" }}
+                    >
+                      {cat === "ALL" ? "All" : CATEGORY_CONFIG[cat].label}
+                    </option>
+                  ))}
+                </select>
+
+                <select
+                  value={activePreset ?? "custom"}
+                  onChange={(e) => handlePreset(e.target.value)}
+                  className="rounded-xl px-3 py-2 text-xs font-semibold border cursor-pointer w-full"
+                  style={{
+                    color: activeColor,
+                    borderColor: activeColor,
+                    backgroundColor: dark
+                      ? `color-mix(in srgb, ${activeColor} 12%, transparent)`
+                      : "var(--light-surface)",
+                    boxShadow: `0 0 0 2px color-mix(in srgb, ${activeColor} 20%, transparent)`,
+                    colorScheme: dark ? "dark" : "light",
+                  }}
+                >
+                  {PRESETS.map((label) => (
+                    <option
+                      key={label}
+                      value={label}
+                      style={{ backgroundColor: "#1a1a1a", color: "#fff" }}
+                    >
+                      {label}
+                    </option>
+                  ))}
+                  {!activePreset && (
+                    <option
+                      value="custom"
+                      disabled
+                      style={{ backgroundColor: "#1a1a1a", color: "#fff" }}
+                    >
+                      Custom
+                    </option>
+                  )}
+                </select>
+              </div>
+
+              {/* Date Range Inputs */}
+              <div className="grid grid-cols-2 gap-3 items-center">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span
+                    className="text-[10px] uppercase font-bold w-7 shrink-0 pr-10"
+                    style={{ color: muted }}
+                  >
+                    From
+                  </span>
+                  <div className="relative flex-1 min-w-0 overflow-hidden">
+                    <input
+                      type="date"
+                      value={fromVal}
+                      onChange={(e) => {
+                        setFromVal(e.target.value);
+                        handleCustom(e.target.value, toVal);
+                      }}
+                      className="rounded-xl px-1 py-2 text-[10px] font-semibold border w-[93%]"
+                      style={{
+                        backgroundColor: dark
+                          ? "var(--dark-bg)"
+                          : "var(--light-bg)",
+                        borderColor: border,
+                        color: text,
+                        colorScheme: dark ? "dark" : "light",
+                      }}
+                    />
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 min-w-0">
+                  <span
+                    className="text-[10px] uppercase font-bold w-7 shrink-0"
+                    style={{ color: muted }}
+                  >
+                    To
+                  </span>
+                  <div className="relative flex-1 min-w-0 overflow-hidden">
+                    <input
+                      type="date"
+                      value={toVal}
+                      onChange={(e) => {
+                        setToVal(e.target.value);
+                        handleCustom(fromVal, e.target.value);
+                      }}
+                      className="rounded-xl px-1 py-2 text-[10px] font-semibold border w-[93%]"
+                      style={{
+                        backgroundColor: dark
+                          ? "var(--dark-bg)"
+                          : "var(--light-bg)",
+                        borderColor: border,
+                        color: text,
+                        colorScheme: dark ? "dark" : "light",
+                      }}
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Summary 2×2 */}
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                { label: "INCOME", value: fmt(summary.totalIn) },
+                { label: "EXPENSES", value: fmt(summary.totalOut) },
+                activeTab === "ALL"
+                  ? {
+                      label: "SAVINGS RATE",
+                      value:
+                        summary.savingsRate !== null
+                          ? `${summary.savingsRate.toFixed(1)}%`
+                          : "—",
+                      deltaLabel:
+                        summary.savingsRateDelta != null
+                          ? `${summary.savingsRateDelta >= 0 ? "↑" : "↓"} ${Math.abs(summary.savingsRateDelta).toFixed(1)}% vs last month`
+                          : null,
+                      deltaUp: summary.savingsRateDelta >= 0,
+                    }
+                  : {
+                      label: "VS LAST MONTH",
+                      value:
+                        summary.categoryDelta != null
+                          ? `${summary.categoryDelta >= 0 ? "+" : ""}${summary.categoryDelta.toFixed(1)}%`
+                          : "—",
+                      deltaLabel:
+                        summary.categoryDelta != null
+                          ? summary.categoryDelta >= 0
+                            ? "↑ higher than last month"
+                            : "↓ lower than last month"
+                          : null,
+                      deltaUp: INCOME_TYPES.has(activeTab)
+                        ? summary.categoryDelta >= 0
+                        : summary.categoryDelta <= 0,
+                      valueColor:
+                        summary.categoryDelta != null
+                          ? (
+                              INCOME_TYPES.has(activeTab)
+                                ? summary.categoryDelta >= 0
+                                : summary.categoryDelta <= 0
+                            )
+                            ? "var(--category-income)"
+                            : "var(--category-expense)"
+                          : undefined,
+                    },
+                activeTab === "ALL"
+                  ? {
+                      label: "AVG DAILY SPEND",
+                      value: fmt(summary.avgDailySpend),
+                      deltaLabel:
+                        summary.avgDailySpendDelta != null
+                          ? `${summary.avgDailySpendDelta >= 0 ? "↑" : "↓"} ${fmt(Math.abs(summary.avgDailySpendDelta))} vs last month`
+                          : null,
+                      deltaUp: summary.avgDailySpendDelta <= 0,
+                    }
+                  : {
+                      label: INCOME_TYPES.has(activeTab)
+                        ? "% OF INCOME"
+                        : "% OF SPENDING",
+                      value:
+                        summary.pctOfTotal != null
+                          ? `${summary.pctOfTotal.toFixed(1)}%`
+                          : "—",
+                    },
+              ].map(({ label, value, deltaLabel, deltaUp, valueColor }) => (
+                <div
+                  key={label}
+                  className="rounded-2xl px-4 py-4 border"
+                  style={{
+                    backgroundColor: surface,
+                    borderColor: border,
+                    color: text,
+                    borderTopColor: activeColor,
+                    borderTopWidth: "3px",
+                  }}
+                >
+                  <p
+                    className="text-xs font-medium mb-1"
+                    style={{ color: muted }}
+                  >
+                    {label}
+                  </p>
+                  <p
+                    className="text-lg font-bold tracking-tight"
+                    style={valueColor ? { color: valueColor } : undefined}
+                  >
+                    {value}
+                  </p>
+                  {deltaLabel != null && (
+                    <p
+                      className="text-xs font-semibold mt-1"
+                      style={{
+                        color: deltaUp
+                          ? "var(--category-income)"
+                          : "var(--category-expense)",
+                      }}
+                    >
+                      {deltaLabel}
+                    </p>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {/* Pie chart */}
+            {pieData.length > 0 && (
+              <div
+                className="rounded-2xl border p-4"
+                style={{ backgroundColor: surface, borderColor: activeColor }}
+              >
+                <p className="text-base font-semibold mb-3">
+                  {activeTab === "ALL"
+                    ? "Breakdown By Category"
+                    : `${CATEGORY_CONFIG[activeTab].label} Breakdown`}
+                </p>
+                <ResponsiveContainer
+                  width="100%"
+                  height={280}
+                  style={{ pointerEvents: "none" }}
+                >
+                  <PieChart>
+                    <Pie
+                      data={pieData}
+                      dataKey="value"
+                      nameKey="name"
+                      cx="50%"
+                      cy="40%"
+                      outerRadius={80}
+                      strokeWidth={0}
+                    >
+                      {pieData.map((entry) => (
+                        <Cell key={entry.name} fill={entry.color} />
+                      ))}
+                    </Pie>
+                    <Tooltip {...tooltipProps} formatter={(v) => fmt(v)} />
+                    <Legend iconType="circle" iconSize={8} />
+                  </PieChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+
+            {/* Bar chart */}
+            {barData.length > 0 && (
+              <div
+                className="rounded-2xl border p-4"
+                style={{ backgroundColor: surface, borderColor: activeColor }}
+              >
+                <p className="text-base font-semibold mb-3">
+                  {activeTab === "ALL"
+                    ? "Monthly Totals"
+                    : `Top ${CATEGORY_CONFIG[activeTab].label} by Name`}
+                </p>
+                <ResponsiveContainer
+                  width="100%"
+                  height={200}
+                  style={{ pointerEvents: "none" }}
+                >
+                  <BarChart data={barData} barSize={20}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                    <XAxis
+                      dataKey="month"
+                      axisLine={false}
+                      tickLine={false}
+                      interval={0}
+                      height={activeTab !== "ALL" ? 50 : 24}
+                      tick={
+                        activeTab !== "ALL"
+                          ? (props) => {
+                              const val = props.payload?.value ?? "";
+                              const label =
+                                val.length > 10 ? val.slice(0, 10) + "…" : val;
+                              return (
+                                <text
+                                  x={props.x}
+                                  y={props.y}
+                                  dy={6}
+                                  textAnchor="end"
+                                  fontSize={11}
+                                  style={{ fill: text }}
+                                  transform={`rotate(-35, ${props.x}, ${props.y})`}
+                                >
+                                  {label}
+                                </text>
+                              );
+                            }
+                          : { fontSize: 11, fill: text }
+                      }
+                    />
+                    <YAxis
+                      axisLine={false}
+                      tickLine={false}
+                      tickFormatter={(v) => `$${v}`}
+                      tick={{ fontSize: 10, fill: text }}
+                    />
+                    <Tooltip
+                      {...tooltipProps}
+                      formatter={(v) => fmt(v)}
+                      cursor={false}
+                    />
+                    {activeTab === "ALL" ? (
+                      <>
+                        <Bar
+                          dataKey="income"
+                          fill="var(--category-income)"
+                          radius={[5, 5, 0, 0]}
+                          barSize={14}
+                        />
+                        <Bar
+                          dataKey="expense"
+                          fill="var(--category-expense)"
+                          radius={[5, 5, 0, 0]}
+                          barSize={14}
+                        />
+                      </>
+                    ) : (
+                      <Bar
+                        dataKey="total"
+                        fill={activeColor}
+                        radius={[5, 5, 0, 0]}
+                        barSize={20}
+                      />
+                    )}
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+
+            {/* Transaction list */}
+            <div
+              className="rounded-2xl border"
+              style={{ backgroundColor: surface, borderColor: activeColor }}
+            >
+              <p
+                className="px-4 py-3 text-base font-semibold border-b"
+                style={{ borderColor: border }}
+              >
+                Transactions
+              </p>
+              {sorted.length === 0 ? (
+                <p
+                  className="px-4 py-8 text-center text-sm"
+                  style={{ color: muted }}
+                >
+                  No transactions
+                </p>
+              ) : (
+                paginated.map((t) => {
+                  const isIncome = INCOME_TYPES.has(t.category);
+                  return (
+                    <div
+                      key={t.id}
+                      className="px-4 py-3 border-t flex items-center gap-3"
+                      style={{ borderColor: border }}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{t.name}</p>
+                        <p className="text-xs" style={{ color: muted }}>
+                          <span
+                            className="font-medium"
+                            style={{
+                              color: `var(--category-${t.category.toLowerCase()})`,
+                            }}
+                          >
+                            {CATEGORY_CONFIG[t.category]?.label}
+                          </span>
+                          {" · "}
+                          {new Date(t.transaction_date).toLocaleDateString(
+                            "en-US",
+                            {
+                              month: "short",
+                              day: "numeric",
+                              year: "numeric",
+                            },
+                          )}
+                        </p>
+                      </div>
+                      <p
+                        className="text-sm font-bold shrink-0"
+                        style={{
+                          color: isIncome
+                            ? "var(--category-income)"
+                            : "var(--category-expense)",
+                        }}
+                      >
+                        {isIncome ? "+" : "-"}
+                        {fmt(t.amount)}
+                      </p>
+                    </div>
+                  );
+                })
+              )}
+              {sorted.length > 0 && (
+                <div
+                  className="px-4 py-3 border-t flex items-center justify-between text-xs"
+                  style={{ borderColor: border, color: muted }}
+                >
+                  <div className="flex items-center gap-2">
+                    <span>Rows:</span>
+                    {[10, 20, 50].map((n) => (
+                      <button
+                        key={n}
+                        onClick={() => setPerPage(n)}
+                        className="px-2 py-1 rounded-lg border font-semibold cursor-pointer transition-all duration-150"
+                        style={{
+                          color: perPage === n ? activeColor : muted,
+                          borderColor: perPage === n ? activeColor : border,
+                          backgroundColor:
+                            perPage === n
+                              ? `color-mix(in srgb, ${activeColor} 12%, transparent)`
+                              : "transparent",
+                        }}
+                      >
+                        {n}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span>
+                      {`${(page - 1) * perPage + 1}–${Math.min(page * perPage, sorted.length)}`}{" "}
+                      of {sorted.length}
+                    </span>
+                    <button
+                      onClick={() => setPage(page - 1)}
+                      disabled={page === 1}
+                      className="px-2 py-1 rounded-lg border font-semibold cursor-pointer disabled:opacity-30"
+                      style={{ color: muted, borderColor: border }}
+                    >
+                      ←
+                    </button>
+                    <button
+                      onClick={() => setPage(page + 1)}
+                      disabled={page * perPage >= sorted.length}
+                      className="px-2 py-1 rounded-lg border font-semibold cursor-pointer disabled:opacity-30"
+                      style={{ color: muted, borderColor: border }}
+                    >
+                      →
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </>
+        )}
+      </main>
+
+      <Footer />
+    </div>
+  );
+}

@@ -1,0 +1,34 @@
+[project]
+name = "finsight"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+    # API
+    "fastapi",
+    "uvicorn",
+
+    # Database
+    "sqlalchemy[asyncio]",
+    "alembic",
+    "asyncpg",
+
+    # Auth
+    "pyjwt",
+    "pwdlib[argon2]",
+    "authlib",
+    "httpx",
+
+    # Validation & config
+    "pydantic",
+    "pydantic-settings",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "httpx",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"

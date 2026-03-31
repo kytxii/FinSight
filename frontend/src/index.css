@@ -1,0 +1,45 @@
+@import "tailwindcss";
+
+:root {
+  /* Light */
+  --light-bg: #d7d7d7;
+  --light-surface: #e6e6e6;
+  --light-border: #b8b8b8;
+  --light-text: #111111;
+
+  /* Category colors — light mode (darker shades) */
+  --category-all: #9e9e9e;
+  --category-income: #43a047;
+  --category-expense: #e53935;
+  --category-bill: #1e88e5;
+  --category-subscription: #8e24aa;
+  --category-savings: #b0a400;
+  --category-debt: #fb8c00;
+  --category-reimbursement: #e91e63;
+  --category-tips: #00897b;
+}
+
+.dark {
+  /* Dark */
+  color-scheme: dark;
+  --dark-bg: #191919;
+  --dark-surface: #252527;
+  --dark-border: #4c4c4c;
+  --dark-text: #ffffff;
+
+  /* Category colors — dark mode (original lighter shades) */
+  --category-all: #e0e0e0;
+  --category-income: #81c784;
+  --category-expense: #e57373;
+  --category-bill: #64b5f6;
+  --category-subscription: #ba68c8;
+  --category-savings: #fff176;
+  --category-debt: #ffb74d;
+  --category-reimbursement: #f06292;
+  --category-tips: #4db6ac;
+}
+
+* {
+  font-family: "Quicksand", system-ui, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
