@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+sqlalchemy[asyncio]
+alembic
+asyncpg
+pyjwt
+pwdlib[argon2]
+authlib
+httpx
+pydantic
+pydantic-settings
