@@ -8,6 +8,8 @@ from app.schemas import CreateTransaction, TransactionResponse, UpdateTransactio
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])
 
+SYSTEM_USER_ID = UUID("00000000-0000-0000-0000-000000000001")
+
 @router.get("/", response_model=list[TransactionResponse])
 async def get_transactions(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(Transaction))
@@ -26,7 +28,7 @@ async def get_transaction_by_id(transaction_id: UUID, db: AsyncSession = Depends
 @router.post("/", response_model=TransactionResponse)
 async def create_transaction(transaction: CreateTransaction, db: AsyncSession = Depends(get_db)):
     data = transaction.model_dump()
-    db_transaction = Transaction(**data)
+    db_transaction = Transaction(**data, created_by=SYSTEM_USER_ID, updated_by=SYSTEM_USER_ID)
 
     db.add(db_transaction)
     await db.commit()

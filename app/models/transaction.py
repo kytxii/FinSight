@@ -16,8 +16,8 @@ class Transaction(Base):
     transaction_date: Mapped[date] = mapped_column(Date, nullable=False)
     category: Mapped[Category] = mapped_column(CategoryEnum(Category), nullable=False)
 
-    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
-    updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     
     created_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
     updated_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
