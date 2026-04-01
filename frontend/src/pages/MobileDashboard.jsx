@@ -12,8 +12,7 @@ import {
   YAxis,
   CartesianGrid,
 } from "recharts";
-// import { getTransactions, createTransaction } from "../api/transactions";
-import { TEMP_DB } from "../utils/temp_db";
+import { getTransactions, createTransaction } from "../api/transactions";
 import {
   CATEGORIES,
   CATEGORY_CONFIG,
@@ -33,7 +32,7 @@ export default function MobileDashboard() {
   const text = dark ? "var(--dark-text)" : "var(--light-text)";
   const muted = `color-mix(in srgb, ${text} 50%, transparent)`;
 
-  const [transactions, setTransactions] = useState(TEMP_DB);
+  const [transactions, setTransactions] = useState([]);
   const [quickMode, setQuickMode] = useState(true);
   const [quickCat, setQuickCat] = useState("EXPENSE");
   const [quickForm, setQuickForm] = useState({
@@ -74,8 +73,12 @@ export default function MobileDashboard() {
     });
   }
 
+  useEffect(() => {
+    getTransactions().then((res) => setTransactions(res.data));
+  }, []);
+
   function refresh() {
-    setTransactions(TEMP_DB);
+    getTransactions().then((res) => setTransactions(res.data));
   }
 
   const activeColor = `var(--category-${activeTab.toLowerCase()})`;

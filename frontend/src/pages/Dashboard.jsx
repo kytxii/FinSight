@@ -13,8 +13,7 @@ import {
   YAxis,
   CartesianGrid,
 } from "recharts";
-// import { getTransactions } from "../api/transactions";
-import { TEMP_DB } from "../utils/temp_db";
+import { getTransactions } from "../api/transactions";
 import {
   CATEGORIES,
   CATEGORY_CONFIG,
@@ -32,7 +31,7 @@ import Footer from "../components/Footer";
 
 export default function Dashboard() {
   const dark = useTheme();
-  const [transactions, setTransactions] = useState(TEMP_DB);
+  const [transactions, setTransactions] = useState([]);
   const [activeTab, setActiveTab] = useState("ALL");
   const [showModal, setShowModal] = useState(false);
   const [page, setPage] = useState(1);
@@ -47,8 +46,12 @@ export default function Dashboard() {
     return { from, to };
   });
 
+  useEffect(() => {
+    getTransactions().then((res) => setTransactions(res.data));
+  }, []);
+
   function refreshTransactions() {
-    setTransactions(TEMP_DB);
+    getTransactions().then((res) => setTransactions(res.data));
   }
 
   const filtered = useMemo(() => {
