@@ -574,7 +574,10 @@ export default function MobileDashboard() {
 
               <select
                 value={quickCat}
-                onChange={(e) => setQuickCat(e.target.value)}
+                onChange={(e) => {
+                  setQuickCat(e.target.value);
+                  setQuickForm((f) => ({ ...f, name: e.target.value === "TIPS" ? "Cash" : "" }));
+                }}
                 className="w-full rounded-xl px-4 py-2.5 text-sm font-semibold focus:outline-none mb-3 cursor-pointer border"
                 style={inputStyle}
               >

@@ -55,7 +55,7 @@ export default function TransactionTable({ rows, onAdd, activeColor, page, perPa
             rows.map((t) => (
                 <tr key={t.id} className="border-t" style={{ borderColor: border }}>
                   <td className="px-6 py-4 text-base whitespace-nowrap" style={{ color: muted }}>
-                    {new Date(t.transaction_date).toLocaleDateString("en-US", {
+                    {new Date(t.transaction_date + "T00:00:00").toLocaleDateString("en-US", {
                       month: "short", day: "numeric", year: "numeric",
                     })}
                   </td>
