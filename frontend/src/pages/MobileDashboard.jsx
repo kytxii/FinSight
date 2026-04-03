@@ -576,7 +576,10 @@ export default function MobileDashboard() {
                 value={quickCat}
                 onChange={(e) => {
                   setQuickCat(e.target.value);
-                  setQuickForm((f) => ({ ...f, name: e.target.value === "TIPS" ? "Cash" : "" }));
+                  setQuickForm((f) => ({
+                    ...f,
+                    name: e.target.value === "TIPS" ? "Cash" : "",
+                  }));
                 }}
                 className="w-full rounded-xl px-4 py-2.5 text-sm font-semibold focus:outline-none mb-3 cursor-pointer border"
                 style={inputStyle}
@@ -809,7 +812,7 @@ export default function MobileDashboard() {
                         setFromVal(e.target.value);
                         handleCustom(e.target.value, toVal);
                       }}
-                      className="rounded-xl pl-3 pr-1 py-2 text-[10px] font-semibold border w-[93%]"
+                      className="rounded-xl pl-3 pr-1 py-2 text-[10px] font-semibold border w-[87%]"
                       style={{
                         backgroundColor: dark
                           ? "var(--dark-bg)"
@@ -837,7 +840,7 @@ export default function MobileDashboard() {
                         setToVal(e.target.value);
                         handleCustom(fromVal, e.target.value);
                       }}
-                      className="rounded-xl pl-3 pr-1 py-2 text-[10px] font-semibold border w-[93%]"
+                      className="rounded-xl pl-3 pr-1 py-2 text-[10px] font-semibold border w-[87%]"
                       style={{
                         backgroundColor: dark
                           ? "var(--dark-bg)"
