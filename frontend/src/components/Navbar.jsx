@@ -1,8 +1,12 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useTheme } from "../hooks/useTheme";
+import { useAuth } from "../context/AuthContext";
 
 export default function Navbar() {
   const dark = useTheme();
+  const { logout } = useAuth();
+  const navigate = useNavigate();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [themeHovered, setThemeHovered] = useState(false);
   const [menuHovered, setMenuHovered] = useState(false);
@@ -197,6 +201,7 @@ export default function Navbar() {
           <button
             className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium cursor-pointer transition-colors text-left"
             style={{ color: "var(--category-expense)" }}
+            onClick={() => { logout(); navigate("/login"); }}
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
