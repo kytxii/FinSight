@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   PieChart,
   Pie,
@@ -20,11 +21,15 @@ import {
   fmt,
 } from "../utils/finance";
 import { useTheme } from "../hooks/useTheme";
+import { useAuth } from "../context/AuthContext";
 import { PRESETS, getPresetRange } from "../components/DateRangeFilter";
 import Footer from "../components/Footer";
 
 export default function MobileDashboard() {
   const dark = useTheme();
+  const { logout } = useAuth();
+  const navigate = useNavigate();
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   const bg = dark ? "var(--dark-bg)" : "var(--light-bg)";
   const surface = dark ? "var(--dark-surface)" : "var(--light-surface)";
@@ -170,7 +175,7 @@ export default function MobileDashboard() {
         ) + 1,
       );
     }
-    const avgDailySpend = totalOut / days;
+    const avgDailySpending = totalOut / days;
 
     let savingsRateDelta = null;
     if (dateRange.from) {
@@ -195,7 +200,7 @@ export default function MobileDashboard() {
       }
     }
 
-    let avgDailySpendDelta = null;
+    let avgDailySpendingDelta = null;
     if (dateRange.from) {
       const periodMs =
         (dateRange.to ?? new Date()).getTime() - dateRange.from.getTime();
@@ -209,7 +214,7 @@ export default function MobileDashboard() {
         })
         .filter((t) => !INCOME_TYPES.has(t.category))
         .reduce((s, t) => s + parseFloat(t.amount), 0);
-      avgDailySpendDelta = avgDailySpend - prevTotalOut / days;
+      avgDailySpendingDelta = avgDailySpending - prevTotalOut / days;
     }
 
     const categoryTotal = totalIn + totalOut;
@@ -256,8 +261,8 @@ export default function MobileDashboard() {
       totalOut,
       savingsRate,
       savingsRateDelta,
-      avgDailySpend,
-      avgDailySpendDelta,
+      avgDailySpending,
+      avgDailySpendingDelta,
       categoryTotal,
       pctOfTotal,
       categoryDelta,
@@ -404,7 +409,125 @@ export default function MobileDashboard() {
             </svg>
           )}
         </button>
+        <button
+          onClick={() => setDrawerOpen(true)}
+          className="p-2 rounded-lg cursor-pointer shrink-0"
+          aria-label="Open menu"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <line x1="3" y1="6" x2="21" y2="6" />
+            <line x1="3" y1="12" x2="21" y2="12" />
+            <line x1="3" y1="18" x2="21" y2="18" />
+          </svg>
+        </button>
       </header>
+
+      {/* Overlay */}
+      {drawerOpen && (
+        <div
+          className="fixed inset-0 z-40"
+          style={{ backgroundColor: "rgba(0,0,0,0.4)" }}
+          onClick={() => setDrawerOpen(false)}
+        />
+      )}
+
+      {/* Drawer */}
+      <div
+        className="fixed top-0 right-0 h-full w-72 z-50 flex flex-col border-l"
+        style={{
+          backgroundColor: surface,
+          borderColor: border,
+          color: text,
+          transform: drawerOpen ? "translateX(0)" : "translateX(100%)",
+          transition: "transform 250ms ease",
+        }}
+      >
+        <div
+          className="px-5 py-4 flex items-center justify-between border-b"
+          style={{ borderColor: border }}
+        >
+          <span className="text-sm font-semibold" style={{ color: muted }}>
+            Menu
+          </span>
+          <button
+            onClick={() => setDrawerOpen(false)}
+            className="p-1 rounded-lg cursor-pointer"
+            aria-label="Close menu"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M18 6 6 18M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="px-5 py-5 flex items-center gap-3">
+          <div
+            className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold shrink-0"
+            style={{
+              backgroundColor: `color-mix(in srgb, ${text} 12%, transparent)`,
+              color: text,
+            }}
+          >
+            U
+          </div>
+          <div>
+            <p className="text-sm font-semibold">Username</p>
+            <p className="text-xs" style={{ color: muted }}>
+              user@email.com
+            </p>
+          </div>
+        </div>
+
+        <div className="mx-5 border-t" style={{ borderColor: border }} />
+
+        <div className="px-3 py-3">
+          <button
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium cursor-pointer transition-colors text-left"
+            style={{ color: "var(--category-expense)" }}
+            onClick={() => {
+              logout();
+              navigate("/login");
+            }}
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+              <polyline points="16 17 21 12 16 7" />
+              <line x1="21" y1="12" x2="9" y2="12" />
+            </svg>
+            Log out
+          </button>
+        </div>
+      </div>
 
       {/* Mode toggle */}
       <div className="px-4 pt-4 pb-0 flex justify-center">
@@ -442,7 +565,12 @@ export default function MobileDashboard() {
               className="rounded-2xl border p-4"
               style={{ backgroundColor: surface, borderColor: quickColor }}
             >
-              <p className="text-base font-semibold mb-3">Quick Entry</p>
+              <p
+                className="text-base font-semibold mb-3"
+                style={{ color: text }}
+              >
+                Quick Entry
+              </p>
 
               <select
                 value={quickCat}
@@ -536,7 +664,7 @@ export default function MobileDashboard() {
             >
               <p
                 className="px-4 py-3 text-base font-semibold border-b"
-                style={{ borderColor: border }}
+                style={{ borderColor: border, color: text }}
               >
                 Recent
               </p>
@@ -557,7 +685,12 @@ export default function MobileDashboard() {
                       style={{ borderColor: border }}
                     >
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">{t.name}</p>
+                        <p
+                          className="text-sm font-medium truncate"
+                          style={{ color: text }}
+                        >
+                          {t.name}
+                        </p>
                         <p className="text-xs" style={{ color: muted }}>
                           <span
                             className="font-medium"
@@ -601,7 +734,7 @@ export default function MobileDashboard() {
                   onChange={(e) => setActiveTab(e.target.value)}
                   className="rounded-xl px-3 py-2 text-xs font-semibold border cursor-pointer w-full"
                   style={{
-                    color: activeColor,
+                    color: text,
                     borderColor: activeColor,
                     backgroundColor: dark
                       ? `color-mix(in srgb, ${activeColor} 12%, transparent)`
@@ -614,7 +747,7 @@ export default function MobileDashboard() {
                     <option
                       key={cat}
                       value={cat}
-                      style={{ backgroundColor: "#1a1a1a", color: "#fff" }}
+                      style={{ backgroundColor: bg, color: text }}
                     >
                       {cat === "ALL" ? "All" : CATEGORY_CONFIG[cat].label}
                     </option>
@@ -626,7 +759,7 @@ export default function MobileDashboard() {
                   onChange={(e) => handlePreset(e.target.value)}
                   className="rounded-xl px-3 py-2 text-xs font-semibold border cursor-pointer w-full"
                   style={{
-                    color: activeColor,
+                    color: text,
                     borderColor: activeColor,
                     backgroundColor: dark
                       ? `color-mix(in srgb, ${activeColor} 12%, transparent)`
@@ -639,7 +772,7 @@ export default function MobileDashboard() {
                     <option
                       key={label}
                       value={label}
-                      style={{ backgroundColor: "#1a1a1a", color: "#fff" }}
+                      style={{ backgroundColor: bg, color: text }}
                     >
                       {label}
                     </option>
@@ -648,7 +781,7 @@ export default function MobileDashboard() {
                     <option
                       value="custom"
                       disabled
-                      style={{ backgroundColor: "#1a1a1a", color: "#fff" }}
+                      style={{ backgroundColor: bg, color: text }}
                     >
                       Custom
                     </option>
@@ -673,11 +806,11 @@ export default function MobileDashboard() {
                         setFromVal(e.target.value);
                         handleCustom(e.target.value, toVal);
                       }}
-                      className="rounded-xl px-1 py-2 text-[10px] font-semibold border w-[93%]"
+                      className="rounded-xl pl-3 pr-1 py-2 text-[10px] font-semibold border w-[93%]"
                       style={{
                         backgroundColor: dark
                           ? "var(--dark-bg)"
-                          : "var(--light-bg)",
+                          : "var(--light-surface)",
                         borderColor: border,
                         color: text,
                         colorScheme: dark ? "dark" : "light",
@@ -701,11 +834,11 @@ export default function MobileDashboard() {
                         setToVal(e.target.value);
                         handleCustom(fromVal, e.target.value);
                       }}
-                      className="rounded-xl px-1 py-2 text-[10px] font-semibold border w-[93%]"
+                      className="rounded-xl pl-3 pr-1 py-2 text-[10px] font-semibold border w-[93%]"
                       style={{
                         backgroundColor: dark
                           ? "var(--dark-bg)"
-                          : "var(--light-bg)",
+                          : "var(--light-surface)",
                         borderColor: border,
                         color: text,
                         colorScheme: dark ? "dark" : "light",
@@ -762,13 +895,13 @@ export default function MobileDashboard() {
                     },
                 activeTab === "ALL"
                   ? {
-                      label: "AVG DAILY SPEND",
-                      value: fmt(summary.avgDailySpend),
+                      label: "AVG DAILY SPENDING",
+                      value: fmt(summary.avgDailySpending),
                       deltaLabel:
-                        summary.avgDailySpendDelta != null
-                          ? `${summary.avgDailySpendDelta >= 0 ? "↑" : "↓"} ${fmt(Math.abs(summary.avgDailySpendDelta))} vs last month`
+                        summary.avgDailySpendingDelta != null
+                          ? `${summary.avgDailySpendingDelta >= 0 ? "↑" : "↓"} ${fmt(Math.abs(summary.avgDailySpendingDelta))} vs last month`
                           : null,
-                      deltaUp: summary.avgDailySpendDelta <= 0,
+                      deltaUp: summary.avgDailySpendingDelta <= 0,
                     }
                   : {
                       label: INCOME_TYPES.has(activeTab)
@@ -793,13 +926,13 @@ export default function MobileDashboard() {
                 >
                   <p
                     className="text-xs font-medium mb-1"
-                    style={{ color: muted }}
+                    style={{ color: text }}
                   >
                     {label}
                   </p>
                   <p
                     className="text-lg font-bold tracking-tight"
-                    style={valueColor ? { color: valueColor } : undefined}
+                    style={valueColor ? { color: valueColor } : { color: text }}
                   >
                     {value}
                   </p>
@@ -825,7 +958,10 @@ export default function MobileDashboard() {
                 className="rounded-2xl border p-4"
                 style={{ backgroundColor: surface, borderColor: activeColor }}
               >
-                <p className="text-base font-semibold mb-3">
+                <p
+                  className="text-base font-semibold mb-3"
+                  style={{ color: text }}
+                >
                   {activeTab === "ALL"
                     ? "Breakdown By Category"
                     : `${CATEGORY_CONFIG[activeTab].label} Breakdown`}
@@ -862,7 +998,10 @@ export default function MobileDashboard() {
                 className="rounded-2xl border p-4"
                 style={{ backgroundColor: surface, borderColor: activeColor }}
               >
-                <p className="text-base font-semibold mb-3">
+                <p
+                  className="text-base font-semibold mb-3"
+                  style={{ color: text }}
+                >
                   {activeTab === "ALL"
                     ? "Monthly Totals"
                     : `Top ${CATEGORY_CONFIG[activeTab].label} by Name`}
@@ -949,7 +1088,7 @@ export default function MobileDashboard() {
             >
               <p
                 className="px-4 py-3 text-base font-semibold border-b"
-                style={{ borderColor: border }}
+                style={{ borderColor: border, color: text }}
               >
                 Transactions
               </p>
@@ -970,7 +1109,12 @@ export default function MobileDashboard() {
                       style={{ borderColor: border }}
                     >
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">{t.name}</p>
+                        <p
+                          className="text-sm font-medium truncate"
+                          style={{ color: text }}
+                        >
+                          {t.name}
+                        </p>
                         <p className="text-xs" style={{ color: muted }}>
                           <span
                             className="font-medium"
