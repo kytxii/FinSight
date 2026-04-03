@@ -165,7 +165,7 @@ export default function MobileDashboard() {
       );
     } else if (filtered.length > 0) {
       const timestamps = filtered.map((t) =>
-        new Date(t.transaction_date).getTime(),
+        new Date(t.transaction_date + "T00:00:00").getTime(),
       );
       days = Math.max(
         1,
@@ -310,7 +310,7 @@ export default function MobileDashboard() {
     }
     const grouped = {};
     filtered.forEach((t) => {
-      const month = new Date(t.transaction_date).toLocaleDateString("en-US", {
+      const month = new Date(t.transaction_date + "T00:00:00").toLocaleDateString("en-US", {
         month: "short",
         year: "2-digit",
       });
@@ -707,7 +707,7 @@ export default function MobileDashboard() {
                             {CATEGORY_CONFIG[t.category]?.label}
                           </span>
                           {" · "}
-                          {new Date(t.transaction_date).toLocaleDateString(
+                          {new Date(t.transaction_date + "T00:00:00").toLocaleDateString(
                             "en-US",
                             { month: "short", day: "numeric" },
                           )}
@@ -1131,7 +1131,7 @@ export default function MobileDashboard() {
                             {CATEGORY_CONFIG[t.category]?.label}
                           </span>
                           {" · "}
-                          {new Date(t.transaction_date).toLocaleDateString(
+                          {new Date(t.transaction_date + "T00:00:00").toLocaleDateString(
                             "en-US",
                             {
                               month: "short",
