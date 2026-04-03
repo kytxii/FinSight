@@ -11,7 +11,7 @@ def hash_password(password: str) -> str:
     return hashed_password
 
 def verify_password(plain: str, hashed: str) -> bool:
-    verified_password = pwd_hasher.verify(hashed, plain)
+    verified_password = pwd_hasher.verify(plain, hashed)
     return verified_password
 
 def create_access_token(subject: str) -> str:
