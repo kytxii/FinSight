@@ -6,20 +6,17 @@ dependencies = [
     # API
     "fastapi",
     "uvicorn",
-
     # Database
     "sqlalchemy[asyncio]",
     "alembic",
     "asyncpg",
-
     # Auth
     "pyjwt",
     "pwdlib[argon2]",
     "authlib",
     "httpx",
-
     # Validation & config
-    "pydantic",
+    "pydantic[email]",
     "pydantic-settings",
 ]
 
