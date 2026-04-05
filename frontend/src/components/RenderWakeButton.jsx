@@ -22,7 +22,7 @@ export default function RenderWakeButton() {
   useEffect(() => {
     const check = async () => {
       try {
-        await axios.get((import.meta.env.VITE_API_URL ?? "/api") + "/", { timeout: 5000 });
+        await axios.get((import.meta.env.VITE_API_URL ?? "/api") + "/", { timeout: 3000 });
         setStatus("gone");
       } catch {
         setStatus("idle");
