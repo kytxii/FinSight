@@ -24,6 +24,7 @@ import { useTheme } from "../hooks/useTheme";
 import { useAuth } from "../context/AuthContext";
 import { PRESETS, getPresetRange } from "../components/DateRangeFilter";
 import Footer from "../components/Footer";
+import RenderWakeButton from "../components/RenderWakeButton";
 
 export default function MobileDashboard() {
   const dark = useTheme();
@@ -1211,6 +1212,7 @@ export default function MobileDashboard() {
       </main>
 
       <Footer />
+      <RenderWakeButton />
     </div>
   );
 }

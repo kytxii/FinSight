@@ -28,6 +28,7 @@ import ChartCard from "../components/ChartCard";
 import TransactionTable from "../components/TransactionTable";
 import AddTransactionModal from "../components/AddTransactionModal";
 import Footer from "../components/Footer";
+import RenderWakeButton from "../components/RenderWakeButton";
 
 export default function Dashboard() {
   const dark = useTheme();
@@ -414,6 +415,8 @@ export default function Dashboard() {
       </main>
 
       <Footer />
+
+      <RenderWakeButton />
 
       {showModal && (
         <AddTransactionModal
