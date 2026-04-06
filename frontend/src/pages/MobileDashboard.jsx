@@ -276,13 +276,14 @@ export default function MobileDashboard() {
       filtered.forEach((t) => {
         grouped[t.name] = (grouped[t.name] ?? 0) + parseFloat(t.amount);
       });
-      return Object.entries(grouped)
-        .sort((a, b) => b[1] - a[1])
-        .map(([name, value], i) => ({
-          name,
-          value: parseFloat(value.toFixed(2)),
-          color: `color-mix(in srgb, ${activeColor} ${100 - i * 10}%, black)`,
-        }));
+      const entries = Object.entries(grouped).sort((a, b) => b[1] - a[1]);
+      const START = 100, END = 20;
+      const step = entries.length > 1 ? (START - END) / (entries.length - 1) : 0;
+      return entries.map(([name, value], i) => ({
+        name,
+        value: parseFloat(value.toFixed(2)),
+        color: `color-mix(in srgb, ${activeColor} ${Math.round(START - i * step)}%, black)`,
+      }));
     }
     const grouped = {};
     filtered.forEach((t) => {
@@ -984,7 +985,7 @@ export default function MobileDashboard() {
                       dataKey="value"
                       nameKey="name"
                       cx="50%"
-                      cy="40%"
+                      cy="50%"
                       outerRadius={80}
                       strokeWidth={0}
                     >
@@ -993,9 +994,16 @@ export default function MobileDashboard() {
                       ))}
                     </Pie>
                     <Tooltip {...tooltipProps} formatter={(v) => fmt(v)} />
-                    <Legend iconType="circle" iconSize={8} />
                   </PieChart>
                 </ResponsiveContainer>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 16px", justifyContent: "center", marginTop: 8 }}>
+                  {pieData.map((entry) => (
+                    <div key={entry.name} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ width: 9, height: 9, borderRadius: "50%", backgroundColor: entry.color, flexShrink: 0, display: "inline-block" }} />
+                      <span style={{ color: text, fontSize: 12 }}>{entry.name}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
 
