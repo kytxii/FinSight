@@ -23,7 +23,7 @@ export default function AddTransactionModal({
   const text = dark ? "var(--dark-text)" : "var(--light-text)";
   const input = dark ? "var(--dark-bg)" : "var(--light-bg)";
 
-  const today = new Date().toISOString().split("T")[0];
+  const today = new Date().toLocaleDateString("en-CA");
   const defaultCategory = activeTab === "ALL" ? "EXPENSE" : activeTab;
 
   const [form, setForm] = useState({
