@@ -1,11 +1,10 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   PieChart,
   Pie,
   Cell,
   Tooltip,
-  Legend,
   ResponsiveContainer,
   BarChart,
   Bar,
@@ -50,6 +49,13 @@ export default function MobileDashboard() {
   const [quickError, setQuickError] = useState("");
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState(10);
+  const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [highlightId, setHighlightId] = useState(null);
+  const debounceRef = useRef(null);
+  const searchContainerRef = useRef(null);
+  const tableRef = useRef(null);
   const [activeTab, setActiveTab] = useState("ALL");
   const [activePreset, setActivePreset] = useState("Current Month");
   const [fromVal, setFromVal] = useState("");
@@ -86,6 +92,62 @@ export default function MobileDashboard() {
   function refresh() {
     getTransactions().then((res) => setTransactions(res.data));
   }
+
+  const handleQueryChange = (e) => {
+    const val = e.target.value;
+    setQuery(val);
+    setSearchOpen(true);
+    clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => setDebouncedQuery(val), 300);
+  };
+
+  const handleSearchKeyDown = (e) => {
+    if (e.key === "Escape") {
+      setSearchOpen(false);
+      setQuery("");
+      setDebouncedQuery("");
+    }
+  };
+
+  useEffect(() => {
+    function onMouseDown(e) {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(e.target)) {
+        setSearchOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onMouseDown);
+    return () => document.removeEventListener("mousedown", onMouseDown);
+  }, []);
+
+  const suggestions = useMemo(() => {
+    const q = debouncedQuery.trim().toLowerCase();
+    if (!q) return [];
+    return transactions
+      .filter((t) =>
+        t.name?.toLowerCase().includes(q) ||
+        t.category?.toLowerCase().includes(q) ||
+        (CATEGORY_CONFIG[t.category]?.label ?? "").toLowerCase().includes(q) ||
+        String(t.amount).includes(q)
+      )
+      .slice(0, 5);
+  }, [debouncedQuery, transactions]);
+
+  const handleSelectTransaction = useCallback((t) => {
+    setQuery("");
+    setDebouncedQuery("");
+    setSearchOpen(false);
+    setActiveTab("ALL");
+    setDateRange({ from: null, to: null });
+    const allSorted = [...transactions].sort(
+      (a, b) => new Date(b.transaction_date) - new Date(a.transaction_date)
+    );
+    const idx = allSorted.findIndex((tx) => tx.id === t.id);
+    if (idx !== -1) setPage(Math.ceil((idx + 1) / perPage));
+    setQuickMode(false);
+    setHighlightId(t.id);
+    setTimeout(() => setHighlightId(null), 2500);
+    setTimeout(() => tableRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+  }, [transactions, perPage]);
 
   const activeColor = `var(--category-${activeTab.toLowerCase()})`;
   const quickColor = `var(--category-${quickCat.toLowerCase()})`;
@@ -373,17 +435,55 @@ export default function MobileDashboard() {
         >
           FinSight
         </span>
-        <input
-          disabled
-          placeholder="Search coming soon..."
-          className="flex-1 min-w-0 rounded-xl px-3 py-1.5 text-sm cursor-not-allowed"
-          style={{
-            backgroundColor: bg,
-            borderColor: border,
-            color: muted,
-            border: `1px solid ${border}`,
-          }}
-        />
+        <div className="flex-1 min-w-0 relative" ref={searchContainerRef}>
+          <input
+            value={query}
+            onChange={handleQueryChange}
+            onKeyDown={handleSearchKeyDown}
+            onFocus={() => query && setSearchOpen(true)}
+            placeholder="Search transactions..."
+            className="w-full rounded-xl px-3 py-1.5 text-sm border"
+            style={{ backgroundColor: bg, borderColor: border, color: text, outline: "none" }}
+          />
+          {searchOpen && suggestions.length > 0 && (
+            <div
+              className="absolute top-full mt-1.5 left-0 right-0 rounded-xl border shadow-lg overflow-hidden z-50"
+              style={{ backgroundColor: surface, borderColor: border }}
+            >
+              {suggestions.map((t) => {
+                const catColor = `var(--category-${t.category.toLowerCase()})`;
+                const date = new Date(t.transaction_date + "T00:00:00").toLocaleDateString("en-US", {
+                  month: "short", day: "numeric",
+                });
+                return (
+                  <button
+                    key={t.id}
+                    onMouseDown={() => handleSelectTransaction(t)}
+                    className="w-full flex items-center gap-2 px-3 py-2.5 text-left"
+                    style={{ backgroundColor: surface, color: text }}
+                  >
+                    <span style={{ width: 7, height: 7, borderRadius: "50%", backgroundColor: catColor, flexShrink: 0 }} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold truncate">{t.name}</p>
+                      <p className="text-xs truncate" style={{ color: catColor }}>
+                        {CATEGORY_CONFIG[t.category]?.label ?? t.category} · {date}
+                      </p>
+                    </div>
+                    <span className="text-sm font-bold shrink-0" style={{ color: catColor }}>{fmt(t.amount)}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          {searchOpen && debouncedQuery.trim() && suggestions.length === 0 && (
+            <div
+              className="absolute top-full mt-1.5 left-0 right-0 rounded-xl border shadow-lg px-3 py-2.5 text-sm z-50"
+              style={{ backgroundColor: surface, borderColor: border, color: muted }}
+            >
+              No transactions found
+            </div>
+          )}
+        </div>
         <button
           onClick={() => document.documentElement.classList.toggle("dark")}
           className="p-2 rounded-lg cursor-pointer shrink-0"
@@ -1145,6 +1245,7 @@ export default function MobileDashboard() {
 
             {/* Transaction list */}
             <div
+              ref={tableRef}
               className="rounded-2xl border"
               style={{ backgroundColor: surface, borderColor: activeColor }}
             >
@@ -1168,7 +1269,13 @@ export default function MobileDashboard() {
                     <div
                       key={t.id}
                       className="px-4 py-3 border-t flex items-center gap-3"
-                      style={{ borderColor: border }}
+                      style={{
+                        borderColor: border,
+                        backgroundColor: t.id === highlightId
+                          ? `color-mix(in srgb, var(--category-${t.category.toLowerCase()}) 12%, transparent)`
+                          : undefined,
+                        transition: "background-color 0.6s ease",
+                      }}
                     >
                       <div className="flex-1 min-w-0">
                         <p

@@ -1,11 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTheme } from "../hooks/useTheme";
 import {
   PieChart,
   Pie,
   Cell,
   Tooltip,
-  Legend,
   ResponsiveContainer,
   BarChart,
   Bar,
@@ -37,6 +36,8 @@ export default function Dashboard() {
   const [showModal, setShowModal] = useState(false);
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState(10);
+  const [highlightId, setHighlightId] = useState(null);
+  const tableRef = useRef(null);
   const [dateRange, setDateRange] = useState(() => {
     const now = new Date();
     const from = new Date(now);
@@ -54,6 +55,19 @@ export default function Dashboard() {
   function refreshTransactions() {
     getTransactions().then((res) => setTransactions(res.data));
   }
+
+  const handleSelectTransaction = useCallback((t) => {
+    setActiveTab("ALL");
+    setDateRange({ from: null, to: null });
+    const allSorted = [...transactions].sort(
+      (a, b) => new Date(b.transaction_date) - new Date(a.transaction_date)
+    );
+    const idx = allSorted.findIndex((tx) => tx.id === t.id);
+    if (idx !== -1) setPage(Math.ceil((idx + 1) / perPage));
+    setHighlightId(t.id);
+    setTimeout(() => setHighlightId(null), 2500);
+    setTimeout(() => tableRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+  }, [transactions, perPage]);
 
   const filtered = useMemo(() => {
     let result =
@@ -301,7 +315,7 @@ export default function Dashboard() {
       className="min-h-dvh"
       style={{ backgroundColor: dark ? "var(--dark-bg)" : "var(--light-bg)" }}
     >
-      <Navbar />
+      <Navbar transactions={transactions} onSelectTransaction={handleSelectTransaction} />
 
       <CategoryTabs
         activeTab={activeTab}
@@ -578,16 +592,19 @@ export default function Dashboard() {
           </ChartCard>
         </div>
 
-        <TransactionTable
-          rows={paginated}
-          page={page}
-          perPage={perPage}
-          total={sorted.length}
-          onPageChange={setPage}
-          onPerPageChange={setPerPage}
-          onAdd={() => setShowModal(true)}
-          activeColor={activeColor}
-        />
+        <div ref={tableRef}>
+          <TransactionTable
+            rows={paginated}
+            page={page}
+            perPage={perPage}
+            total={sorted.length}
+            onPageChange={setPage}
+            onPerPageChange={setPerPage}
+            onAdd={() => setShowModal(true)}
+            activeColor={activeColor}
+            highlightId={highlightId}
+          />
+        </div>
       </main>
 
       <Footer />

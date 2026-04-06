@@ -2,7 +2,7 @@ import { useState } from "react";
 import { CATEGORY_CONFIG, INCOME_TYPES, fmt } from "../utils/finance";
 import { useTheme } from "../hooks/useTheme";
 
-export default function TransactionTable({ rows, onAdd, activeColor, page, perPage, total, onPageChange, onPerPageChange }) {
+export default function TransactionTable({ rows, onAdd, activeColor, page, perPage, total, onPageChange, onPerPageChange, highlightId }) {
   const dark = useTheme();
   const [addHovered, setAddHovered] = useState(false);
   const [hoveredBtn, setHoveredBtn] = useState(null);
@@ -53,7 +53,17 @@ export default function TransactionTable({ rows, onAdd, activeColor, page, perPa
             </tr>
           ) : (
             rows.map((t) => (
-                <tr key={t.id} className="border-t" style={{ borderColor: border }}>
+                <tr
+                  key={t.id}
+                  className="border-t"
+                  style={{
+                    borderColor: border,
+                    backgroundColor: t.id === highlightId
+                      ? `color-mix(in srgb, var(--category-${t.category.toLowerCase()}) 12%, transparent)`
+                      : undefined,
+                    transition: "background-color 0.6s ease",
+                  }}
+                >
                   <td className="px-6 py-4 text-base whitespace-nowrap" style={{ color: muted }}>
                     {new Date(t.transaction_date + "T00:00:00").toLocaleDateString("en-US", {
                       month: "short", day: "numeric", year: "numeric",
