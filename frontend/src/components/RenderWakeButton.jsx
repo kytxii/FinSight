@@ -22,7 +22,9 @@ export default function RenderWakeButton() {
   useEffect(() => {
     const check = async () => {
       try {
-        await axios.get((import.meta.env.VITE_API_URL ?? "/api") + "/", { timeout: 3000 });
+        await axios.get((import.meta.env.VITE_API_URL ?? "/api") + "/", {
+          timeout: 3000,
+        });
         setStatus("gone");
       } catch {
         setStatus("idle");
@@ -34,7 +36,9 @@ export default function RenderWakeButton() {
 
   const ping = async () => {
     try {
-      await axios.get((import.meta.env.VITE_API_URL ?? "/api") + "/", { timeout: 8000 });
+      await axios.get((import.meta.env.VITE_API_URL ?? "/api") + "/", {
+        timeout: 8000,
+      });
       cleanup();
       setStatus("online");
       setTimeout(() => setStatus("fading"), 3000);
@@ -81,27 +85,24 @@ export default function RenderWakeButton() {
         ? `~${remaining}s remaining`
         : "Taking longer than expected…"
       : isOnline
-      ? "Online"
-      : status === "error"
-      ? "Timed out — retry?"
-      : null;
+        ? "Online"
+        : status === "error"
+          ? "Timed out — retry?"
+          : null;
 
-  const labelBorderColor =
-    isOnline
-      ? `${accentColor}55`
-      : status === "error"
+  const labelBorderColor = isOnline
+    ? `${accentColor}55`
+    : status === "error"
       ? `${errorColor}55`
       : border;
 
-  const labelTextColor =
-    isOnline
-      ? accentColor
-      : status === "error"
+  const labelTextColor = isOnline
+    ? accentColor
+    : status === "error"
       ? errorColor
       : textColor;
 
   if (status === "gone" || status === "checking") return null;
-
 
   return (
     <>
@@ -151,7 +152,9 @@ export default function RenderWakeButton() {
 
         {/* Circle button */}
         <button
-          onClick={status === "idle" || status === "error" ? handleWake : undefined}
+          onClick={
+            status === "idle" || status === "error" ? handleWake : undefined
+          }
           disabled={status === "pinging" || isOnline}
           title={status === "idle" ? "Wake up backend" : undefined}
           style={{
@@ -161,7 +164,8 @@ export default function RenderWakeButton() {
             borderRadius: "50%",
             border: `1px solid ${border}`,
             backgroundColor: surface,
-            cursor: status === "idle" || status === "error" ? "pointer" : "default",
+            cursor:
+              status === "idle" || status === "error" ? "pointer" : "default",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
@@ -179,39 +183,60 @@ export default function RenderWakeButton() {
         >
           {/* SVG progress ring */}
           {status === "pinging" && (
-            <svg
-              width="52"
-              height="52"
+            <div
               style={{
                 position: "absolute",
-                top: 0,
-                left: 0,
-                transform: "rotate(-90deg)",
+                inset: 0,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
                 borderRadius: "50%",
               }}
             >
-              <circle
-                cx="26" cy="26" r={r}
-                fill="none"
-                stroke={`${accentColor}20`}
-                strokeWidth="2.5"
-              />
-              <circle
-                cx="26" cy="26" r={r}
-                fill="none"
-                stroke={accentColor}
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                strokeDasharray={`${dash} ${circumference}`}
-                style={{ transition: "stroke-dasharray 0.95s linear" }}
-              />
-            </svg>
+              <svg
+                width="52"
+                height="52"
+                style={{
+                  transform: "rotate(-90deg)",
+                  borderRadius: "50%",
+                  marginTop: "2px",
+                }}
+              >
+                <circle
+                  cx="26"
+                  cy="26"
+                  r={r}
+                  fill="none"
+                  stroke={`${accentColor}20`}
+                  strokeWidth="2.5"
+                />
+                <circle
+                  cx="26"
+                  cy="26"
+                  r={r}
+                  fill="none"
+                  stroke={accentColor}
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeDasharray={`${dash} ${circumference}`}
+                  style={{ transition: "stroke-dasharray 0.95s linear" }}
+                />
+              </svg>
+            </div>
           )}
 
           {/* Idle — power icon */}
           {status === "idle" && (
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
-              stroke={accentColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke={accentColor}
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <path d="M18.36 6.64a9 9 0 1 1-12.73 0" />
               <line x1="12" y1="2" x2="12" y2="12" />
             </svg>
@@ -219,7 +244,9 @@ export default function RenderWakeButton() {
 
           {/* Pinging — three dots */}
           {status === "pinging" && (
-            <div style={{ display: "flex", gap: "3.5px", alignItems: "center" }}>
+            <div
+              style={{ display: "flex", gap: "3.5px", alignItems: "center" }}
+            >
               {[0, 1, 2].map((i) => (
                 <div
                   key={i}
@@ -237,16 +264,32 @@ export default function RenderWakeButton() {
 
           {/* Online — checkmark */}
           {isOnline && (
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
-              stroke={accentColor} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke={accentColor}
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <polyline points="20 6 9 17 4 12" />
             </svg>
           )}
 
           {/* Error — X */}
           {status === "error" && (
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
-              stroke={errorColor} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke={errorColor}
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
               <line x1="18" y1="6" x2="6" y2="18" />
               <line x1="6" y1="6" x2="18" y2="18" />
             </svg>
