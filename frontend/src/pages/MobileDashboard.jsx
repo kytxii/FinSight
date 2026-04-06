@@ -44,7 +44,7 @@ export default function MobileDashboard() {
   const [quickForm, setQuickForm] = useState({
     name: "",
     amount: "",
-    transaction_date: new Date().toISOString().split("T")[0],
+    transaction_date: new Date().toLocaleDateString("en-CA"),
   });
   const [quickLoading, setQuickLoading] = useState(false);
   const [quickError, setQuickError] = useState("");
@@ -257,6 +257,9 @@ export default function MobileDashboard() {
       }
     }
 
+    const txCount = filtered.length;
+    const avgTx = txCount > 0 ? categoryTotal / txCount : 0;
+
     return {
       totalIn,
       totalOut,
@@ -265,6 +268,8 @@ export default function MobileDashboard() {
       avgDailySpending,
       avgDailySpendingDelta,
       categoryTotal,
+      txCount,
+      avgTx,
       pctOfTotal,
       categoryDelta,
     };
@@ -277,8 +282,10 @@ export default function MobileDashboard() {
         grouped[t.name] = (grouped[t.name] ?? 0) + parseFloat(t.amount);
       });
       const entries = Object.entries(grouped).sort((a, b) => b[1] - a[1]);
-      const START = 100, END = 20;
-      const step = entries.length > 1 ? (START - END) / (entries.length - 1) : 0;
+      const START = 100,
+        END = 40;
+      const step =
+        entries.length > 1 ? (START - END) / (entries.length - 1) : 0;
       return entries.map(([name, value], i) => ({
         name,
         value: parseFloat(value.toFixed(2)),
@@ -312,7 +319,9 @@ export default function MobileDashboard() {
     }
     const grouped = {};
     filtered.forEach((t) => {
-      const month = new Date(t.transaction_date + "T00:00:00").toLocaleDateString("en-US", {
+      const month = new Date(
+        t.transaction_date + "T00:00:00",
+      ).toLocaleDateString("en-US", {
         month: "short",
         year: "2-digit",
       });
@@ -709,10 +718,12 @@ export default function MobileDashboard() {
                             {CATEGORY_CONFIG[t.category]?.label}
                           </span>
                           {" · "}
-                          {new Date(t.transaction_date + "T00:00:00").toLocaleDateString(
-                            "en-US",
-                            { month: "short", day: "numeric" },
-                          )}
+                          {new Date(
+                            t.transaction_date + "T00:00:00",
+                          ).toLocaleDateString("en-US", {
+                            month: "short",
+                            day: "numeric",
+                          })}
                         </p>
                       </div>
                       <p
@@ -860,8 +871,22 @@ export default function MobileDashboard() {
             {/* Summary 2×2 */}
             <div className="grid grid-cols-2 gap-3">
               {[
-                { label: "INCOME", value: fmt(summary.totalIn) },
-                { label: "EXPENSES", value: fmt(summary.totalOut) },
+                activeTab === "ALL"
+                  ? { label: "INCOME", value: fmt(summary.totalIn) }
+                  : {
+                      label: `${CATEGORY_CONFIG[activeTab].label.toUpperCase()} TOTAL`,
+                      value: fmt(summary.categoryTotal),
+                    },
+                activeTab === "ALL"
+                  ? { label: "EXPENSES", value: fmt(summary.totalOut) }
+                  : INCOME_TYPES.has(activeTab)
+                  ? {
+                      label: "PAYMENTS",
+                      value: String(summary.txCount),
+                      deltaLabel: summary.txCount > 0 ? `avg ${fmt(summary.avgTx)} each` : null,
+                      deltaUp: true,
+                    }
+                  : { label: "AVG TRANSACTION", value: fmt(summary.avgTx) },
                 activeTab === "ALL"
                   ? {
                       label: "SAVINGS RATE",
@@ -996,11 +1021,33 @@ export default function MobileDashboard() {
                     <Tooltip {...tooltipProps} formatter={(v) => fmt(v)} />
                   </PieChart>
                 </ResponsiveContainer>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 16px", justifyContent: "center", marginTop: 8 }}>
+                <div
+                  style={{
+                    display: "flex",
+                    flexWrap: "wrap",
+                    gap: "6px 16px",
+                    justifyContent: "center",
+                    marginTop: 8,
+                  }}
+                >
                   {pieData.map((entry) => (
-                    <div key={entry.name} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      <span style={{ width: 9, height: 9, borderRadius: "50%", backgroundColor: entry.color, flexShrink: 0, display: "inline-block" }} />
-                      <span style={{ color: text, fontSize: 12 }}>{entry.name}</span>
+                    <div
+                      key={entry.name}
+                      style={{ display: "flex", alignItems: "center", gap: 6 }}
+                    >
+                      <span
+                        style={{
+                          width: 9,
+                          height: 9,
+                          borderRadius: "50%",
+                          backgroundColor: entry.color,
+                          flexShrink: 0,
+                          display: "inline-block",
+                        }}
+                      />
+                      <span style={{ color: text, fontSize: 12 }}>
+                        {entry.name}
+                      </span>
                     </div>
                   ))}
                 </div>
@@ -1140,14 +1187,13 @@ export default function MobileDashboard() {
                             {CATEGORY_CONFIG[t.category]?.label}
                           </span>
                           {" · "}
-                          {new Date(t.transaction_date + "T00:00:00").toLocaleDateString(
-                            "en-US",
-                            {
-                              month: "short",
-                              day: "numeric",
-                              year: "numeric",
-                            },
-                          )}
+                          {new Date(
+                            t.transaction_date + "T00:00:00",
+                          ).toLocaleDateString("en-US", {
+                            month: "short",
+                            day: "numeric",
+                            year: "numeric",
+                          })}
                         </p>
                       </div>
                       <p

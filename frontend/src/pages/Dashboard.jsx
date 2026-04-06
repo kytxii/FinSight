@@ -81,22 +81,35 @@ export default function Dashboard() {
       .filter((t) => !INCOME_TYPES.has(t.category))
       .reduce((sum, t) => sum + parseFloat(t.amount), 0);
 
-    const savingsRate = totalIn > 0 ? ((totalIn - totalOut) / totalIn) * 100 : null;
+    const savingsRate =
+      totalIn > 0 ? ((totalIn - totalOut) / totalIn) * 100 : null;
 
     // Avg daily spend
     let days = 1;
     if (dateRange.from && dateRange.to) {
-      days = Math.max(1, Math.round((dateRange.to - dateRange.from) / (1000 * 60 * 60 * 24)));
+      days = Math.max(
+        1,
+        Math.round((dateRange.to - dateRange.from) / (1000 * 60 * 60 * 24)),
+      );
     } else if (filtered.length > 0) {
-      const timestamps = filtered.map((t) => new Date(t.transaction_date).getTime());
-      days = Math.max(1, Math.round((Math.max(...timestamps) - Math.min(...timestamps)) / (1000 * 60 * 60 * 24)) + 1);
+      const timestamps = filtered.map((t) =>
+        new Date(t.transaction_date).getTime(),
+      );
+      days = Math.max(
+        1,
+        Math.round(
+          (Math.max(...timestamps) - Math.min(...timestamps)) /
+            (1000 * 60 * 60 * 24),
+        ) + 1,
+      );
     }
     const avgDailySpend = totalOut / days;
 
     // Previous period savings rate delta
     let savingsRateDelta = null;
     if (dateRange.from) {
-      const periodMs = (dateRange.to ?? new Date()).getTime() - dateRange.from.getTime();
+      const periodMs =
+        (dateRange.to ?? new Date()).getTime() - dateRange.from.getTime();
       const prevFrom = new Date(dateRange.from.getTime() - periodMs);
       const prevTo = dateRange.from;
       const prevFiltered = transactions
@@ -105,8 +118,12 @@ export default function Dashboard() {
           const d = new Date(t.transaction_date + "T00:00:00");
           return d >= prevFrom && d < prevTo;
         });
-      const prevIn = prevFiltered.filter((t) => INCOME_TYPES.has(t.category)).reduce((s, t) => s + parseFloat(t.amount), 0);
-      const prevOut = prevFiltered.filter((t) => !INCOME_TYPES.has(t.category)).reduce((s, t) => s + parseFloat(t.amount), 0);
+      const prevIn = prevFiltered
+        .filter((t) => INCOME_TYPES.has(t.category))
+        .reduce((s, t) => s + parseFloat(t.amount), 0);
+      const prevOut = prevFiltered
+        .filter((t) => !INCOME_TYPES.has(t.category))
+        .reduce((s, t) => s + parseFloat(t.amount), 0);
       if (prevIn > 0 && savingsRate !== null) {
         savingsRateDelta = savingsRate - ((prevIn - prevOut) / prevIn) * 100;
       }
@@ -114,12 +131,16 @@ export default function Dashboard() {
 
     let avgDailySpendDelta = null;
     if (dateRange.from) {
-      const periodMs = (dateRange.to ?? new Date()).getTime() - dateRange.from.getTime();
+      const periodMs =
+        (dateRange.to ?? new Date()).getTime() - dateRange.from.getTime();
       const prevFrom = new Date(dateRange.from.getTime() - periodMs);
       const prevTo = dateRange.from;
       const prevTotalOut = transactions
         .filter((t) => activeTab === "ALL" || t.category === activeTab)
-        .filter((t) => { const d = new Date(t.transaction_date + "T00:00:00"); return d >= prevFrom && d < prevTo; })
+        .filter((t) => {
+          const d = new Date(t.transaction_date + "T00:00:00");
+          return d >= prevFrom && d < prevTo;
+        })
         .filter((t) => !INCOME_TYPES.has(t.category))
         .reduce((s, t) => s + parseFloat(t.amount), 0);
       avgDailySpendDelta = avgDailySpend - prevTotalOut / days;
@@ -139,23 +160,48 @@ export default function Dashboard() {
           if (dateRange.to && d > dateRange.to) return false;
           return true;
         })
-        .filter((t) => isIncomeCategory ? INCOME_TYPES.has(t.category) : !INCOME_TYPES.has(t.category))
+        .filter((t) =>
+          isIncomeCategory
+            ? INCOME_TYPES.has(t.category)
+            : !INCOME_TYPES.has(t.category),
+        )
         .reduce((s, t) => s + parseFloat(t.amount), 0);
-      if (allPeriodTotal > 0) pctOfTotal = (categoryTotal / allPeriodTotal) * 100;
+      if (allPeriodTotal > 0)
+        pctOfTotal = (categoryTotal / allPeriodTotal) * 100;
 
       if (dateRange.from) {
-        const periodMs = (dateRange.to ?? new Date()).getTime() - dateRange.from.getTime();
+        const periodMs =
+          (dateRange.to ?? new Date()).getTime() - dateRange.from.getTime();
         const prevFrom = new Date(dateRange.from.getTime() - periodMs);
         const prevTo = dateRange.from;
         const prevTotal = transactions
           .filter((t) => t.category === activeTab)
-          .filter((t) => { const d = new Date(t.transaction_date + "T00:00:00"); return d >= prevFrom && d < prevTo; })
+          .filter((t) => {
+            const d = new Date(t.transaction_date + "T00:00:00");
+            return d >= prevFrom && d < prevTo;
+          })
           .reduce((s, t) => s + parseFloat(t.amount), 0);
-        if (prevTotal > 0) categoryDelta = ((categoryTotal - prevTotal) / prevTotal) * 100;
+        if (prevTotal > 0)
+          categoryDelta = ((categoryTotal - prevTotal) / prevTotal) * 100;
       }
     }
 
-    return { totalIn, totalOut, savingsRate, savingsRateDelta, avgDailySpend, avgDailySpendDelta, categoryTotal, pctOfTotal, categoryDelta };
+    const txCount = filtered.length;
+    const avgTx = txCount > 0 ? categoryTotal / txCount : 0;
+
+    return {
+      totalIn,
+      totalOut,
+      savingsRate,
+      savingsRateDelta,
+      avgDailySpend,
+      avgDailySpendDelta,
+      categoryTotal,
+      txCount,
+      avgTx,
+      pctOfTotal,
+      categoryDelta,
+    };
   }, [filtered, transactions, activeTab, dateRange]);
 
   const pieData = useMemo(() => {
@@ -165,8 +211,10 @@ export default function Dashboard() {
         grouped[t.name] = (grouped[t.name] ?? 0) + parseFloat(t.amount);
       });
       const entries = Object.entries(grouped).sort((a, b) => b[1] - a[1]);
-      const START = 100, END = 20;
-      const step = entries.length > 1 ? (START - END) / (entries.length - 1) : 0;
+      const START = 100,
+        END = 40;
+      const step =
+        entries.length > 1 ? (START - END) / (entries.length - 1) : 0;
       return entries.map(([name, value], i) => ({
         name,
         value: parseFloat(value.toFixed(2)),
@@ -221,14 +269,19 @@ export default function Dashboard() {
   }, [filtered, activeTab]);
 
   const sorted = useMemo(
-    () => [...filtered].sort((a, b) => new Date(b.transaction_date) - new Date(a.transaction_date)),
+    () =>
+      [...filtered].sort(
+        (a, b) => new Date(b.transaction_date) - new Date(a.transaction_date),
+      ),
     [filtered],
   );
 
   const totalPages = Math.max(1, Math.ceil(sorted.length / perPage));
   const paginated = sorted.slice((page - 1) * perPage, page * perPage);
 
-  useEffect(() => { setPage(1); }, [filtered, perPage]);
+  useEffect(() => {
+    setPage(1);
+  }, [filtered, perPage]);
 
   const activeColor = `var(--category-${activeTab.toLowerCase()})`;
   const text = dark ? "var(--dark-text)" : "var(--light-text)";
@@ -255,50 +308,114 @@ export default function Dashboard() {
         onTabChange={setActiveTab}
         activeColor={activeColor}
       />
-      <DateRangeFilter activeColor={activeColor} onChange={setDateRange} blackActiveText={activeTab === "ALL" && !dark} />
+      <DateRangeFilter
+        activeColor={activeColor}
+        onChange={setDateRange}
+        blackActiveText={activeTab === "ALL" && !dark}
+      />
 
       <main className="px-6 py-6 space-y-5 max-w-7xl mx-auto">
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          <SummaryCard
-            label="INCOME"
-            value={fmt(summary.totalIn)}
-            activeColor={activeColor}
-          />
-          <SummaryCard
-            label="EXPENSES"
-            value={fmt(summary.totalOut)}
-            activeColor={activeColor}
-          />
           {activeTab === "ALL" ? (
             <>
               <SummaryCard
-                label="SAVINGS RATE"
-                value={summary.savingsRate !== null ? `${summary.savingsRate.toFixed(1)}%` : "—"}
+                label="INCOME"
+                value={fmt(summary.totalIn)}
                 activeColor={activeColor}
-                deltaLabel={summary.savingsRateDelta != null ? `${summary.savingsRateDelta >= 0 ? "↑" : "↓"} ${Math.abs(summary.savingsRateDelta).toFixed(1)}% vs last month` : null}
+              />
+              <SummaryCard
+                label="EXPENSES"
+                value={fmt(summary.totalOut)}
+                activeColor={activeColor}
+              />
+              <SummaryCard
+                label="SAVINGS RATE"
+                value={
+                  summary.savingsRate !== null
+                    ? `${summary.savingsRate.toFixed(1)}%`
+                    : "—"
+                }
+                activeColor={activeColor}
+                deltaLabel={
+                  summary.savingsRateDelta != null
+                    ? `${summary.savingsRateDelta >= 0 ? "↑" : "↓"} ${Math.abs(summary.savingsRateDelta).toFixed(1)}% vs last month`
+                    : null
+                }
                 deltaUp={summary.savingsRateDelta >= 0}
               />
               <SummaryCard
                 label="AVG DAILY SPEND"
                 value={fmt(summary.avgDailySpend)}
                 activeColor={activeColor}
-                deltaLabel={summary.avgDailySpendDelta != null ? `${summary.avgDailySpendDelta >= 0 ? "↑" : "↓"} ${fmt(Math.abs(summary.avgDailySpendDelta))} vs last month` : null}
+                deltaLabel={
+                  summary.avgDailySpendDelta != null
+                    ? `${summary.avgDailySpendDelta >= 0 ? "↑" : "↓"} ${fmt(Math.abs(summary.avgDailySpendDelta))} vs last month`
+                    : null
+                }
                 deltaUp={summary.avgDailySpendDelta <= 0}
               />
             </>
           ) : (
             <>
               <SummaryCard
-                label="VS LAST MONTH"
-                value={summary.categoryDelta != null ? `${summary.categoryDelta >= 0 ? "+" : ""}${summary.categoryDelta.toFixed(1)}%` : "—"}
+                label={`${CATEGORY_CONFIG[activeTab].label.toUpperCase()} TOTAL`}
+                value={fmt(summary.categoryTotal)}
                 activeColor={activeColor}
-                deltaLabel={summary.categoryDelta != null ? (summary.categoryDelta >= 0 ? "↑ higher than last month" : "↓ lower than last month") : null}
-                deltaUp={INCOME_TYPES.has(activeTab) ? summary.categoryDelta >= 0 : summary.categoryDelta <= 0}
-                valueColor={summary.categoryDelta != null ? ((INCOME_TYPES.has(activeTab) ? summary.categoryDelta >= 0 : summary.categoryDelta <= 0) ? "var(--category-income)" : "var(--category-expense)") : undefined}
+              />
+              {INCOME_TYPES.has(activeTab) ? (
+                <SummaryCard
+                  label="PAYMENTS"
+                  value={String(summary.txCount)}
+                  activeColor={activeColor}
+                  deltaLabel={summary.txCount > 0 ? `avg ${fmt(summary.avgTx)} each` : null}
+                  deltaUp={true}
+                />
+              ) : (
+                <SummaryCard
+                  label="AVG TRANSACTION"
+                  value={fmt(summary.avgTx)}
+                  activeColor={activeColor}
+                />
+              )}
+              <SummaryCard
+                label="VS LAST MONTH"
+                value={
+                  summary.categoryDelta != null
+                    ? `${summary.categoryDelta >= 0 ? "+" : ""}${summary.categoryDelta.toFixed(1)}%`
+                    : "—"
+                }
+                activeColor={activeColor}
+                deltaLabel={
+                  summary.categoryDelta != null
+                    ? summary.categoryDelta >= 0
+                      ? "↑ higher than last month"
+                      : "↓ lower than last month"
+                    : null
+                }
+                deltaUp={
+                  INCOME_TYPES.has(activeTab)
+                    ? summary.categoryDelta >= 0
+                    : summary.categoryDelta <= 0
+                }
+                valueColor={
+                  summary.categoryDelta != null
+                    ? (
+                        INCOME_TYPES.has(activeTab)
+                          ? summary.categoryDelta >= 0
+                          : summary.categoryDelta <= 0
+                      )
+                      ? "var(--category-income)"
+                      : "var(--category-expense)"
+                    : undefined
+                }
               />
               <SummaryCard
                 label={INCOME_TYPES.has(activeTab) ? "% OF INCOME" : "% OF SPENDING"}
-                value={summary.pctOfTotal != null ? `${summary.pctOfTotal.toFixed(1)}%` : "—"}
+                value={
+                  summary.pctOfTotal != null
+                    ? `${summary.pctOfTotal.toFixed(1)}%`
+                    : "—"
+                }
                 activeColor={activeColor}
               />
             </>
@@ -316,7 +433,11 @@ export default function Dashboard() {
           >
             {pieData.length > 0 ? (
               <>
-                <ResponsiveContainer width="100%" height={280} style={{ pointerEvents: "none" }}>
+                <ResponsiveContainer
+                  width="100%"
+                  height={280}
+                  style={{ pointerEvents: "none" }}
+                >
                   <PieChart>
                     <Pie
                       data={pieData}
@@ -334,11 +455,33 @@ export default function Dashboard() {
                     <Tooltip {...tooltipProps} formatter={(v) => fmt(v)} />
                   </PieChart>
                 </ResponsiveContainer>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 16px", justifyContent: "center", marginTop: 8 }}>
+                <div
+                  style={{
+                    display: "flex",
+                    flexWrap: "wrap",
+                    gap: "6px 16px",
+                    justifyContent: "center",
+                    marginTop: 8,
+                  }}
+                >
                   {pieData.map((entry) => (
-                    <div key={entry.name} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      <span style={{ width: 9, height: 9, borderRadius: "50%", backgroundColor: entry.color, flexShrink: 0, display: "inline-block" }} />
-                      <span style={{ color: text, fontSize: 12 }}>{entry.name}</span>
+                    <div
+                      key={entry.name}
+                      style={{ display: "flex", alignItems: "center", gap: 6 }}
+                    >
+                      <span
+                        style={{
+                          width: 9,
+                          height: 9,
+                          borderRadius: "50%",
+                          backgroundColor: entry.color,
+                          flexShrink: 0,
+                          display: "inline-block",
+                        }}
+                      />
+                      <span style={{ color: text, fontSize: 12 }}>
+                        {entry.name}
+                      </span>
                     </div>
                   ))}
                 </div>
@@ -357,7 +500,11 @@ export default function Dashboard() {
             activeColor={activeColor}
           >
             {barData.length > 0 ? (
-              <ResponsiveContainer width="100%" height={280} style={{ pointerEvents: "none" }}>
+              <ResponsiveContainer
+                width="100%"
+                height={280}
+                style={{ pointerEvents: "none" }}
+              >
                 <BarChart data={barData}>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} />
                   <XAxis
@@ -395,14 +542,33 @@ export default function Dashboard() {
                     tickFormatter={(v) => `$${v}`}
                     tick={{ fontSize: 12, fill: text }}
                   />
-                  <Tooltip {...tooltipProps} formatter={(v) => fmt(v)} cursor={false} />
+                  <Tooltip
+                    {...tooltipProps}
+                    formatter={(v) => fmt(v)}
+                    cursor={false}
+                  />
                   {activeTab === "ALL" ? (
                     <>
-                      <Bar dataKey="income" fill="var(--category-income)" radius={[6, 6, 0, 0]} barSize={20} />
-                      <Bar dataKey="expense" fill="var(--category-expense)" radius={[6, 6, 0, 0]} barSize={20} />
+                      <Bar
+                        dataKey="income"
+                        fill="var(--category-income)"
+                        radius={[6, 6, 0, 0]}
+                        barSize={20}
+                      />
+                      <Bar
+                        dataKey="expense"
+                        fill="var(--category-expense)"
+                        radius={[6, 6, 0, 0]}
+                        barSize={20}
+                      />
                     </>
                   ) : (
-                    <Bar dataKey="total" fill={activeColor} radius={[6, 6, 0, 0]} barSize={32} />
+                    <Bar
+                      dataKey="total"
+                      fill={activeColor}
+                      radius={[6, 6, 0, 0]}
+                      barSize={32}
+                    />
                   )}
                 </BarChart>
               </ResponsiveContainer>
