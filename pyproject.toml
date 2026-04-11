@@ -18,6 +18,7 @@ dependencies = [
     # Validation & config
     "pydantic[email]",
     "pydantic-settings",
+    "slowapi>=0.1.9",
 ]
 
 [project.optional-dependencies]
