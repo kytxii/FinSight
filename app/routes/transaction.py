@@ -1,70 +1,49 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
 from app.dependencies import get_db, get_current_user
-from app.models import Transaction, User
+from app.models import User
 from app.schemas import CreateTransaction, TransactionResponse, UpdateTransaction
+from app.services import transaction_service
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])
 
 @router.get("/", response_model=list[TransactionResponse])
 async def get_transactions(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Transaction).where(Transaction.created_by == current_user.id))
-    return result.scalars().all()
+    try:
+        result = await transaction_service.get_transactions(current_user.id, db)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return result
 
 @router.get("/{transaction_id}", response_model=TransactionResponse)
 async def get_transaction_by_id(transaction_id: UUID, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Transaction).where(Transaction.id == transaction_id))
-    transaction = result.scalar_one_or_none()
-
-    if not transaction:
-      raise HTTPException(status_code=404, detail="Transaction not found")
-
-    if transaction.created_by != current_user.id:
-        raise HTTPException(status_code=404, detail="Transaction not found")
-
-    return transaction
+    try:
+        result = await transaction_service.get_transaction_by_id(transaction_id, current_user.id, db)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return result
 
 @router.post("/", response_model=TransactionResponse)
 async def create_transaction(transaction: CreateTransaction, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    data = transaction.model_dump()
-    db_transaction = Transaction(**data, created_by=current_user.id, updated_by=current_user.id)
-
-    db.add(db_transaction)
-    await db.commit()
-    await db.refresh(db_transaction)
-    return db_transaction
+    try:
+        result = await transaction_service.create_transaction(transaction, current_user.id, db)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return result
 
 @router.put("/{transaction_id}", response_model=TransactionResponse)
 async def update_transaction(transaction_id: UUID, data: UpdateTransaction, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Transaction).where(Transaction.id == transaction_id))
-    transaction = result.scalar_one_or_none()
-
-    if not transaction:
-      raise HTTPException(status_code=404, detail="Transaction not found")
-
-    if transaction.created_by != current_user.id:
-        raise HTTPException(status_code=404, detail="Transaction not found")
-
-    for key, value in data.model_dump(exclude_unset=True).items():
-        setattr(transaction, key, value)
-
-    await db.commit()
-    await db.refresh(transaction)
-    return transaction
+    try:
+        result = await transaction_service.update_transaction(transaction_id, data, current_user.id, db)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return result
 
 @router.delete("/{transaction_id}")
 async def delete_transaction(transaction_id: UUID, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Transaction).where(Transaction.id == transaction_id))
-    transaction = result.scalar_one_or_none()
-
-    if not transaction:
-      raise HTTPException(status_code=404, detail="Transaction not found")
-
-    if transaction.created_by != current_user.id:
-        raise HTTPException(status_code=404, detail="Transaction not found")
-
-    await db.delete(transaction)
-    await db.commit()
-    return {"detail": "Transaction deleted"}
+    try:
+        result = await transaction_service.delete_transaction(transaction_id, current_user.id, db)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return result
