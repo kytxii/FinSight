@@ -9,6 +9,9 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState(null);
+  const [rateLimited, setRateLimited] = useState(false);
+  const [countdown, setCountdown] = useState(0);
+  const [attempts, setAttempts] = useState(0);
   const { login } = useAuth();
   const navigate = useNavigate();
   const dark = useTheme();
@@ -23,7 +26,26 @@ export default function Login() {
       login(res.data.access_token);
       navigate("/");
     } catch (err) {
-      setError("Invalid email or password");
+      if (err.response?.status === 429) {
+        setRateLimited(true);
+        setAttempts(0);
+        setCountdown(30);
+        setError("Too many attempts.");
+        const interval = setInterval(() => {
+          setCountdown((prev) => {
+            if (prev <= 1) {
+              clearInterval(interval);
+              setRateLimited(false);
+              setError(null);
+              return 0;
+            }
+            return prev - 1;
+          });
+        }, 1000);
+      } else {
+        setAttempts((prev) => prev + 1);
+        setError("Invalid email or password.");
+      }
     }
   };
 
@@ -144,7 +166,7 @@ export default function Login() {
           <p style={{ margin: "4px 0 0", fontSize: "14px", opacity: 0.65, color: dark ? "var(--dark-text)" : "var(--light-text)" }}>Sign in to your account</p>
         </div>
 
-        <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
+        <form onSubmit={rateLimited ? (e) => e.preventDefault() : handleSubmit} style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
           <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
             <label style={{ fontSize: "11px", fontWeight: 600, letterSpacing: "0.1em", textTransform: "uppercase", opacity: 0.65, color: dark ? "var(--dark-text)" : "var(--light-text)" }}>Email</label>
             <input type="email" required value={email} onChange={(e) => setEmail(e.target.value)}
@@ -169,19 +191,24 @@ export default function Login() {
             </div>
           </div>
 
-          {error && <p style={{ margin: 0, fontSize: "12px", color: "var(--category-expense)" }}>{error}</p>}
+          {error && (
+            <p style={{ margin: 0, fontSize: "12px", color: "var(--category-expense)", display: "flex", justifyContent: "space-between" }}>
+              <span>{error}{rateLimited && countdown > 0 ? ` Retry in ${countdown}s.` : ""}</span>
+              {!rateLimited && attempts > 0 && <span style={{ opacity: 0.6 }}>{attempts}/5</span>}
+            </p>
+          )}
 
-          <button type="submit"
-            style={{ padding: "8px 16px", borderRadius: "8px", border: "none", backgroundColor: "var(--category-income)", color: "#fff", fontSize: "14px", fontWeight: 500, cursor: "pointer", transition: "opacity 0.15s", opacity: 0.85 }}
-            onMouseEnter={e => e.target.style.opacity = "0.7"}
-            onMouseLeave={e => e.target.style.opacity = "0.85"}
+          <button type="submit" disabled={rateLimited}
+            style={{ padding: "8px 16px", borderRadius: "8px", border: "none", backgroundColor: "var(--category-income)", color: "#fff", fontSize: "14px", fontWeight: 500, cursor: rateLimited ? "not-allowed" : "pointer", transition: "opacity 0.15s", opacity: rateLimited ? 0.45 : 0.85, textDecoration: rateLimited ? "line-through" : "none" }}
+            onMouseEnter={e => { if (!rateLimited) e.target.style.opacity = "0.7"; }}
+            onMouseLeave={e => { if (!rateLimited) e.target.style.opacity = "0.85"; }}
           >
             Sign in
           </button>
 
           <p style={{ margin: 0, fontSize: "13px", textAlign: "center", color: dark ? "var(--dark-text)" : "var(--light-text)", opacity: 0.5 }}>
             Don't have an account?{" "}
-            <a href="/register" style={{ opacity: 1, color: "var(--category-income)", textDecoration: "none", fontWeight: 600 }}>Register</a>
+            <a href="/register" style={{ opacity: rateLimited ? 0.35 : 1, color: "var(--category-income)", textDecoration: rateLimited ? "line-through" : "none", fontWeight: 600, pointerEvents: rateLimited ? "none" : "auto" }}>Register</a>
           </p>
         </form>
       </div>
