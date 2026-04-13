@@ -1,63 +1,42 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
-from app.dependencies import get_db
-from app.models import Transaction
+from app.dependencies import get_db, get_current_user
+from app.models import User
 from app.schemas import CreateTransaction, TransactionResponse, UpdateTransaction
+from app.services import transaction_service
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])
 
-SYSTEM_USER_ID = UUID("00000000-0000-0000-0000-000000000001")
-
 @router.get("/", response_model=list[TransactionResponse])
-async def get_transactions(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Transaction))
-    return result.scalars().all()
+async def get_transactions(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    result = await transaction_service.get_transactions(current_user.id, db)
+    return result
 
 @router.get("/{transaction_id}", response_model=TransactionResponse)
-async def get_transaction_by_id(transaction_id: UUID, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Transaction).where(Transaction.id == transaction_id))
-    transaction = result.scalar_one_or_none()
-
-    if not transaction:
-        raise HTTPException(status_code=404, detail="Transaction not found")
-
-    return transaction
+async def get_transaction_by_id(transaction_id: UUID, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    try:
+        result = await transaction_service.get_transaction_by_id(transaction_id, current_user.id, db)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return result
 
 @router.post("/", response_model=TransactionResponse)
-async def create_transaction(transaction: CreateTransaction, db: AsyncSession = Depends(get_db)):
-    data = transaction.model_dump()
-    db_transaction = Transaction(**data, created_by=SYSTEM_USER_ID, updated_by=SYSTEM_USER_ID)
+async def create_transaction(transaction: CreateTransaction, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    try:
+        result = await transaction_service.create_transaction(transaction, current_user.id, db)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return result
 
-    db.add(db_transaction)
-    await db.commit()
-    await db.refresh(db_transaction)
-    return db_transaction
+@router.patch("/{transaction_id}", response_model=TransactionResponse)
+async def update_transaction(transaction_id: UUID, data: UpdateTransaction, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    try:
+        result = await transaction_service.update_transaction(transaction_id, data, current_user.id, db)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return result
 
-@router.put("/{transaction_id}", response_model=TransactionResponse)
-async def update_transaction(transaction_id: UUID, data: UpdateTransaction, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Transaction).where(Transaction.id == transaction_id))
-    transaction = result.scalar_one_or_none()
-
-    if not transaction:
-        raise HTTPException(status_code=404, detail="Transaction not found")
-
-    for key, value in data.model_dump(exclude_unset=True).items():
-        setattr(transaction, key, value)
-
-    await db.commit()
-    await db.refresh(transaction)
-    return transaction
-
-@router.delete("/{transaction_id}")
-async def delete_transaction(transaction_id: UUID, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Transaction).where(Transaction.id == transaction_id))
-    transaction = result.scalar_one_or_none()
-
-    if not transaction:
-        raise HTTPException(status_code=404, detail="Transaction not found")
-
-    await db.delete(transaction)
-    await db.commit()
-    return {"detail": "Transaction deleted"}
+@router.delete("/{transaction_id}", status_code=204)
+async def delete_transaction(transaction_id: UUID, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    await transaction_service.delete_transaction(transaction_id, current_user.id, db)

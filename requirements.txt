@@ -9,3 +9,5 @@ authlib
 httpx
 pydantic
 pydantic-settings
+pydantic[email]
+slowapi

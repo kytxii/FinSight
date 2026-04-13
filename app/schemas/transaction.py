@@ -1,11 +1,11 @@
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from datetime import datetime, date
 from decimal import Decimal
 from uuid import UUID
 from app.models.category import Category
 
 class TransactionBase(BaseModel):
-    name: str
+    name: str = Field(min_length=1, max_length=255)
     amount: Decimal
     transaction_date: date
     category: Category

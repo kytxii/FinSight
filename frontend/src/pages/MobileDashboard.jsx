@@ -1,10 +1,10 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   PieChart,
   Pie,
   Cell,
   Tooltip,
-  Legend,
   ResponsiveContainer,
   BarChart,
   Bar,
@@ -20,11 +20,16 @@ import {
   fmt,
 } from "../utils/finance";
 import { useTheme } from "../hooks/useTheme";
+import { useAuth } from "../context/AuthContext";
 import { PRESETS, getPresetRange } from "../components/DateRangeFilter";
 import Footer from "../components/Footer";
+import RenderWakeButton from "../components/RenderWakeButton";
 
 export default function MobileDashboard() {
   const dark = useTheme();
+  const { logout } = useAuth();
+  const navigate = useNavigate();
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   const bg = dark ? "var(--dark-bg)" : "var(--light-bg)";
   const surface = dark ? "var(--dark-surface)" : "var(--light-surface)";
@@ -38,12 +43,19 @@ export default function MobileDashboard() {
   const [quickForm, setQuickForm] = useState({
     name: "",
     amount: "",
-    transaction_date: new Date().toISOString().split("T")[0],
+    transaction_date: new Date().toLocaleDateString("en-CA"),
   });
   const [quickLoading, setQuickLoading] = useState(false);
   const [quickError, setQuickError] = useState("");
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState(10);
+  const [query, setQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [highlightId, setHighlightId] = useState(null);
+  const debounceRef = useRef(null);
+  const searchContainerRef = useRef(null);
+  const tableRef = useRef(null);
   const [activeTab, setActiveTab] = useState("ALL");
   const [activePreset, setActivePreset] = useState("Current Month");
   const [fromVal, setFromVal] = useState("");
@@ -80,6 +92,62 @@ export default function MobileDashboard() {
   function refresh() {
     getTransactions().then((res) => setTransactions(res.data));
   }
+
+  const handleQueryChange = (e) => {
+    const val = e.target.value;
+    setQuery(val);
+    setSearchOpen(true);
+    clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => setDebouncedQuery(val), 300);
+  };
+
+  const handleSearchKeyDown = (e) => {
+    if (e.key === "Escape") {
+      setSearchOpen(false);
+      setQuery("");
+      setDebouncedQuery("");
+    }
+  };
+
+  useEffect(() => {
+    function onMouseDown(e) {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(e.target)) {
+        setSearchOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onMouseDown);
+    return () => document.removeEventListener("mousedown", onMouseDown);
+  }, []);
+
+  const suggestions = useMemo(() => {
+    const q = debouncedQuery.trim().toLowerCase();
+    if (!q) return [];
+    return transactions
+      .filter((t) =>
+        t.name?.toLowerCase().includes(q) ||
+        t.category?.toLowerCase().includes(q) ||
+        (CATEGORY_CONFIG[t.category]?.label ?? "").toLowerCase().includes(q) ||
+        String(t.amount).includes(q)
+      )
+      .slice(0, 5);
+  }, [debouncedQuery, transactions]);
+
+  const handleSelectTransaction = useCallback((t) => {
+    setQuery("");
+    setDebouncedQuery("");
+    setSearchOpen(false);
+    setActiveTab("ALL");
+    setDateRange({ from: null, to: null });
+    const allSorted = [...transactions].sort(
+      (a, b) => new Date(b.transaction_date) - new Date(a.transaction_date)
+    );
+    const idx = allSorted.findIndex((tx) => tx.id === t.id);
+    if (idx !== -1) setPage(Math.ceil((idx + 1) / perPage));
+    setQuickMode(false);
+    setHighlightId(t.id);
+    setTimeout(() => setHighlightId(null), 2500);
+    setTimeout(() => tableRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
+  }, [transactions, perPage]);
 
   const activeColor = `var(--category-${activeTab.toLowerCase()})`;
   const quickColor = `var(--category-${quickCat.toLowerCase()})`;
@@ -160,7 +228,7 @@ export default function MobileDashboard() {
       );
     } else if (filtered.length > 0) {
       const timestamps = filtered.map((t) =>
-        new Date(t.transaction_date).getTime(),
+        new Date(t.transaction_date + "T00:00:00").getTime(),
       );
       days = Math.max(
         1,
@@ -170,7 +238,7 @@ export default function MobileDashboard() {
         ) + 1,
       );
     }
-    const avgDailySpend = totalOut / days;
+    const avgDailySpending = totalOut / days;
 
     let savingsRateDelta = null;
     if (dateRange.from) {
@@ -195,7 +263,7 @@ export default function MobileDashboard() {
       }
     }
 
-    let avgDailySpendDelta = null;
+    let avgDailySpendingDelta = null;
     if (dateRange.from) {
       const periodMs =
         (dateRange.to ?? new Date()).getTime() - dateRange.from.getTime();
@@ -209,7 +277,7 @@ export default function MobileDashboard() {
         })
         .filter((t) => !INCOME_TYPES.has(t.category))
         .reduce((s, t) => s + parseFloat(t.amount), 0);
-      avgDailySpendDelta = avgDailySpend - prevTotalOut / days;
+      avgDailySpendingDelta = avgDailySpending - prevTotalOut / days;
     }
 
     const categoryTotal = totalIn + totalOut;
@@ -251,14 +319,19 @@ export default function MobileDashboard() {
       }
     }
 
+    const txCount = filtered.length;
+    const avgTx = txCount > 0 ? categoryTotal / txCount : 0;
+
     return {
       totalIn,
       totalOut,
       savingsRate,
       savingsRateDelta,
-      avgDailySpend,
-      avgDailySpendDelta,
+      avgDailySpending,
+      avgDailySpendingDelta,
       categoryTotal,
+      txCount,
+      avgTx,
       pctOfTotal,
       categoryDelta,
     };
@@ -270,13 +343,16 @@ export default function MobileDashboard() {
       filtered.forEach((t) => {
         grouped[t.name] = (grouped[t.name] ?? 0) + parseFloat(t.amount);
       });
-      return Object.entries(grouped)
-        .sort((a, b) => b[1] - a[1])
-        .map(([name, value], i) => ({
-          name,
-          value: parseFloat(value.toFixed(2)),
-          color: `color-mix(in srgb, ${activeColor} ${100 - i * 10}%, black)`,
-        }));
+      const entries = Object.entries(grouped).sort((a, b) => b[1] - a[1]);
+      const START = 100,
+        END = 40;
+      const step =
+        entries.length > 1 ? (START - END) / (entries.length - 1) : 0;
+      return entries.map(([name, value], i) => ({
+        name,
+        value: parseFloat(value.toFixed(2)),
+        color: `color-mix(in srgb, ${activeColor} ${Math.round(START - i * step)}%, black)`,
+      }));
     }
     const grouped = {};
     filtered.forEach((t) => {
@@ -305,7 +381,9 @@ export default function MobileDashboard() {
     }
     const grouped = {};
     filtered.forEach((t) => {
-      const month = new Date(t.transaction_date).toLocaleDateString("en-US", {
+      const month = new Date(
+        t.transaction_date + "T00:00:00",
+      ).toLocaleDateString("en-US", {
         month: "short",
         year: "2-digit",
       });
@@ -357,17 +435,55 @@ export default function MobileDashboard() {
         >
           FinSight
         </span>
-        <input
-          disabled
-          placeholder="Search coming soon..."
-          className="flex-1 min-w-0 rounded-xl px-3 py-1.5 text-sm cursor-not-allowed"
-          style={{
-            backgroundColor: bg,
-            borderColor: border,
-            color: muted,
-            border: `1px solid ${border}`,
-          }}
-        />
+        <div className="flex-1 min-w-0 relative" ref={searchContainerRef}>
+          <input
+            value={query}
+            onChange={handleQueryChange}
+            onKeyDown={handleSearchKeyDown}
+            onFocus={() => query && setSearchOpen(true)}
+            placeholder="Search transactions..."
+            className="w-full rounded-xl px-3 py-1.5 text-sm border"
+            style={{ backgroundColor: bg, borderColor: border, color: text, outline: "none" }}
+          />
+          {searchOpen && suggestions.length > 0 && (
+            <div
+              className="absolute top-full mt-1.5 left-0 right-0 rounded-xl border shadow-lg overflow-hidden z-50"
+              style={{ backgroundColor: surface, borderColor: border }}
+            >
+              {suggestions.map((t) => {
+                const catColor = `var(--category-${t.category.toLowerCase()})`;
+                const date = new Date(t.transaction_date + "T00:00:00").toLocaleDateString("en-US", {
+                  month: "short", day: "numeric",
+                });
+                return (
+                  <button
+                    key={t.id}
+                    onMouseDown={() => handleSelectTransaction(t)}
+                    className="w-full flex items-center gap-2 px-3 py-2.5 text-left"
+                    style={{ backgroundColor: surface, color: text }}
+                  >
+                    <span style={{ width: 7, height: 7, borderRadius: "50%", backgroundColor: catColor, flexShrink: 0 }} />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-semibold truncate">{t.name}</p>
+                      <p className="text-xs truncate" style={{ color: catColor }}>
+                        {CATEGORY_CONFIG[t.category]?.label ?? t.category} · {date}
+                      </p>
+                    </div>
+                    <span className="text-sm font-bold shrink-0" style={{ color: catColor }}>{fmt(t.amount)}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+          {searchOpen && debouncedQuery.trim() && suggestions.length === 0 && (
+            <div
+              className="absolute top-full mt-1.5 left-0 right-0 rounded-xl border shadow-lg px-3 py-2.5 text-sm z-50"
+              style={{ backgroundColor: surface, borderColor: border, color: muted }}
+            >
+              No transactions found
+            </div>
+          )}
+        </div>
         <button
           onClick={() => document.documentElement.classList.toggle("dark")}
           className="p-2 rounded-lg cursor-pointer shrink-0"
@@ -404,7 +520,125 @@ export default function MobileDashboard() {
             </svg>
           )}
         </button>
+        <button
+          onClick={() => setDrawerOpen(true)}
+          className="p-2 rounded-lg cursor-pointer shrink-0"
+          aria-label="Open menu"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <line x1="3" y1="6" x2="21" y2="6" />
+            <line x1="3" y1="12" x2="21" y2="12" />
+            <line x1="3" y1="18" x2="21" y2="18" />
+          </svg>
+        </button>
       </header>
+
+      {/* Overlay */}
+      {drawerOpen && (
+        <div
+          className="fixed inset-0 z-40"
+          style={{ backgroundColor: "rgba(0,0,0,0.4)" }}
+          onClick={() => setDrawerOpen(false)}
+        />
+      )}
+
+      {/* Drawer */}
+      <div
+        className="fixed top-0 right-0 h-full w-72 z-50 flex flex-col border-l"
+        style={{
+          backgroundColor: surface,
+          borderColor: border,
+          color: text,
+          transform: drawerOpen ? "translateX(0)" : "translateX(100%)",
+          transition: "transform 250ms ease",
+        }}
+      >
+        <div
+          className="px-5 py-4 flex items-center justify-between border-b"
+          style={{ borderColor: border }}
+        >
+          <span className="text-sm font-semibold" style={{ color: muted }}>
+            Menu
+          </span>
+          <button
+            onClick={() => setDrawerOpen(false)}
+            className="p-1 rounded-lg cursor-pointer"
+            aria-label="Close menu"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M18 6 6 18M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <div className="px-5 py-5 flex items-center gap-3">
+          <div
+            className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold shrink-0"
+            style={{
+              backgroundColor: `color-mix(in srgb, ${text} 12%, transparent)`,
+              color: text,
+            }}
+          >
+            U
+          </div>
+          <div>
+            <p className="text-sm font-semibold">Username</p>
+            <p className="text-xs" style={{ color: muted }}>
+              user@email.com
+            </p>
+          </div>
+        </div>
+
+        <div className="mx-5 border-t" style={{ borderColor: border }} />
+
+        <div className="px-3 py-3">
+          <button
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium cursor-pointer transition-colors text-left"
+            style={{ color: "var(--category-expense)" }}
+            onClick={() => {
+              logout();
+              navigate("/login");
+            }}
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+              <polyline points="16 17 21 12 16 7" />
+              <line x1="21" y1="12" x2="9" y2="12" />
+            </svg>
+            Log out
+          </button>
+        </div>
+      </div>
 
       {/* Mode toggle */}
       <div className="px-4 pt-4 pb-0 flex justify-center">
@@ -442,11 +676,22 @@ export default function MobileDashboard() {
               className="rounded-2xl border p-4"
               style={{ backgroundColor: surface, borderColor: quickColor }}
             >
-              <p className="text-base font-semibold mb-3">Quick Entry</p>
+              <p
+                className="text-base font-semibold mb-3"
+                style={{ color: text }}
+              >
+                Quick Entry
+              </p>
 
               <select
                 value={quickCat}
-                onChange={(e) => setQuickCat(e.target.value)}
+                onChange={(e) => {
+                  setQuickCat(e.target.value);
+                  setQuickForm((f) => ({
+                    ...f,
+                    name: e.target.value === "TIPS" ? "Cash" : "",
+                  }));
+                }}
                 className="w-full rounded-xl px-4 py-2.5 text-sm font-semibold focus:outline-none mb-3 cursor-pointer border"
                 style={inputStyle}
               >
@@ -536,7 +781,7 @@ export default function MobileDashboard() {
             >
               <p
                 className="px-4 py-3 text-base font-semibold border-b"
-                style={{ borderColor: border }}
+                style={{ borderColor: border, color: text }}
               >
                 Recent
               </p>
@@ -557,7 +802,12 @@ export default function MobileDashboard() {
                       style={{ borderColor: border }}
                     >
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">{t.name}</p>
+                        <p
+                          className="text-sm font-medium truncate"
+                          style={{ color: text }}
+                        >
+                          {t.name}
+                        </p>
                         <p className="text-xs" style={{ color: muted }}>
                           <span
                             className="font-medium"
@@ -568,10 +818,12 @@ export default function MobileDashboard() {
                             {CATEGORY_CONFIG[t.category]?.label}
                           </span>
                           {" · "}
-                          {new Date(t.transaction_date).toLocaleDateString(
-                            "en-US",
-                            { month: "short", day: "numeric" },
-                          )}
+                          {new Date(
+                            t.transaction_date + "T00:00:00",
+                          ).toLocaleDateString("en-US", {
+                            month: "short",
+                            day: "numeric",
+                          })}
                         </p>
                       </div>
                       <p
@@ -601,7 +853,7 @@ export default function MobileDashboard() {
                   onChange={(e) => setActiveTab(e.target.value)}
                   className="rounded-xl px-3 py-2 text-xs font-semibold border cursor-pointer w-full"
                   style={{
-                    color: activeColor,
+                    color: text,
                     borderColor: activeColor,
                     backgroundColor: dark
                       ? `color-mix(in srgb, ${activeColor} 12%, transparent)`
@@ -614,7 +866,7 @@ export default function MobileDashboard() {
                     <option
                       key={cat}
                       value={cat}
-                      style={{ backgroundColor: "#1a1a1a", color: "#fff" }}
+                      style={{ backgroundColor: bg, color: text }}
                     >
                       {cat === "ALL" ? "All" : CATEGORY_CONFIG[cat].label}
                     </option>
@@ -626,7 +878,7 @@ export default function MobileDashboard() {
                   onChange={(e) => handlePreset(e.target.value)}
                   className="rounded-xl px-3 py-2 text-xs font-semibold border cursor-pointer w-full"
                   style={{
-                    color: activeColor,
+                    color: text,
                     borderColor: activeColor,
                     backgroundColor: dark
                       ? `color-mix(in srgb, ${activeColor} 12%, transparent)`
@@ -639,7 +891,7 @@ export default function MobileDashboard() {
                     <option
                       key={label}
                       value={label}
-                      style={{ backgroundColor: "#1a1a1a", color: "#fff" }}
+                      style={{ backgroundColor: bg, color: text }}
                     >
                       {label}
                     </option>
@@ -648,7 +900,7 @@ export default function MobileDashboard() {
                     <option
                       value="custom"
                       disabled
-                      style={{ backgroundColor: "#1a1a1a", color: "#fff" }}
+                      style={{ backgroundColor: bg, color: text }}
                     >
                       Custom
                     </option>
@@ -673,11 +925,11 @@ export default function MobileDashboard() {
                         setFromVal(e.target.value);
                         handleCustom(e.target.value, toVal);
                       }}
-                      className="rounded-xl px-1 py-2 text-[10px] font-semibold border w-[93%]"
+                      className="rounded-xl pl-3 pr-1 py-2 text-[10px] font-semibold border w-[87%]"
                       style={{
                         backgroundColor: dark
                           ? "var(--dark-bg)"
-                          : "var(--light-bg)",
+                          : "var(--light-surface)",
                         borderColor: border,
                         color: text,
                         colorScheme: dark ? "dark" : "light",
@@ -701,11 +953,11 @@ export default function MobileDashboard() {
                         setToVal(e.target.value);
                         handleCustom(fromVal, e.target.value);
                       }}
-                      className="rounded-xl px-1 py-2 text-[10px] font-semibold border w-[93%]"
+                      className="rounded-xl pl-3 pr-1 py-2 text-[10px] font-semibold border w-[87%]"
                       style={{
                         backgroundColor: dark
                           ? "var(--dark-bg)"
-                          : "var(--light-bg)",
+                          : "var(--light-surface)",
                         borderColor: border,
                         color: text,
                         colorScheme: dark ? "dark" : "light",
@@ -719,8 +971,22 @@ export default function MobileDashboard() {
             {/* Summary 2×2 */}
             <div className="grid grid-cols-2 gap-3">
               {[
-                { label: "INCOME", value: fmt(summary.totalIn) },
-                { label: "EXPENSES", value: fmt(summary.totalOut) },
+                activeTab === "ALL"
+                  ? { label: "INCOME", value: fmt(summary.totalIn) }
+                  : {
+                      label: `${CATEGORY_CONFIG[activeTab].label.toUpperCase()} TOTAL`,
+                      value: fmt(summary.categoryTotal),
+                    },
+                activeTab === "ALL"
+                  ? { label: "EXPENSES", value: fmt(summary.totalOut) }
+                  : INCOME_TYPES.has(activeTab)
+                  ? {
+                      label: "PAYMENTS",
+                      value: String(summary.txCount),
+                      deltaLabel: summary.txCount > 0 ? `avg ${fmt(summary.avgTx)} each` : null,
+                      deltaUp: true,
+                    }
+                  : { label: "AVG TRANSACTION", value: fmt(summary.avgTx) },
                 activeTab === "ALL"
                   ? {
                       label: "SAVINGS RATE",
@@ -762,13 +1028,13 @@ export default function MobileDashboard() {
                     },
                 activeTab === "ALL"
                   ? {
-                      label: "AVG DAILY SPEND",
-                      value: fmt(summary.avgDailySpend),
+                      label: "AVG DAILY SPENDING",
+                      value: fmt(summary.avgDailySpending),
                       deltaLabel:
-                        summary.avgDailySpendDelta != null
-                          ? `${summary.avgDailySpendDelta >= 0 ? "↑" : "↓"} ${fmt(Math.abs(summary.avgDailySpendDelta))} vs last month`
+                        summary.avgDailySpendingDelta != null
+                          ? `${summary.avgDailySpendingDelta >= 0 ? "↑" : "↓"} ${fmt(Math.abs(summary.avgDailySpendingDelta))} vs last month`
                           : null,
-                      deltaUp: summary.avgDailySpendDelta <= 0,
+                      deltaUp: summary.avgDailySpendingDelta <= 0,
                     }
                   : {
                       label: INCOME_TYPES.has(activeTab)
@@ -793,13 +1059,13 @@ export default function MobileDashboard() {
                 >
                   <p
                     className="text-xs font-medium mb-1"
-                    style={{ color: muted }}
+                    style={{ color: text }}
                   >
                     {label}
                   </p>
                   <p
                     className="text-lg font-bold tracking-tight"
-                    style={valueColor ? { color: valueColor } : undefined}
+                    style={valueColor ? { color: valueColor } : { color: text }}
                   >
                     {value}
                   </p>
@@ -825,7 +1091,10 @@ export default function MobileDashboard() {
                 className="rounded-2xl border p-4"
                 style={{ backgroundColor: surface, borderColor: activeColor }}
               >
-                <p className="text-base font-semibold mb-3">
+                <p
+                  className="text-base font-semibold mb-3"
+                  style={{ color: text }}
+                >
                   {activeTab === "ALL"
                     ? "Breakdown By Category"
                     : `${CATEGORY_CONFIG[activeTab].label} Breakdown`}
@@ -841,7 +1110,7 @@ export default function MobileDashboard() {
                       dataKey="value"
                       nameKey="name"
                       cx="50%"
-                      cy="40%"
+                      cy="50%"
                       outerRadius={80}
                       strokeWidth={0}
                     >
@@ -850,9 +1119,38 @@ export default function MobileDashboard() {
                       ))}
                     </Pie>
                     <Tooltip {...tooltipProps} formatter={(v) => fmt(v)} />
-                    <Legend iconType="circle" iconSize={8} />
                   </PieChart>
                 </ResponsiveContainer>
+                <div
+                  style={{
+                    display: "flex",
+                    flexWrap: "wrap",
+                    gap: "6px 16px",
+                    justifyContent: "center",
+                    marginTop: 8,
+                  }}
+                >
+                  {pieData.map((entry) => (
+                    <div
+                      key={entry.name}
+                      style={{ display: "flex", alignItems: "center", gap: 6 }}
+                    >
+                      <span
+                        style={{
+                          width: 9,
+                          height: 9,
+                          borderRadius: "50%",
+                          backgroundColor: entry.color,
+                          flexShrink: 0,
+                          display: "inline-block",
+                        }}
+                      />
+                      <span style={{ color: text, fontSize: 12 }}>
+                        {entry.name}
+                      </span>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
 
@@ -862,7 +1160,10 @@ export default function MobileDashboard() {
                 className="rounded-2xl border p-4"
                 style={{ backgroundColor: surface, borderColor: activeColor }}
               >
-                <p className="text-base font-semibold mb-3">
+                <p
+                  className="text-base font-semibold mb-3"
+                  style={{ color: text }}
+                >
                   {activeTab === "ALL"
                     ? "Monthly Totals"
                     : `Top ${CATEGORY_CONFIG[activeTab].label} by Name`}
@@ -944,12 +1245,13 @@ export default function MobileDashboard() {
 
             {/* Transaction list */}
             <div
+              ref={tableRef}
               className="rounded-2xl border"
               style={{ backgroundColor: surface, borderColor: activeColor }}
             >
               <p
                 className="px-4 py-3 text-base font-semibold border-b"
-                style={{ borderColor: border }}
+                style={{ borderColor: border, color: text }}
               >
                 Transactions
               </p>
@@ -967,10 +1269,21 @@ export default function MobileDashboard() {
                     <div
                       key={t.id}
                       className="px-4 py-3 border-t flex items-center gap-3"
-                      style={{ borderColor: border }}
+                      style={{
+                        borderColor: border,
+                        backgroundColor: t.id === highlightId
+                          ? `color-mix(in srgb, var(--category-${t.category.toLowerCase()}) 12%, transparent)`
+                          : undefined,
+                        transition: "background-color 0.6s ease",
+                      }}
                     >
                       <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">{t.name}</p>
+                        <p
+                          className="text-sm font-medium truncate"
+                          style={{ color: text }}
+                        >
+                          {t.name}
+                        </p>
                         <p className="text-xs" style={{ color: muted }}>
                           <span
                             className="font-medium"
@@ -981,14 +1294,13 @@ export default function MobileDashboard() {
                             {CATEGORY_CONFIG[t.category]?.label}
                           </span>
                           {" · "}
-                          {new Date(t.transaction_date).toLocaleDateString(
-                            "en-US",
-                            {
-                              month: "short",
-                              day: "numeric",
-                              year: "numeric",
-                            },
-                          )}
+                          {new Date(
+                            t.transaction_date + "T00:00:00",
+                          ).toLocaleDateString("en-US", {
+                            month: "short",
+                            day: "numeric",
+                            year: "numeric",
+                          })}
                         </p>
                       </div>
                       <p
@@ -1061,6 +1373,7 @@ export default function MobileDashboard() {
       </main>
 
       <Footer />
+      <RenderWakeButton />
     </div>
   );
 }

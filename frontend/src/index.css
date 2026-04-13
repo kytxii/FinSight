@@ -39,6 +39,10 @@
   --category-tips: #4db6ac;
 }
 
+body {
+  margin: 0;
+}
+
 * {
   font-family: "Quicksand", system-ui, sans-serif;
   -webkit-tap-highlight-color: transparent;

@@ -23,11 +23,11 @@ export default function AddTransactionModal({
   const text = dark ? "var(--dark-text)" : "var(--light-text)";
   const input = dark ? "var(--dark-bg)" : "var(--light-bg)";
 
-  const today = new Date().toISOString().split("T")[0];
+  const today = new Date().toLocaleDateString("en-CA");
   const defaultCategory = activeTab === "ALL" ? "EXPENSE" : activeTab;
 
   const [form, setForm] = useState({
-    name: "",
+    name: defaultCategory === "TIPS" ? "Cash" : "",
     amount: "",
     category: defaultCategory,
     transaction_date: today,
@@ -37,8 +37,14 @@ export default function AddTransactionModal({
   const [cancelHovered, setCancelHovered] = useState(false);
   const [submitHovered, setSubmitHovered] = useState(false);
 
-  const handleChange = (e) =>
-    setForm((f) => ({ ...f, [e.target.name]: e.target.value }));
+  const handleChange = (e) => {
+    const { name, value } = e.target;
+    if (name === "category") {
+      setForm((f) => ({ ...f, category: value, name: value === "TIPS" ? "Cash" : "" }));
+    } else {
+      setForm((f) => ({ ...f, [name]: value }));
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -53,6 +59,8 @@ export default function AddTransactionModal({
       setLoading(false);
     }
   };
+
+  const catColor = `var(--category-${form.category.toLowerCase()})`;
 
   const inputStyle = {
     backgroundColor: input,
@@ -70,7 +78,7 @@ export default function AddTransactionModal({
     >
       <div
         className="w-full max-w-md rounded-2xl border shadow-2xl"
-        style={{ backgroundColor: bg, borderColor: border, color: text }}
+        style={{ backgroundColor: bg, borderColor: catColor, color: text }}
       >
         <div
           className="px-6 py-4 border-b flex items-center justify-between"
@@ -105,10 +113,11 @@ export default function AddTransactionModal({
               name="name"
               value={form.name}
               onChange={handleChange}
-              required
+              required={form.category !== "TIPS"}
+              disabled={form.category === "TIPS"}
               placeholder="e.g. Netflix, Salary..."
               className="w-full rounded-xl px-4 py-2.5 text-sm focus:outline-none border"
-              style={inputStyle}
+              style={form.category === "TIPS" ? { ...inputStyle, backgroundImage: `repeating-linear-gradient(45deg, transparent, transparent 5px, color-mix(in srgb, ${text} 10%, transparent) 5px, color-mix(in srgb, ${text} 10%, transparent) 10px)`, cursor: "not-allowed", opacity: 0.5 } : inputStyle}
             />
           </div>
 
@@ -137,7 +146,7 @@ export default function AddTransactionModal({
                 value={form.category}
                 onChange={handleChange}
                 className="w-full rounded-xl px-4 py-2.5 text-sm focus:outline-none border"
-                style={inputStyle}
+                style={{ ...inputStyle, borderColor: catColor, color: catColor }}
               >
                 {CATEGORY_OPTIONS.map((opt) => (
                   <option key={opt.value} value={opt.value}>
@@ -194,9 +203,10 @@ export default function AddTransactionModal({
               onMouseLeave={() => setSubmitHovered(false)}
               className="flex-1 py-2.5 rounded-xl border text-sm font-medium disabled:opacity-50 transition-all cursor-pointer active:scale-95"
               style={{
-                backgroundColor: `color-mix(in srgb, ${text} ${submitHovered ? "18%" : "10%"}, transparent)`,
-                borderColor: border,
-                color: text,
+                backgroundColor: `color-mix(in srgb, ${catColor} ${submitHovered ? "18%" : "12%"}, transparent)`,
+                borderColor: catColor,
+                color: catColor,
+                boxShadow: `0 0 0 2px color-mix(in srgb, ${catColor} 20%, transparent)`,
               }}
             >
               {loading ? "Saving..." : "Add Transaction"}
