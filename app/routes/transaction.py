@@ -10,10 +10,7 @@ router = APIRouter(prefix="/transactions", tags=["transactions"])
 
 @router.get("/", response_model=list[TransactionResponse])
 async def get_transactions(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    try:
-        result = await transaction_service.get_transactions(current_user.id, db)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+    result = await transaction_service.get_transactions(current_user.id, db)
     return result
 
 @router.get("/{transaction_id}", response_model=TransactionResponse)
@@ -32,7 +29,7 @@ async def create_transaction(transaction: CreateTransaction, current_user: User 
         raise HTTPException(status_code=400, detail=str(e))
     return result
 
-@router.put("/{transaction_id}", response_model=TransactionResponse)
+@router.patch("/{transaction_id}", response_model=TransactionResponse)
 async def update_transaction(transaction_id: UUID, data: UpdateTransaction, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     try:
         result = await transaction_service.update_transaction(transaction_id, data, current_user.id, db)
@@ -40,10 +37,6 @@ async def update_transaction(transaction_id: UUID, data: UpdateTransaction, curr
         raise HTTPException(status_code=404, detail=str(e))
     return result
 
-@router.delete("/{transaction_id}")
+@router.delete("/{transaction_id}", status_code=204)
 async def delete_transaction(transaction_id: UUID, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    try:
-        result = await transaction_service.delete_transaction(transaction_id, current_user.id, db)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-    return result
+    await transaction_service.delete_transaction(transaction_id, current_user.id, db)
