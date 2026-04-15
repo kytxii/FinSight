@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
 from app.dependencies import get_db, get_current_user
 from app.models import User
-from app.schemas import CreateTransaction, TransactionResponse, UpdateTransaction
+from app.schemas.transaction import CreateTransaction, TransactionResponse, UpdateTransaction
 from app.services import transaction_service
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])

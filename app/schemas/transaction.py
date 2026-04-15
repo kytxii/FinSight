@@ -5,7 +5,7 @@ from uuid import UUID
 from app.models.category import Category
 
 class TransactionBase(BaseModel):
-    name: str = Field(min_length=1, max_length=255)
+    name: str = Field(min_length=1, max_length=100)
     amount: Decimal
     transaction_date: date
     category: Category
