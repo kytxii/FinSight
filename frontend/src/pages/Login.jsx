@@ -23,7 +23,11 @@ export default function Login() {
         email_address: email,
         password,
       });
-      login(res.data.access_token);
+      const token = res.data.access_token;
+      const meRes = await client.get("/users/me", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      login(token, meRes.data);
       navigate("/");
     } catch (err) {
       if (err.response?.status === 429) {
