@@ -46,6 +46,8 @@ export default function Login() {
             return prev - 1;
           });
         }, 1000);
+      } else if (!err.response || err.response.status >= 500) {
+        setError("Server error. Please try again.");
       } else {
         setAttempts((prev) => prev + 1);
         setError("Invalid email or password.");
