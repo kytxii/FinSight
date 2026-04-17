@@ -12,7 +12,7 @@ import {
   YAxis,
   CartesianGrid,
 } from "recharts";
-import { getTransactions } from "../api/transactions";
+import { getTransactions, deleteTransaction } from "../api/transactions";
 import {
   CATEGORIES,
   CATEGORY_CONFIG,
@@ -26,6 +26,7 @@ import SummaryCard from "../components/SummaryCard";
 import ChartCard from "../components/ChartCard";
 import TransactionTable from "../components/TransactionTable";
 import AddTransactionModal from "../components/AddTransactionModal";
+import EditTransactionModal from "../components/EditTransactionModal";
 import Footer from "../components/Footer";
 import RenderWakeButton from "../components/RenderWakeButton";
 
@@ -34,6 +35,7 @@ export default function Dashboard() {
   const [transactions, setTransactions] = useState([]);
   const [activeTab, setActiveTab] = useState("ALL");
   const [showModal, setShowModal] = useState(false);
+  const [editingTransaction, setEditingTransaction] = useState(null);
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState(10);
   const [highlightId, setHighlightId] = useState(null);
@@ -54,6 +56,11 @@ export default function Dashboard() {
 
   function refreshTransactions() {
     getTransactions().then((res) => setTransactions(res.data));
+  }
+
+  async function handleDelete(t) {
+    await deleteTransaction(t.id);
+    refreshTransactions();
   }
 
   const handleSelectTransaction = useCallback((t) => {
@@ -601,6 +608,8 @@ export default function Dashboard() {
             onPageChange={setPage}
             onPerPageChange={setPerPage}
             onAdd={() => setShowModal(true)}
+            onEdit={setEditingTransaction}
+            onDelete={handleDelete}
             activeColor={activeColor}
             highlightId={highlightId}
           />
@@ -618,6 +627,17 @@ export default function Dashboard() {
           onClose={() => setShowModal(false)}
           onSaved={() => {
             setShowModal(false);
+            refreshTransactions();
+          }}
+        />
+      )}
+
+      {editingTransaction && (
+        <EditTransactionModal
+          transaction={editingTransaction}
+          onClose={() => setEditingTransaction(null)}
+          onSaved={() => {
+            setEditingTransaction(null);
             refreshTransactions();
           }}
         />
