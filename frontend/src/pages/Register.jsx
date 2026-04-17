@@ -87,6 +87,8 @@ export default function Register() {
         const field = FIELD_LABELS[first.loc?.[1]] ?? first.loc?.[1];
         const msg = MSG_MAP[first.type]?.(first.ctx) ?? first.msg;
         setError(`${field} ${msg}.`);
+      } else if (!err.response || err.response.status >= 500) {
+        setError("Server error. Please try again.");
       } else {
         setError("Something went wrong. Try again.");
       }
