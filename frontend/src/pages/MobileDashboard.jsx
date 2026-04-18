@@ -619,7 +619,7 @@ export default function MobileDashboard() {
               </button>
             </div>
           </div>
-          <RecurringPaymentsModal inline mobile onSaveStateChange={setRpSave} />
+          <RecurringPaymentsModal inline mobile onSaveStateChange={setRpSave} onDelete={refresh} onSaved={refresh} />
         </div>
       )}
 

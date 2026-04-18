@@ -12,6 +12,7 @@ export default function Register() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
   const dark = useTheme();
 
@@ -68,31 +69,40 @@ export default function Register() {
       return;
     }
 
-    try {
-      await client.post("/auth/register", {
-        first_name: firstName,
-        last_name: lastName,
-        email_address: email,
-        password,
-      });
-      navigate("/login");
-    } catch (err) {
-      const status = err.response?.status;
-      const detail = err.response?.data?.detail;
+    setLoading(true);
 
-      if (status === 403) {
-        setError("Registration is closed.");
-      } else if (status === 422 && Array.isArray(detail)) {
-        const first = detail[0];
-        const field = FIELD_LABELS[first.loc?.[1]] ?? first.loc?.[1];
-        const msg = MSG_MAP[first.type]?.(first.ctx) ?? first.msg;
-        setError(`${field} ${msg}.`);
-      } else if (!err.response || err.response.status >= 500) {
-        setError("Server error. Please try again.");
-      } else {
-        setError("Something went wrong. Try again.");
+    const attempt = async () => {
+      try {
+        await client.post("/auth/register", {
+          first_name: firstName,
+          last_name: lastName,
+          email_address: email,
+          password,
+        });
+        navigate("/login");
+      } catch (err) {
+        const status = err.response?.status;
+        const detail = err.response?.data?.detail;
+
+        if (!err.response || status >= 500) {
+          setTimeout(attempt, 5000);
+        } else if (status === 403) {
+          setLoading(false);
+          setError("Registration is closed.");
+        } else if (status === 422 && Array.isArray(detail)) {
+          const first = detail[0];
+          const field = FIELD_LABELS[first.loc?.[1]] ?? first.loc?.[1];
+          const msg = MSG_MAP[first.type]?.(first.ctx) ?? first.msg;
+          setLoading(false);
+          setError(`${field} ${msg}.`);
+        } else {
+          setLoading(false);
+          setError("Something went wrong. Try again.");
+        }
       }
-    }
+    };
+
+    attempt();
   };
 
   const inputStyle = {
@@ -122,6 +132,10 @@ export default function Register() {
   return (
     <>
       <style>{`
+        @keyframes btn-spin {
+          from { transform: rotate(0deg); }
+          to   { transform: rotate(360deg); }
+        }
         @keyframes finsight-float-1 {
           0%   { transform: translate(0px,   0px)   scale(1);    }
           33%  { transform: translate(40px,  -30px) scale(1.08); }
@@ -571,7 +585,9 @@ export default function Register() {
 
           <button
             type="submit"
+            disabled={loading}
             style={{
+              position: "relative",
               padding: "8px 16px",
               borderRadius: "8px",
               border: "none",
@@ -579,14 +595,24 @@ export default function Register() {
               color: "#fff",
               fontSize: "14px",
               fontWeight: 500,
-              cursor: "pointer",
+              cursor: loading ? "not-allowed" : "pointer",
               transition: "opacity 0.15s",
               opacity: 0.85,
+              width: "100%",
             }}
-            onMouseEnter={(e) => (e.target.style.opacity = "0.7")}
-            onMouseLeave={(e) => (e.target.style.opacity = "0.85")}
+            onMouseEnter={(e) => { if (!loading) e.currentTarget.style.opacity = "0.7"; }}
+            onMouseLeave={(e) => { if (!loading) e.currentTarget.style.opacity = "0.85"; }}
           >
-            Create account
+            <span style={{ opacity: loading ? 0 : 1 }}>Create account</span>
+            {loading && (
+              <span style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)", display: "flex" }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+                  style={{ animation: "btn-spin 0.8s linear infinite" }}>
+                  <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeOpacity="0.3" />
+                  <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+                </svg>
+              </span>
+            )}
           </button>
 
           <p

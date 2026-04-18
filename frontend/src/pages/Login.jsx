@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../context/AuthContext";
 import client from "../api/client";
@@ -9,50 +9,89 @@ export default function Login() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(false);
   const [rateLimited, setRateLimited] = useState(false);
   const [countdown, setCountdown] = useState(0);
   const [attempts, setAttempts] = useState(0);
-  const { login } = useAuth();
+  const [waking, setWaking] = useState(false);
+  const [symbolIdx, setSymbolIdx] = useState(0);
+  const [phraseIdx, setPhraseIdx] = useState(0);
+  const { login, enterDemoMode } = useAuth();
+
+  const SYMBOLS = ["·", "✢", "✣", "✤", "✥", "✦", "✧", "✩", "✦", "✥", "✤", "✣", "✢", "·"];
+  const PHRASES = [
+    "Coaxing the server out of bed…",
+    "Sending the server a strongly worded email…",
+    "Bribing the cloud with extra RAM…",
+    "Waking up the server…",
+    "Brewing the coffee…",
+    "Warming up the engines…",
+    "Spinning up containers…",
+    "Tying the server's shoes…",
+    "Loading the database…",
+    "Hitting snooze one more time…",
+    "Almost ready…",
+    "Negotiating with the cloud…",
+    "Poking the backend with a stick…",
+  ];
+
+  useEffect(() => {
+    if (!waking) { setSymbolIdx(0); return; }
+    setPhraseIdx(Math.floor(Math.random() * PHRASES.length));
+    const symInt = setInterval(() => setSymbolIdx(i => (i + 1) % SYMBOLS.length), 100);
+    return () => clearInterval(symInt);
+  }, [waking]);
   const navigate = useNavigate();
   const dark = useTheme();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    try {
-      const res = await client.post("/auth/login", {
-        email_address: email,
-        password,
-      });
-      const token = res.data.access_token;
-      const meRes = await client.get("/users/me", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      login(token, meRes.data);
-      navigate("/");
-    } catch (err) {
-      if (err.response?.status === 429) {
-        setRateLimited(true);
-        setAttempts(0);
-        setCountdown(30);
-        setError("Too many attempts.");
-        const interval = setInterval(() => {
-          setCountdown((prev) => {
-            if (prev <= 1) {
-              clearInterval(interval);
-              setRateLimited(false);
-              setError(null);
-              return 0;
-            }
-            return prev - 1;
-          });
-        }, 1000);
-      } else if (!err.response || err.response.status >= 500) {
-        setError("Server error. Please try again.");
-      } else {
-        setAttempts((prev) => prev + 1);
-        setError("Invalid email or password.");
+    if (loading || rateLimited) return;
+    setLoading(true);
+    setError(null);
+
+    const attempt = async () => {
+      try {
+        const res = await client.post("/auth/login", { email_address: email, password });
+        const token = res.data.access_token;
+        const meRes = await client.get("/users/me", {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        setWaking(false);
+        login(token, meRes.data);
+        navigate("/");
+      } catch (err) {
+        if (err.response?.status === 429) {
+          setWaking(false);
+          setLoading(false);
+          setRateLimited(true);
+          setAttempts(0);
+          setCountdown(30);
+          setError("Too many attempts.");
+          const interval = setInterval(() => {
+            setCountdown((prev) => {
+              if (prev <= 1) {
+                clearInterval(interval);
+                setRateLimited(false);
+                setError(null);
+                return 0;
+              }
+              return prev - 1;
+            });
+          }, 1000);
+        } else if (!err.response || err.response.status >= 500) {
+          setWaking(true);
+          setTimeout(attempt, 5000);
+        } else {
+          setWaking(false);
+          setLoading(false);
+          setAttempts((prev) => prev + 1);
+          setError("Invalid email or password.");
+        }
       }
-    }
+    };
+
+    attempt();
   };
 
   const accentColor = dark ? "#81c784" : "#43a047";
@@ -61,6 +100,10 @@ export default function Login() {
   return (
     <>
       <style>{`
+        @keyframes btn-spin {
+          from { transform: rotate(0deg); }
+          to   { transform: rotate(360deg); }
+        }
         @keyframes finsight-float-1 {
           0%   { transform: translate(0px,   0px)   scale(1);    }
           33%  { transform: translate(40px,  -30px) scale(1.08); }
@@ -81,6 +124,14 @@ export default function Login() {
         @keyframes finsight-grid-fade {
           0%, 100% { opacity: 0.03; }
           50%       { opacity: 0.06; }
+        }
+        @keyframes waking-in {
+          from { opacity: 0; transform: translateY(5px); }
+          to   { opacity: 1; transform: translateY(0);   }
+        }
+        @keyframes phrase-in {
+          from { opacity: 0; transform: translateX(5px); }
+          to   { opacity: 1; transform: translateX(0);   }
         }
       `}</style>
 
@@ -204,18 +255,54 @@ export default function Login() {
             </p>
           )}
 
-          <button type="submit" disabled={rateLimited}
-            style={{ padding: "8px 16px", borderRadius: "8px", border: "none", backgroundColor: "var(--category-income)", color: "#fff", fontSize: "14px", fontWeight: 500, cursor: rateLimited ? "not-allowed" : "pointer", transition: "opacity 0.15s", opacity: rateLimited ? 0.45 : 0.85, textDecoration: rateLimited ? "line-through" : "none" }}
-            onMouseEnter={e => { if (!rateLimited) e.target.style.opacity = "0.7"; }}
-            onMouseLeave={e => { if (!rateLimited) e.target.style.opacity = "0.85"; }}
+          <button type="submit" disabled={rateLimited || loading}
+            style={{ position: "relative", padding: "8px 16px", borderRadius: "8px", border: "none", backgroundColor: "var(--category-income)", color: "#fff", fontSize: "14px", fontWeight: 500, cursor: rateLimited || loading ? "not-allowed" : "pointer", transition: "opacity 0.15s", opacity: rateLimited ? 0.45 : 0.85, textDecoration: rateLimited ? "line-through" : "none" }}
+            onMouseEnter={e => { if (!rateLimited && !loading) e.currentTarget.style.opacity = "0.7"; }}
+            onMouseLeave={e => { if (!rateLimited && !loading) e.currentTarget.style.opacity = "0.85"; }}
           >
-            Sign in
+            <span style={{ opacity: loading ? 0 : 1 }}>Sign in</span>
+            {loading && (
+              <span style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)", display: "flex" }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+                  style={{ animation: "btn-spin 0.8s linear infinite" }}>
+                  <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" strokeOpacity="0.3" />
+                  <path d="M12 2a10 10 0 0 1 10 10" stroke="currentColor" strokeWidth="3" strokeLinecap="round" />
+                </svg>
+              </span>
+            )}
           </button>
+
+          {waking && (
+            <div style={{ display: "flex", alignItems: "center", gap: "10px", animation: "waking-in 0.35s ease" }}>
+              <span style={{ fontSize: "15px", color: accentColor, width: "16px", textAlign: "center", flexShrink: 0, fontFamily: "monospace", lineHeight: 1 }}>
+                {SYMBOLS[symbolIdx]}
+              </span>
+              <span style={{ fontSize: "12px", color: dark ? "var(--dark-text)" : "var(--light-text)", opacity: 0.55 }}>
+                {PHRASES[phraseIdx]}
+              </span>
+            </div>
+          )}
 
           <p style={{ margin: 0, fontSize: "13px", textAlign: "center", color: dark ? "var(--dark-text)" : "var(--light-text)", opacity: 0.5 }}>
             Don't have an account?{" "}
             <a href="/register" style={{ opacity: rateLimited ? 0.35 : 1, color: "var(--category-income)", textDecoration: rateLimited ? "line-through" : "none", fontWeight: 600, pointerEvents: rateLimited ? "none" : "auto" }}>Register</a>
           </p>
+
+          <div style={{ display: "flex", alignItems: "center", gap: "12px", margin: "4px 0" }}>
+            <div style={{ flex: 1, height: "1px", backgroundColor: dark ? "var(--dark-border)" : "var(--light-border)" }} />
+            <span style={{ fontSize: "11px", opacity: 0.4, color: dark ? "var(--dark-text)" : "var(--light-text)" }}>or</span>
+            <div style={{ flex: 1, height: "1px", backgroundColor: dark ? "var(--dark-border)" : "var(--light-border)" }} />
+          </div>
+
+          <button
+            type="button"
+            onClick={() => { enterDemoMode(); navigate("/"); }}
+            style={{ padding: "8px 16px", borderRadius: "8px", border: `1px solid ${dark ? "var(--dark-border)" : "var(--light-border)"}`, backgroundColor: "transparent", color: dark ? "var(--dark-text)" : "var(--light-text)", fontSize: "14px", fontWeight: 500, cursor: "pointer", opacity: 0.7, transition: "opacity 0.15s" }}
+            onMouseEnter={e => e.currentTarget.style.opacity = "1"}
+            onMouseLeave={e => e.currentTarget.style.opacity = "0.7"}
+          >
+            Try Demo
+          </button>
         </form>
       </div>
     </>

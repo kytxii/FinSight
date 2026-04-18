@@ -5,7 +5,7 @@ import { useAuth } from "../context/AuthContext";
 import { CATEGORY_CONFIG, fmt } from "../utils/finance";
 import RecurringPaymentsModal from "./RecurringPaymentsModal";
 
-export default function Navbar({ transactions = [], onSelectTransaction }) {
+export default function Navbar({ transactions = [], onSelectTransaction, onDeleteRecurringPayment, onSaveRecurringPayment }) {
   const dark = useTheme();
   const { logout, user } = useAuth();
   const navigate = useNavigate();
@@ -217,7 +217,7 @@ export default function Navbar({ transactions = [], onSelectTransaction }) {
         <div
           className="fixed inset-0 z-40"
           style={{ backgroundColor: "rgba(0,0,0,0.4)" }}
-          onClick={() => setDrawerOpen(false)}
+          onClick={() => { setDrawerOpen(false); setRecurringOpen(false); }}
         />
       )}
 
@@ -304,7 +304,7 @@ export default function Navbar({ transactions = [], onSelectTransaction }) {
 
         {/* Recurring panel */}
         {recurringOpen ? (
-          <RecurringPaymentsModal inline onSaveStateChange={setRpSave} />
+          <RecurringPaymentsModal inline onSaveStateChange={setRpSave} onDelete={onDeleteRecurringPayment} onSaved={onSaveRecurringPayment} />
         ) : (
           <>
             <div className="px-5 py-5 flex items-center gap-3">
