@@ -39,4 +39,8 @@ async def update_recurring_payments(recurring_payment_id: UUID, data: UpdateRecu
 
 @router.delete("/{recurring_payment_id}", status_code=204)
 async def delete_recurring_payment(recurring_payment_id: UUID , current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
-    await recurring_payment_service.delete_recurring_payment(recurring_payment_id, current_user.id, db)
+    try:
+        result = await recurring_payment_service.delete_recurring_payment(recurring_payment_id, current_user.id, db)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    return result

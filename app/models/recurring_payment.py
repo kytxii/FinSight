@@ -16,6 +16,8 @@ class RecurringPayment(Base):
     day_of_month: Mapped[int] = mapped_column(Integer, nullable=False)
     category: Mapped[Category] = mapped_column(CategoryEnum(Category), nullable=False)
 
+    last_applied_month: Mapped[str | None] = mapped_column(String(7), nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
     

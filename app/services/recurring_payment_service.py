@@ -1,7 +1,9 @@
-from sqlalchemy import select
+from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
-from app.models import RecurringPayment
+from datetime import date
+import calendar
+from app.models import RecurringPayment, Transaction
 from app.schemas import CreateRecurringPayment, UpdateRecurringPayment
 
 async def get_recurring_payments(current_user: UUID, db: AsyncSession):
@@ -28,22 +30,36 @@ async def create_recurring_payment(recurring_payment: CreateRecurringPayment, cu
     await db.refresh(new_recurring_payment)
     return new_recurring_payment
 
-async def update_recurring_payment(recurring_payment_id: UUID, data: UpdateRecurringPayment, current_user: UUID, db: AsyncSession):
-    result = await db.execute(select(RecurringPayment).where(RecurringPayment.id == recurring_payment_id))
-    recurring_payment = result.scalar_one_or_none()
+async def update_recurring_payment(recurring_payment_id: UUID, data: UpdateRecurringPayment, current_user: UUID, db: AsyncSession):                     
+      result = await db.execute(select(RecurringPayment).where(RecurringPayment.id == recurring_payment_id))                                                            
+      recurring_payment = result.scalar_one_or_none()
 
-    if recurring_payment is None:
-        raise ValueError("Recurring payment not found")
-    if recurring_payment.created_by != current_user:
-        raise ValueError("Recurring payment not found")
+      if recurring_payment is None:
+          raise ValueError("Recurring payment not found")
+      if recurring_payment.created_by != current_user:
+          raise ValueError("Recurring payment not found")
 
-    for key, value in data.model_dump(exclude_unset=True).items():
-        setattr(recurring_payment, key, value)
-    recurring_payment.updated_by = current_user
+      for key, value in data.model_dump(exclude_unset=True).items():
+          setattr(recurring_payment, key, value)
+      recurring_payment.updated_by = current_user
 
-    await db.commit()
-    await db.refresh(recurring_payment)
-    return recurring_payment
+      today = date.today()
+      month_start = today.replace(day=1)
+      month_end = today.replace(day=calendar.monthrange(today.year, today.month)[1])
+
+      result = await db.execute(select(Transaction).where(
+              Transaction.recurring_payment_id == recurring_payment_id,
+              Transaction.transaction_date >= month_start,
+              Transaction.transaction_date <= month_end,
+              ))
+      linked = result.scalar_one_or_none()
+      if linked:
+          for key, value in data.model_dump(exclude_unset=True).items():
+              setattr(linked, key, value)
+
+      await db.commit()
+      await db.refresh(recurring_payment)
+      return recurring_payment
 
 async def delete_recurring_payment(recurring_payment_id: UUID, current_user: UUID, db: AsyncSession):
     result = await db.execute(select(RecurringPayment).where(RecurringPayment.id == recurring_payment_id))
@@ -54,5 +70,6 @@ async def delete_recurring_payment(recurring_payment_id: UUID, current_user: UUI
     if recurring_payment.created_by != current_user:
         raise ValueError("Recurring payment not found")
 
+    await db.execute(delete(Transaction).where(Transaction.recurring_payment_id == recurring_payment_id))
     await db.delete(recurring_payment)
     await db.commit()

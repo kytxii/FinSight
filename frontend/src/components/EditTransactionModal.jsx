@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { CATEGORY_CONFIG } from "../utils/finance";
 import { updateTransaction } from "../api/transactions";
+import { updateRecurringPayment } from "../api/recurringPayments";
 import { useTheme } from "../hooks/useTheme";
 
 const CATEGORY_OPTIONS = Object.entries(CATEGORY_CONFIG).map(([key, { label }]) => ({ value: key, label }));
@@ -39,6 +40,15 @@ export default function EditTransactionModal({ transaction, onClose, onSaved }) 
     setLoading(true);
     try {
       await updateTransaction(transaction.id, { ...form, amount: parseFloat(form.amount) });
+      if (transaction.recurring_payment_id) {
+        const day = parseInt(form.transaction_date.split("-")[2], 10);
+        await updateRecurringPayment(transaction.recurring_payment_id, {
+          name: form.name,
+          amount: parseFloat(form.amount),
+          category: form.category,
+          day_of_month: day,
+        });
+      }
       onSaved();
     } catch (err) {
       setError(err.response?.data?.detail ?? "Something went wrong");

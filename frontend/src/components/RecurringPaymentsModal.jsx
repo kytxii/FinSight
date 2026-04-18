@@ -34,7 +34,7 @@ const newDraft = () => ({ _lid: ++_lid, ...EMPTY_DRAFT });
 
 // inline=true  → renders as a flush panel inside the drawer (no modal chrome)
 // inline=false → renders as a centred modal overlay
-export default function RecurringPaymentsModal({ onClose, inline = false, onSaveStateChange, mobile = false }) {
+export default function RecurringPaymentsModal({ onClose, inline = false, onSaveStateChange, mobile = false, onDelete, onSaved }) {
   const dark = useTheme();
   const bg     = dark ? "var(--dark-surface)" : "var(--light-surface)";
   const border = dark ? "var(--dark-border)"  : "var(--light-border)";
@@ -50,6 +50,7 @@ export default function RecurringPaymentsModal({ onClose, inline = false, onSave
   const [isSaving, setIsSaving]     = useState(false);
   const [saveStatus, setSaveStatus] = useState("idle");
   const [deleted, setDeleted]       = useState(new Set());
+  const [deleteError, setDeleteError] = useState(false);
   const [hoverRow, setHoverRow]     = useState(null);
   const originalRowsRef             = useRef([]);
   const rowsRef                     = useRef([]);
@@ -100,6 +101,7 @@ export default function RecurringPaymentsModal({ onClose, inline = false, onSave
     }, 700);
     try {
       await deleteRecurringPayment(id);
+      onDelete?.();
     } catch {
       setDeleted(s => { const n = new Set(s); n.delete(id); return n; });
       setRows(prev => {
@@ -107,6 +109,8 @@ export default function RecurringPaymentsModal({ onClose, inline = false, onSave
         const orig = originalRowsRef.current.find(r => r.id === id);
         return orig ? [...prev, orig] : prev;
       });
+      setDeleteError(true);
+      setTimeout(() => setDeleteError(false), 3000);
     }
   };
 
@@ -125,10 +129,17 @@ export default function RecurringPaymentsModal({ onClose, inline = false, onSave
   const isDirty = drafts.length > 0 || rows.some(row => {
     const orig = originalRowsRef.current.find(r => r.id === row.id);
     if (!orig) return false;
-    return row.name !== orig.name ||
+    if (row.name !== orig.name ||
       Math.abs(parseFloat(row.amount) - parseFloat(orig.amount)) > 0.001 ||
       row.day_of_month !== orig.day_of_month ||
-      row.category !== orig.category;
+      row.category !== orig.category) return true;
+    if (editCell?.id === row.id) {
+      const f = editCell.field;
+      if (f === "name") return editValue.trim() !== String(orig.name);
+      if (f === "amount") { const n = parseFloat(editValue); return !isNaN(n) && Math.abs(n - parseFloat(orig.amount)) > 0.001; }
+      if (f === "day_of_month") { const n = parseInt(editValue, 10); return !isNaN(n) && n !== orig.day_of_month; }
+    }
+    return false;
   });
 
   // ── Save ──────────────────────────────────────────────────────────────────
@@ -183,6 +194,7 @@ export default function RecurringPaymentsModal({ onClose, inline = false, onSave
 
       setSaveStatus("saved");
       setTimeout(() => setSaveStatus("idle"), 2500);
+      onSaved?.();
     } catch {}
     finally { setIsSaving(false); }
   };
@@ -503,6 +515,11 @@ export default function RecurringPaymentsModal({ onClose, inline = false, onSave
         justifyContent: "flex-end",
         flexShrink: 0,
       }}>
+        {deleteError && (
+          <span style={{ fontSize: mobile ? "13px" : "11px", color: "var(--category-expense)" }}>
+            Failed to delete — try again
+          </span>
+        )}
         <span style={{ fontSize: mobile ? "13px" : "11px", color: muted }}>
           {rows.length} {rows.length === 1 ? "payment" : "payments"}
         </span>
