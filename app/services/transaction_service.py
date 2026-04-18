@@ -1,7 +1,9 @@
+from datetime import date
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
-from app.models import Transaction
+import calendar
+from app.models import Transaction, RecurringPayment
 from app.schemas import CreateTransaction, UpdateTransaction
 
 
@@ -58,4 +60,33 @@ async def delete_transaction(transaction_id: UUID, current_user: UUID, db: Async
         raise ValueError("Transaction not found")
 
     await db.delete(transaction)
+    await db.commit()
+
+async def apply_recurring_payments(user_id: UUID, db: AsyncSession) -> None:
+    today = date.today()
+
+    due = await db.scalars(
+        select(RecurringPayment)
+        .where(RecurringPayment.created_by == user_id)
+        .where(RecurringPayment.day_of_month <= today.day)
+    )
+
+    current_month = today.strftime("%Y-%m")                      
+                                                                                     
+    for rp in due.all():                                                               
+        if rp.last_applied_month == current_month:
+            continue
+
+        day = min(rp.day_of_month, calendar.monthrange(today.year, today.month)[1])
+        db.add(Transaction(
+            created_by=user_id,
+            updated_by=user_id,
+            name=rp.name,
+            amount=rp.amount,
+            category=rp.category,
+            transaction_date=today.replace(day=day),
+            recurring_payment_id=rp.id,
+        ))
+        rp.last_applied_month = current_month
+
     await db.commit()

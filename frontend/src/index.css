@@ -1,5 +1,10 @@
 @import "tailwindcss";
 
+@keyframes demo-pulse {
+  0%, 100% { box-shadow: 0 0 3px 1px rgba(251,191,36,0.4); }
+  50%       { box-shadow: 0 0 8px 4px rgba(251,191,36,0.1); }
+}
+
 :root {
   /* Light */
   --light-bg: #d7d7d7;

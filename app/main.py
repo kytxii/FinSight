@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-from app.routes import transaction, users, auth
+from app.routes import transaction, users, auth, recurring_payment
 from app.core.config import settings
 from app.core.limiter import limiter
 
@@ -26,3 +26,4 @@ def root():
 app.include_router(transaction.router)
 app.include_router(users.router)
 app.include_router(auth.router)
+app.include_router(recurring_payment.router)

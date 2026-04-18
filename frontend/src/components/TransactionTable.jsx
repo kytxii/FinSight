@@ -1,11 +1,25 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { CATEGORY_CONFIG, INCOME_TYPES, fmt } from "../utils/finance";
 import { useTheme } from "../hooks/useTheme";
 
-export default function TransactionTable({ rows, onAdd, activeColor, page, perPage, total, onPageChange, onPerPageChange, highlightId }) {
+export default function TransactionTable({ rows, onAdd, onEdit, onDelete, activeColor, page, perPage, total, onPageChange, onPerPageChange, highlightId }) {
   const dark = useTheme();
   const [addHovered, setAddHovered] = useState(false);
   const [hoveredBtn, setHoveredBtn] = useState(null);
+  const [openMenuId, setOpenMenuId] = useState(null);
+  const [deleting, setDeleting] = useState(new Set());
+
+  const handleDelete = (t) => {
+    setOpenMenuId(null);
+    setDeleting(s => new Set(s).add(t.id));
+    setTimeout(() => onDelete?.(t), 700);
+  };
+
+  useEffect(() => {
+    function onMouseDown() { setOpenMenuId(null); }
+    document.addEventListener("mousedown", onMouseDown);
+    return () => document.removeEventListener("mousedown", onMouseDown);
+  }, []);
 
   const bg     = dark ? "var(--dark-surface)" : "var(--light-surface)";
   const border = dark ? "var(--dark-border)"  : "var(--light-border)";
@@ -14,6 +28,13 @@ export default function TransactionTable({ rows, onAdd, activeColor, page, perPa
 
   return (
     <div className="rounded-2xl border" style={{ backgroundColor: bg, borderColor: activeColor, color: text }}>
+      <style>{`
+        @keyframes tx-bar-sweep {
+          0%   { transform: scaleX(0); opacity: 0.9; }
+          55%  { transform: scaleX(1); opacity: 0.9; }
+          100% { transform: scaleX(1); opacity: 0;   }
+        }
+      `}</style>
       <div className="px-6 py-4 border-b flex items-center justify-between" style={{ borderColor: border }}>
         <h3 className="text-xl font-semibold">Transactions</h3>
         <button
@@ -40,8 +61,8 @@ export default function TransactionTable({ rows, onAdd, activeColor, page, perPa
             <th className="px-6 py-3 font-medium">Date</th>
             <th className="px-6 py-3 font-medium">Name</th>
             <th className="px-6 py-3 font-medium">Category</th>
-            <th className="px-6 py-3 font-medium text-right">Amount</th>
-            <th className="px-4 py-3"></th>
+            <th className="px-6 py-3 font-medium text-right" style={{ paddingRight: "24px" }}>Amount</th>
+            <th className="py-3" style={{ width: "96px", minWidth: "96px" }}></th>
           </tr>
         </thead>
         <tbody>
@@ -58,12 +79,23 @@ export default function TransactionTable({ rows, onAdd, activeColor, page, perPa
                   className="border-t"
                   style={{
                     borderColor: border,
-                    backgroundColor: t.id === highlightId
+                    backgroundColor: t.id === highlightId && !deleting.has(t.id)
                       ? `color-mix(in srgb, var(--category-${t.category.toLowerCase()}) 12%, transparent)`
                       : undefined,
                     transition: "background-color 0.6s ease",
+                    pointerEvents: deleting.has(t.id) ? "none" : undefined,
                   }}
                 >
+                  {deleting.has(t.id) ? (
+                    <td colSpan={5} style={{ padding: 0, position: "relative", overflow: "hidden", height: "60px" }}>
+                      <div style={{
+                        position: "absolute", inset: 0,
+                        backgroundColor: `color-mix(in srgb, var(--category-expense) 18%, ${bg})`,
+                        transformOrigin: "right center",
+                        animation: "tx-bar-sweep 0.7s ease-out forwards",
+                      }} />
+                    </td>
+                  ) : (<>
                   <td className="px-6 py-4 text-base whitespace-nowrap" style={{ color: muted }}>
                     {new Date(t.transaction_date + "T00:00:00").toLocaleDateString("en-US", {
                       month: "short", day: "numeric", year: "numeric",
@@ -78,18 +110,71 @@ export default function TransactionTable({ rows, onAdd, activeColor, page, perPa
                       {CATEGORY_CONFIG[t.category]?.label ?? t.category}
                     </span>
                   </td>
-                  <td className="px-6 py-4 text-right text-lg font-bold" style={{ color: INCOME_TYPES.has(t.category) ? "var(--category-income)" : "var(--category-expense)" }}>
+                  <td className="px-6 py-4 text-right text-lg font-bold" style={{ paddingRight: "24px", color: INCOME_TYPES.has(t.category) ? "var(--category-income)" : "var(--category-expense)" }}>
                     {INCOME_TYPES.has(t.category) ? "+" : "-"}{fmt(t.amount)}
                   </td>
-                  <td className="px-4 py-4 text-center">
-                    <button className="cursor-pointer rounded-lg p-1" style={{ color: muted }}>
-                      <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                        <circle cx="5" cy="12" r="2" />
-                        <circle cx="12" cy="12" r="2" />
-                        <circle cx="19" cy="12" r="2" />
-                      </svg>
-                    </button>
+                  <td className="py-4 text-center" style={{ width: "96px", minWidth: "96px" }}>
+                    <div
+                      style={{ position: "relative", width: "96px", height: "20px" }}
+                      onMouseDown={e => e.stopPropagation()}
+                    >
+                      {/* 3-dot button */}
+                      <div style={{
+                        position: "absolute", inset: 0,
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        opacity: openMenuId === t.id ? 0 : 1,
+                        transform: openMenuId === t.id ? "rotate(90deg) scale(0.5)" : "rotate(0deg) scale(1)",
+                        transition: "opacity 200ms ease, transform 200ms ease",
+                        pointerEvents: openMenuId === t.id ? "none" : "auto",
+                      }}>
+                        <button
+                          onClick={() => setOpenMenuId(t.id)}
+                          className="cursor-pointer rounded-lg p-1"
+                          style={{ color: muted }}
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                            <circle cx="5" cy="12" r="2" />
+                            <circle cx="12" cy="12" r="2" />
+                            <circle cx="19" cy="12" r="2" />
+                          </svg>
+                        </button>
+                      </div>
+                      {/* Edit + Delete icons */}
+                      <div style={{
+                        position: "absolute", inset: 0,
+                        display: "flex", alignItems: "center", justifyContent: "center", gap: "4px",
+                        opacity: openMenuId === t.id ? 1 : 0,
+                        transform: openMenuId === t.id ? "scale(1)" : "scale(0.6)",
+                        transition: "opacity 200ms ease, transform 200ms ease",
+                        pointerEvents: openMenuId === t.id ? "auto" : "none",
+                      }}>
+                        <button
+                          onClick={() => { setOpenMenuId(null); onEdit?.(t); }}
+                          className="cursor-pointer rounded-lg"
+                          style={{ color: muted, padding: "0 6px" }}
+                          onMouseEnter={e => e.currentTarget.style.color = text}
+                          onMouseLeave={e => e.currentTarget.style.color = muted}
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4Z" />
+                          </svg>
+                        </button>
+                        <button
+                          onClick={() => handleDelete(t)}
+                          className="cursor-pointer rounded-lg"
+                          style={{ color: muted, padding: "0 6px" }}
+                          onMouseEnter={e => e.currentTarget.style.color = "var(--category-expense)"}
+                          onMouseLeave={e => e.currentTarget.style.color = muted}
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M3 6h18M19 6l-1 14H6L5 6M10 11v6M14 11v6M9 6V4h6v2" />
+                          </svg>
+                        </button>
+                      </div>
+                    </div>
                   </td>
+                  </>)}
                 </tr>
               ))
           )}

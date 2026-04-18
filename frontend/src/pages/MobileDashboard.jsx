@@ -24,12 +24,15 @@ import { useAuth } from "../context/AuthContext";
 import { PRESETS, getPresetRange } from "../components/DateRangeFilter";
 import Footer from "../components/Footer";
 import RenderWakeButton from "../components/RenderWakeButton";
+import RecurringPaymentsModal from "../components/RecurringPaymentsModal";
 
 export default function MobileDashboard() {
   const dark = useTheme();
-  const { logout } = useAuth();
+  const { logout, user } = useAuth();
   const navigate = useNavigate();
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [recurringOpen, setRecurringOpen] = useState(false);
+  const [rpSave, setRpSave] = useState({ isDirty: false, isSaving: false, onSave: null });
 
   const bg = dark ? "var(--dark-bg)" : "var(--light-bg)";
   const surface = dark ? "var(--dark-surface)" : "var(--light-surface)";
@@ -552,6 +555,74 @@ export default function MobileDashboard() {
         />
       )}
 
+      {/* Recurring Payments — full-screen overlay */}
+      {recurringOpen && (
+        <div
+          className="fixed inset-0 z-50 flex flex-col"
+          style={{ backgroundColor: surface, color: text }}
+        >
+          <div
+            className="px-5 py-4 flex items-center justify-between border-b shrink-0"
+            style={{ borderColor: border }}
+          >
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => { setRecurringOpen(false); setRpSave({ isDirty: false, isSaving: false, onSave: null }); }}
+                className="p-1 rounded-lg cursor-pointer"
+                style={{ color: muted }}
+                aria-label="Back"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
+                  fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M15 18l-6-6 6-6" />
+                </svg>
+              </button>
+              <span className="text-sm font-semibold" style={{ color: muted }}>Recurring Payments</span>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              {(() => {
+                const status = rpSave.isSaving ? "Saving…"
+                  : rpSave.isDirty ? "Unsaved"
+                  : rpSave.saveStatus === "saved" ? "Saved"
+                  : null;
+                const statusColor = rpSave.saveStatus === "saved" && !rpSave.isDirty
+                  ? "var(--category-income)"
+                  : `color-mix(in srgb, ${text} 40%, transparent)`;
+                return status ? (
+                  <span style={{ fontSize: "11px", color: statusColor, transition: "color 0.3s" }}>
+                    {status}
+                  </span>
+                ) : null;
+              })()}
+              <button
+                onClick={() => rpSave.onSave?.()}
+                disabled={!rpSave.isDirty || rpSave.isSaving}
+                style={{
+                  fontSize: "12px",
+                  fontWeight: 600,
+                  padding: "4px 12px",
+                  borderRadius: "8px",
+                  border: "1px solid var(--category-income)",
+                  color: "var(--category-income)",
+                  backgroundColor: rpSave.isDirty
+                    ? "color-mix(in srgb, var(--category-income) 18%, transparent)"
+                    : "transparent",
+                  boxShadow: rpSave.isDirty
+                    ? "0 0 0 2px color-mix(in srgb, var(--category-income) 20%, transparent)"
+                    : "none",
+                  cursor: rpSave.isDirty && !rpSave.isSaving ? "pointer" : "default",
+                  opacity: rpSave.isDirty ? (rpSave.isSaving ? 0.6 : 1) : 0.25,
+                  transition: "all 0.2s ease",
+                }}
+              >
+                {rpSave.isSaving ? "Saving…" : "Save"}
+              </button>
+            </div>
+          </div>
+          <RecurringPaymentsModal inline mobile onSaveStateChange={setRpSave} onDelete={refresh} onSaved={refresh} />
+        </div>
+      )}
+
       {/* Drawer */}
       <div
         className="fixed top-0 right-0 h-full w-72 z-50 flex flex-col border-l"
@@ -564,80 +635,81 @@ export default function MobileDashboard() {
         }}
       >
         <div
-          className="px-5 py-4 flex items-center justify-between border-b"
+          className="px-5 py-4 flex items-center justify-between border-b shrink-0"
           style={{ borderColor: border }}
         >
-          <span className="text-sm font-semibold" style={{ color: muted }}>
-            Menu
-          </span>
+          <span className="text-sm font-semibold" style={{ color: muted }}>Menu</span>
           <button
             onClick={() => setDrawerOpen(false)}
             className="p-1 rounded-lg cursor-pointer"
             aria-label="Close menu"
           >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="18"
-              height="18"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"
+              fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M18 6 6 18M6 6l12 12" />
             </svg>
           </button>
         </div>
 
-        <div className="px-5 py-5 flex items-center gap-3">
-          <div
-            className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold shrink-0"
-            style={{
-              backgroundColor: `color-mix(in srgb, ${text} 12%, transparent)`,
-              color: text,
-            }}
-          >
-            U
-          </div>
-          <div>
-            <p className="text-sm font-semibold">Username</p>
-            <p className="text-xs" style={{ color: muted }}>
-              user@email.com
-            </p>
-          </div>
-        </div>
+        <>
+            <div className="px-5 py-5 flex items-center gap-3">
+              <div
+                className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold shrink-0"
+                style={{
+                  backgroundColor: `color-mix(in srgb, ${text} 12%, transparent)`,
+                  color: text,
+                }}
+              >
+                {user?.first_name?.[0]?.toUpperCase() ?? "?"}
+              </div>
+              <div>
+                <p className="text-sm font-semibold">{user ? `${user.first_name} ${user.last_name}` : "—"}</p>
+                <p className="text-xs" style={{ color: muted }}>
+                  {user?.email_address ?? "—"}
+                </p>
+              </div>
+            </div>
 
-        <div className="mx-5 border-t" style={{ borderColor: border }} />
+            <div className="mx-5 border-t" style={{ borderColor: border }} />
 
-        <div className="px-3 py-3">
-          <button
-            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium cursor-pointer transition-colors text-left"
-            style={{ color: "var(--category-expense)" }}
-            onClick={() => {
-              logout();
-              navigate("/login");
-            }}
-          >
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-              <polyline points="16 17 21 12 16 7" />
-              <line x1="21" y1="12" x2="9" y2="12" />
-            </svg>
-            Log out
-          </button>
-        </div>
+            <div className="px-3 py-3 flex-1">
+              <button
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium cursor-pointer text-left border"
+                style={{
+                  color: text,
+                  borderColor: `color-mix(in srgb, ${text} 18%, transparent)`,
+                  backgroundColor: `color-mix(in srgb, ${text} 5%, transparent)`,
+                }}
+                onClick={() => { setDrawerOpen(false); setRecurringOpen(true); }}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
+                  fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                  <path d="M3 3v5h5" />
+                  <path d="M12 7v5l4 2" />
+                </svg>
+                Recurring Payments
+              </button>
+            </div>
+
+            <div className="mx-5 border-t" style={{ borderColor: border }} />
+
+            <div className="px-3 py-3">
+              <button
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium cursor-pointer transition-colors text-left"
+                style={{ color: "var(--category-expense)" }}
+                onClick={() => { logout(); navigate("/login"); }}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
+                  fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                  <polyline points="16 17 21 12 16 7" />
+                  <line x1="21" y1="12" x2="9" y2="12" />
+                </svg>
+                Log out
+              </button>
+            </div>
+          </>
       </div>
 
       {/* Mode toggle */}

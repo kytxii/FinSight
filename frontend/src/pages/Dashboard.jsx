@@ -12,7 +12,9 @@ import {
   YAxis,
   CartesianGrid,
 } from "recharts";
-import { getTransactions } from "../api/transactions";
+import { useAuth } from "../context/AuthContext";
+import { getTransactions, deleteTransaction } from "../api/transactions";
+import { deleteRecurringPayment } from "../api/recurringPayments";
 import {
   CATEGORIES,
   CATEGORY_CONFIG,
@@ -26,14 +28,17 @@ import SummaryCard from "../components/SummaryCard";
 import ChartCard from "../components/ChartCard";
 import TransactionTable from "../components/TransactionTable";
 import AddTransactionModal from "../components/AddTransactionModal";
+import EditTransactionModal from "../components/EditTransactionModal";
 import Footer from "../components/Footer";
 import RenderWakeButton from "../components/RenderWakeButton";
 
 export default function Dashboard() {
   const dark = useTheme();
+  const { isDemo } = useAuth();
   const [transactions, setTransactions] = useState([]);
   const [activeTab, setActiveTab] = useState("ALL");
   const [showModal, setShowModal] = useState(false);
+  const [editingTransaction, setEditingTransaction] = useState(null);
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState(10);
   const [highlightId, setHighlightId] = useState(null);
@@ -54,6 +59,16 @@ export default function Dashboard() {
 
   function refreshTransactions() {
     getTransactions().then((res) => setTransactions(res.data));
+  }
+
+  async function handleDelete(t) {
+    if (t.recurring_payment_id) {
+      await deleteRecurringPayment(t.recurring_payment_id);
+      setTransactions(prev => prev.filter(tx => tx.recurring_payment_id !== t.recurring_payment_id));
+    } else {
+      await deleteTransaction(t.id);
+      setTransactions(prev => prev.filter(tx => tx.id !== t.id));
+    }
   }
 
   const handleSelectTransaction = useCallback((t) => {
@@ -315,7 +330,7 @@ export default function Dashboard() {
       className="min-h-dvh"
       style={{ backgroundColor: dark ? "var(--dark-bg)" : "var(--light-bg)" }}
     >
-      <Navbar transactions={transactions} onSelectTransaction={handleSelectTransaction} />
+      <Navbar transactions={transactions} onSelectTransaction={handleSelectTransaction} onDeleteRecurringPayment={refreshTransactions} onSaveRecurringPayment={refreshTransactions} />
 
       <CategoryTabs
         activeTab={activeTab}
@@ -601,6 +616,8 @@ export default function Dashboard() {
             onPageChange={setPage}
             onPerPageChange={setPerPage}
             onAdd={() => setShowModal(true)}
+            onEdit={setEditingTransaction}
+            onDelete={handleDelete}
             activeColor={activeColor}
             highlightId={highlightId}
           />
@@ -611,6 +628,43 @@ export default function Dashboard() {
 
       <RenderWakeButton />
 
+      {isDemo() && (
+        <div style={{
+          position: "fixed",
+          bottom: "24px",
+          left: "24px",
+          zIndex: 100,
+          display: "flex",
+          alignItems: "center",
+          gap: "7px",
+          padding: "6px 12px",
+          borderRadius: "8px",
+          border: `1px solid ${dark ? "rgba(251,191,36,0.2)" : "rgba(217,119,6,0.25)"}`,
+          backgroundColor: dark ? "rgba(251,191,36,0.08)" : "rgba(251,191,36,0.12)",
+          backdropFilter: "blur(8px)",
+          pointerEvents: "none",
+          userSelect: "none",
+        }}>
+          <span style={{
+            width: "6px",
+            height: "6px",
+            borderRadius: "50%",
+            backgroundColor: "#fbbf24",
+            flexShrink: 0,
+            animation: "demo-pulse 1.8s ease-in-out infinite",
+          }} />
+          <span style={{
+            fontSize: "11px",
+            fontWeight: 600,
+            letterSpacing: "0.04em",
+            color: dark ? "rgba(251,191,36,0.7)" : "rgba(146,64,14,0.75)",
+            whiteSpace: "nowrap",
+          }}>
+            Demo · Not live data
+          </span>
+        </div>
+      )}
+
       {showModal && (
         <AddTransactionModal
           activeTab={activeTab}
@@ -618,6 +672,17 @@ export default function Dashboard() {
           onClose={() => setShowModal(false)}
           onSaved={() => {
             setShowModal(false);
+            refreshTransactions();
+          }}
+        />
+      )}
+
+      {editingTransaction && (
+        <EditTransactionModal
+          transaction={editingTransaction}
+          onClose={() => setEditingTransaction(null)}
+          onSaved={() => {
+            setEditingTransaction(null);
             refreshTransactions();
           }}
         />

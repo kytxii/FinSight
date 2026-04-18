@@ -1,30 +1,29 @@
 from pydantic import BaseModel, ConfigDict, Field
-from datetime import datetime, date
+from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 from app.models.category import Category
 
-class TransactionBase(BaseModel):
+class RecurringPaymentBase(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     amount: Decimal
-    transaction_date: date
+    day_of_month: int = Field(ge=1, le=28)
     category: Category
 
-class CreateTransaction(TransactionBase):
+class CreateRecurringPayment(RecurringPaymentBase):
     pass
 
-class UpdateTransaction(TransactionBase):
-    name: str | None = None
+class UpdateRecurringPayment(BaseModel):
+    name: str | None =  Field(default=None, min_length=1, max_length=100)
     amount: Decimal | None = None
-    transaction_date: date | None = None
+    day_of_month: int | None = Field(default=None, ge=1, le=28)
     category: Category | None = None
 
-class TransactionResponse(TransactionBase):
+class RecurringPaymentResponse(RecurringPaymentBase):
     id: UUID
     created_at: datetime
     created_by: UUID
     updated_at: datetime
     updated_by: UUID
-    recurring_payment_id: UUID | None = None
 
     model_config = ConfigDict(from_attributes=True)

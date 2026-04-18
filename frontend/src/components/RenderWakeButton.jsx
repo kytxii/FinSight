@@ -41,8 +41,7 @@ export default function RenderWakeButton() {
       });
       cleanup();
       setStatus("online");
-      setTimeout(() => setStatus("fading"), 3000);
-      setTimeout(() => setStatus("gone"), 3500);
+      setTimeout(() => window.location.reload(), 3000);
     } catch {
       // still waiting — poll will retry
     }
