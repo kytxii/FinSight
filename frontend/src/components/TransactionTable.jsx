@@ -7,6 +7,13 @@ export default function TransactionTable({ rows, onAdd, onEdit, onDelete, active
   const [addHovered, setAddHovered] = useState(false);
   const [hoveredBtn, setHoveredBtn] = useState(null);
   const [openMenuId, setOpenMenuId] = useState(null);
+  const [deleting, setDeleting] = useState(new Set());
+
+  const handleDelete = (t) => {
+    setOpenMenuId(null);
+    setDeleting(s => new Set(s).add(t.id));
+    setTimeout(() => onDelete?.(t), 700);
+  };
 
   useEffect(() => {
     function onMouseDown() { setOpenMenuId(null); }
@@ -21,6 +28,13 @@ export default function TransactionTable({ rows, onAdd, onEdit, onDelete, active
 
   return (
     <div className="rounded-2xl border" style={{ backgroundColor: bg, borderColor: activeColor, color: text }}>
+      <style>{`
+        @keyframes tx-bar-sweep {
+          0%   { transform: scaleX(0); opacity: 0.9; }
+          55%  { transform: scaleX(1); opacity: 0.9; }
+          100% { transform: scaleX(1); opacity: 0;   }
+        }
+      `}</style>
       <div className="px-6 py-4 border-b flex items-center justify-between" style={{ borderColor: border }}>
         <h3 className="text-xl font-semibold">Transactions</h3>
         <button
@@ -65,12 +79,23 @@ export default function TransactionTable({ rows, onAdd, onEdit, onDelete, active
                   className="border-t"
                   style={{
                     borderColor: border,
-                    backgroundColor: t.id === highlightId
+                    backgroundColor: t.id === highlightId && !deleting.has(t.id)
                       ? `color-mix(in srgb, var(--category-${t.category.toLowerCase()}) 12%, transparent)`
                       : undefined,
                     transition: "background-color 0.6s ease",
+                    pointerEvents: deleting.has(t.id) ? "none" : undefined,
                   }}
                 >
+                  {deleting.has(t.id) ? (
+                    <td colSpan={5} style={{ padding: 0, position: "relative", overflow: "hidden", height: "60px" }}>
+                      <div style={{
+                        position: "absolute", inset: 0,
+                        backgroundColor: `color-mix(in srgb, var(--category-expense) 18%, ${bg})`,
+                        transformOrigin: "right center",
+                        animation: "tx-bar-sweep 0.7s ease-out forwards",
+                      }} />
+                    </td>
+                  ) : (<>
                   <td className="px-6 py-4 text-base whitespace-nowrap" style={{ color: muted }}>
                     {new Date(t.transaction_date + "T00:00:00").toLocaleDateString("en-US", {
                       month: "short", day: "numeric", year: "numeric",
@@ -136,7 +161,7 @@ export default function TransactionTable({ rows, onAdd, onEdit, onDelete, active
                           </svg>
                         </button>
                         <button
-                          onClick={() => { setOpenMenuId(null); onDelete?.(t); }}
+                          onClick={() => handleDelete(t)}
                           className="cursor-pointer rounded-lg"
                           style={{ color: muted, padding: "0 6px" }}
                           onMouseEnter={e => e.currentTarget.style.color = "var(--category-expense)"}
@@ -149,6 +174,7 @@ export default function TransactionTable({ rows, onAdd, onEdit, onDelete, active
                       </div>
                     </div>
                   </td>
+                  </>)}
                 </tr>
               ))
           )}
