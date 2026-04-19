@@ -36,11 +36,11 @@ export default function Login() {
   ];
 
   useEffect(() => {
-    if (!waking) { setSymbolIdx(0); return; }
+    if (!loading && !waking) { setSymbolIdx(0); return; }
     setPhraseIdx(Math.floor(Math.random() * PHRASES.length));
     const symInt = setInterval(() => setSymbolIdx(i => (i + 1) % SYMBOLS.length), 100);
     return () => clearInterval(symInt);
-  }, [waking]);
+  }, [loading, waking]);
   const navigate = useNavigate();
   const dark = useTheme();
 
@@ -272,7 +272,7 @@ export default function Login() {
             )}
           </button>
 
-          {waking && (
+          {(loading || waking) && (
             <div style={{ display: "flex", alignItems: "center", gap: "10px", animation: "waking-in 0.35s ease" }}>
               <span style={{ fontSize: "15px", color: accentColor, width: "16px", textAlign: "center", flexShrink: 0, fontFamily: "monospace", lineHeight: 1 }}>
                 {SYMBOLS[symbolIdx]}

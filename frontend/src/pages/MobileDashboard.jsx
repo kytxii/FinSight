@@ -11,6 +11,8 @@ import {
   XAxis,
   YAxis,
   CartesianGrid,
+  AreaChart,
+  Area,
 } from "recharts";
 import { getTransactions, createTransaction } from "../api/transactions";
 import {
@@ -69,6 +71,7 @@ export default function MobileDashboard() {
     from.setDate(1);
     from.setHours(0, 0, 0, 0);
     const to = new Date(now);
+    to.setMonth(to.getMonth() + 1, 0);
     to.setHours(23, 59, 59, 999);
     return { from, to };
   });
@@ -242,6 +245,9 @@ export default function MobileDashboard() {
       );
     }
     const avgDailySpending = totalOut / days;
+    const refDate = dateRange.from ?? new Date();
+    const daysInMonth = new Date(refDate.getFullYear(), refDate.getMonth() + 1, 0).getDate();
+    const projectedMonthlySpending = avgDailySpending * daysInMonth;
 
     let savingsRateDelta = null;
     if (dateRange.from) {
@@ -266,7 +272,7 @@ export default function MobileDashboard() {
       }
     }
 
-    let avgDailySpendingDelta = null;
+    let projectedMonthlySpendingDelta = null;
     if (dateRange.from) {
       const periodMs =
         (dateRange.to ?? new Date()).getTime() - dateRange.from.getTime();
@@ -280,7 +286,7 @@ export default function MobileDashboard() {
         })
         .filter((t) => !INCOME_TYPES.has(t.category))
         .reduce((s, t) => s + parseFloat(t.amount), 0);
-      avgDailySpendingDelta = avgDailySpending - prevTotalOut / days;
+      projectedMonthlySpendingDelta = projectedMonthlySpending - (prevTotalOut / days) * daysInMonth;
     }
 
     const categoryTotal = totalIn + totalOut;
@@ -330,8 +336,8 @@ export default function MobileDashboard() {
       totalOut,
       savingsRate,
       savingsRateDelta,
-      avgDailySpending,
-      avgDailySpendingDelta,
+      projectedMonthlySpending,
+      projectedMonthlySpendingDelta,
       categoryTotal,
       txCount,
       avgTx,
@@ -374,13 +380,14 @@ export default function MobileDashboard() {
       filtered.forEach((t) => {
         grouped[t.name] = (grouped[t.name] ?? 0) + parseFloat(t.amount);
       });
-      return Object.entries(grouped)
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 10)
-        .map(([name, total]) => ({
-          month: name,
-          total: parseFloat(total.toFixed(2)),
-        }));
+      const entries = Object.entries(grouped).sort((a, b) => b[1] - a[1]).slice(0, 10);
+      const START = 100, END = 30;
+      const step = entries.length > 1 ? (START - END) / (entries.length - 1) : 0;
+      return entries.map(([name, total], i) => ({
+        month: name,
+        total: parseFloat(total.toFixed(2)),
+        color: `color-mix(in srgb, ${activeColor} ${Math.round(START - i * step)}%, black)`,
+      }));
     }
     const grouped = {};
     filtered.forEach((t) => {
@@ -404,6 +411,17 @@ export default function MobileDashboard() {
         income: parseFloat(income.toFixed(2)),
         expense: parseFloat(expense.toFixed(2)),
       }));
+  }, [filtered, activeTab]);
+
+  const areaData = useMemo(() => {
+    if (activeTab === "ALL") return [];
+    const grouped = {};
+    filtered.forEach((t) => {
+      grouped[t.transaction_date] = (grouped[t.transaction_date] ?? 0) + parseFloat(t.amount);
+    });
+    return Object.entries(grouped)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, total]) => ({ date: new Date(date + "T00:00:00").getTime(), total: parseFloat(total.toFixed(2)) }));
   }, [filtered, activeTab]);
 
   const sorted = useMemo(
@@ -1061,7 +1079,7 @@ export default function MobileDashboard() {
                   : { label: "AVG TRANSACTION", value: fmt(summary.avgTx) },
                 activeTab === "ALL"
                   ? {
-                      label: "SAVINGS RATE",
+                      label: "CASH FLOW",
                       value:
                         summary.savingsRate !== null
                           ? `${summary.savingsRate.toFixed(1)}%`
@@ -1100,18 +1118,18 @@ export default function MobileDashboard() {
                     },
                 activeTab === "ALL"
                   ? {
-                      label: "AVG DAILY SPENDING",
-                      value: fmt(summary.avgDailySpending),
+                      label: "PROJECTED MONTHLY SPENDING",
+                      value: fmt(summary.projectedMonthlySpending),
                       deltaLabel:
-                        summary.avgDailySpendingDelta != null
-                          ? `${summary.avgDailySpendingDelta >= 0 ? "↑" : "↓"} ${fmt(Math.abs(summary.avgDailySpendingDelta))} vs last month`
+                        summary.projectedMonthlySpendingDelta != null
+                          ? `${summary.projectedMonthlySpendingDelta >= 0 ? "↑" : "↓"} ${fmt(Math.abs(summary.projectedMonthlySpendingDelta))} vs last month`
                           : null,
-                      deltaUp: summary.avgDailySpendingDelta <= 0,
+                      deltaUp: summary.projectedMonthlySpendingDelta <= 0,
                     }
                   : {
                       label: INCOME_TYPES.has(activeTab)
                         ? "% OF INCOME"
-                        : "% OF SPENDING",
+                        : "% OF EXPENSES",
                       value:
                         summary.pctOfTotal != null
                           ? `${summary.pctOfTotal.toFixed(1)}%`
@@ -1157,8 +1175,8 @@ export default function MobileDashboard() {
               ))}
             </div>
 
-            {/* Pie chart */}
-            {pieData.length > 0 && (
+            {/* Breakdown chart — pie for ALL, monthly bar for category */}
+            {(activeTab === "ALL" ? pieData : categoryMonthData).length > 0 && (
               <div
                 className="rounded-2xl border p-4"
                 style={{ backgroundColor: surface, borderColor: activeColor }}
@@ -1171,58 +1189,118 @@ export default function MobileDashboard() {
                     ? "Breakdown By Category"
                     : `${CATEGORY_CONFIG[activeTab].label} Breakdown`}
                 </p>
-                <ResponsiveContainer
-                  width="100%"
-                  height={280}
-                  style={{ pointerEvents: "none" }}
-                >
-                  <PieChart>
-                    <Pie
-                      data={pieData}
-                      dataKey="value"
-                      nameKey="name"
-                      cx="50%"
-                      cy="50%"
-                      outerRadius={80}
-                      strokeWidth={0}
+                {activeTab === "ALL" ? (
+                  <>
+                    <ResponsiveContainer
+                      width="100%"
+                      height={280}
+                      style={{ pointerEvents: "none" }}
+                    >
+                      <PieChart>
+                        <Pie
+                          data={pieData}
+                          dataKey="value"
+                          nameKey="name"
+                          cx="50%"
+                          cy="50%"
+                          outerRadius={80}
+                          strokeWidth={0}
+                        >
+                          {pieData.map((entry) => (
+                            <Cell key={entry.name} fill={entry.color} />
+                          ))}
+                        </Pie>
+                        <Tooltip {...tooltipProps} formatter={(v) => fmt(v)} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                    <div
+                      style={{
+                        display: "flex",
+                        flexWrap: "wrap",
+                        gap: "6px 16px",
+                        justifyContent: "center",
+                        marginTop: 8,
+                      }}
                     >
                       {pieData.map((entry) => (
-                        <Cell key={entry.name} fill={entry.color} />
+                        <div
+                          key={entry.name}
+                          style={{ display: "flex", alignItems: "center", gap: 6 }}
+                        >
+                          <span
+                            style={{
+                              width: 9,
+                              height: 9,
+                              borderRadius: "50%",
+                              backgroundColor: entry.color,
+                              flexShrink: 0,
+                              display: "inline-block",
+                            }}
+                          />
+                          <span style={{ color: text, fontSize: 12 }}>
+                            {entry.name}
+                          </span>
+                        </div>
                       ))}
-                    </Pie>
-                    <Tooltip {...tooltipProps} formatter={(v) => fmt(v)} />
-                  </PieChart>
-                </ResponsiveContainer>
-                <div
-                  style={{
-                    display: "flex",
-                    flexWrap: "wrap",
-                    gap: "6px 16px",
-                    justifyContent: "center",
-                    marginTop: 8,
-                  }}
-                >
-                  {pieData.map((entry) => (
-                    <div
-                      key={entry.name}
-                      style={{ display: "flex", alignItems: "center", gap: 6 }}
-                    >
-                      <span
-                        style={{
-                          width: 9,
-                          height: 9,
-                          borderRadius: "50%",
-                          backgroundColor: entry.color,
-                          flexShrink: 0,
-                          display: "inline-block",
+                    </div>
+                  </>
+                ) : (
+                  <ResponsiveContainer width="100%" height={220} style={{ pointerEvents: "none" }}>
+                    <AreaChart data={areaData}>
+                      <defs>
+                        <linearGradient id="areaFillMobile" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor={activeColor} stopOpacity={0.3} />
+                          <stop offset="95%" stopColor={activeColor} stopOpacity={0.02} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={dark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.06)"} />
+                      <XAxis
+                        dataKey="date"
+                        type="number"
+                        scale="time"
+                        domain={["dataMin", "dataMax"]}
+                        axisLine={false}
+                        tickLine={false}
+                        tick={{ fontSize: 11, fill: text }}
+                        tickFormatter={(v) => new Date(v).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                      />
+                      <YAxis
+                        axisLine={false}
+                        tickLine={false}
+                        tickFormatter={(v) => `$${v}`}
+                        tick={{ fontSize: 11, fill: text }}
+                      />
+                      <Tooltip
+                        {...tooltipProps}
+                        cursor={{ stroke: activeColor, strokeWidth: 1, strokeDasharray: "4 4" }}
+                        content={({ payload }) => {
+                          if (!payload?.length) return null;
+                          const { date, total } = payload[0].payload;
+                          return (
+                            <div style={{ ...tooltipProps.contentStyle, padding: "8px 12px" }}>
+                              <p style={{ margin: 0, opacity: 0.7, fontSize: 11 }}>{new Date(date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</p>
+                              <p style={{ margin: 0, fontWeight: 600 }}>{fmt(total)}</p>
+                            </div>
+                          );
                         }}
                       />
-                      <span style={{ color: text, fontSize: 12 }}>
-                        {entry.name}
-                      </span>
-                    </div>
-                  ))}
-                </div>
+                      <Area
+                        key={activeTab}
+                        type="monotone"
+                        dataKey="total"
+                        stroke={activeColor}
+                        strokeWidth={2}
+                        fill="url(#areaFillMobile)"
+                        dot={{ fill: activeColor, r: 4, strokeWidth: 0 }}
+                        activeDot={{ r: 6, strokeWidth: 0 }}
+                        isAnimationActive={true}
+                        animationBegin={0}
+                        animationDuration={1000}
+                        animationEasing="ease-out"
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                )}
               </div>
             )}
 
@@ -1303,12 +1381,11 @@ export default function MobileDashboard() {
                         />
                       </>
                     ) : (
-                      <Bar
-                        dataKey="total"
-                        fill={activeColor}
-                        radius={[5, 5, 0, 0]}
-                        barSize={20}
-                      />
+                      <Bar dataKey="total" radius={[5, 5, 0, 0]} barSize={20}>
+                        {barData.map((entry) => (
+                          <Cell key={entry.month} fill={entry.color} />
+                        ))}
+                      </Bar>
                     )}
                   </BarChart>
                 </ResponsiveContainer>
