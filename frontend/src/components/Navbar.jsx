@@ -7,12 +7,13 @@ import RecurringPaymentsModal from "./RecurringPaymentsModal";
 
 export default function Navbar({ transactions = [], onSelectTransaction, onDeleteRecurringPayment, onSaveRecurringPayment }) {
   const dark = useTheme();
-  const { logout, user } = useAuth();
+  const { logout, user, isDemo } = useAuth();
   const navigate = useNavigate();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [recurringOpen, setRecurringOpen] = useState(false);
   const [rpSave, setRpSave] = useState({ isDirty: false, isSaving: false, onSave: null });
   const [recurringHovered, setRecurringHovered] = useState(false);
+  const [feedbackHovered, setFeedbackHovered] = useState(false);
   const [themeHovered, setThemeHovered] = useState(false);
   const [menuHovered, setMenuHovered] = useState(false);
   const [query, setQuery] = useState("");
@@ -351,7 +352,35 @@ export default function Navbar({ transactions = [], onSelectTransaction, onDelet
 
             <div className="mx-5 border-t" style={{ borderColor: border }} />
 
-            <div className="px-3 py-3">
+            <div className="px-3 py-3 flex flex-col gap-1">
+              {!isDemo() && (
+                <a
+                  href="https://forms.gle/BC6ebwbZtgYmSYBeA"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-left"
+                  style={{
+                    color: text,
+                    textDecoration: "none",
+                    borderColor: feedbackHovered
+                      ? `color-mix(in srgb, ${text} 40%, transparent)`
+                      : `color-mix(in srgb, ${text} 18%, transparent)`,
+                    border: "1px solid",
+                    backgroundColor: feedbackHovered
+                      ? `color-mix(in srgb, ${text} 10%, transparent)`
+                      : `color-mix(in srgb, ${text} 5%, transparent)`,
+                    transition: "background-color 150ms ease, border-color 150ms ease",
+                  }}
+                  onMouseEnter={() => setFeedbackHovered(true)}
+                  onMouseLeave={() => setFeedbackHovered(false)}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
+                    fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                  </svg>
+                  Feedback
+                </a>
+              )}
               <button
                 className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium cursor-pointer transition-colors text-left"
                 style={{ color: "var(--category-expense)" }}

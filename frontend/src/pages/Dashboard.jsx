@@ -67,25 +67,37 @@ export default function Dashboard() {
   async function handleDelete(t) {
     if (t.recurring_payment_id) {
       await deleteRecurringPayment(t.recurring_payment_id);
-      setTransactions(prev => prev.filter(tx => tx.recurring_payment_id !== t.recurring_payment_id));
+      setTransactions((prev) =>
+        prev.filter((tx) => tx.recurring_payment_id !== t.recurring_payment_id),
+      );
     } else {
       await deleteTransaction(t.id);
-      setTransactions(prev => prev.filter(tx => tx.id !== t.id));
+      setTransactions((prev) => prev.filter((tx) => tx.id !== t.id));
     }
   }
 
-  const handleSelectTransaction = useCallback((t) => {
-    setActiveTab("ALL");
-    setDateRange({ from: null, to: null });
-    const allSorted = [...transactions].sort(
-      (a, b) => new Date(b.transaction_date) - new Date(a.transaction_date)
-    );
-    const idx = allSorted.findIndex((tx) => tx.id === t.id);
-    if (idx !== -1) setPage(Math.ceil((idx + 1) / perPage));
-    setHighlightId(t.id);
-    setTimeout(() => setHighlightId(null), 2500);
-    setTimeout(() => tableRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
-  }, [transactions, perPage]);
+  const handleSelectTransaction = useCallback(
+    (t) => {
+      setActiveTab("ALL");
+      setDateRange({ from: null, to: null });
+      const allSorted = [...transactions].sort(
+        (a, b) => new Date(b.transaction_date) - new Date(a.transaction_date),
+      );
+      const idx = allSorted.findIndex((tx) => tx.id === t.id);
+      if (idx !== -1) setPage(Math.ceil((idx + 1) / perPage));
+      setHighlightId(t.id);
+      setTimeout(() => setHighlightId(null), 2500);
+      setTimeout(
+        () =>
+          tableRef.current?.scrollIntoView({
+            behavior: "smooth",
+            block: "start",
+          }),
+        50,
+      );
+    },
+    [transactions, perPage],
+  );
 
   const filtered = useMemo(() => {
     let result =
@@ -137,7 +149,11 @@ export default function Dashboard() {
     }
     const avgDailySpend = totalOut / days;
     const refDate = dateRange.from ?? new Date();
-    const daysInMonth = new Date(refDate.getFullYear(), refDate.getMonth() + 1, 0).getDate();
+    const daysInMonth = new Date(
+      refDate.getFullYear(),
+      refDate.getMonth() + 1,
+      0,
+    ).getDate();
     const projectedMonthlySpend = avgDailySpend * daysInMonth;
 
     // Previous period savings rate delta
@@ -178,7 +194,8 @@ export default function Dashboard() {
         })
         .filter((t) => !INCOME_TYPES.has(t.category))
         .reduce((s, t) => s + parseFloat(t.amount), 0);
-      projectedMonthlySpendDelta = projectedMonthlySpend - (prevTotalOut / days) * daysInMonth;
+      projectedMonthlySpendDelta =
+        projectedMonthlySpend - (prevTotalOut / days) * daysInMonth;
     }
 
     // Category-specific metrics (non-ALL tabs)
@@ -273,9 +290,13 @@ export default function Dashboard() {
       filtered.forEach((t) => {
         grouped[t.name] = (grouped[t.name] ?? 0) + parseFloat(t.amount);
       });
-      const entries = Object.entries(grouped).sort((a, b) => b[1] - a[1]).slice(0, 12);
-      const START = 100, END = 30;
-      const step = entries.length > 1 ? (START - END) / (entries.length - 1) : 0;
+      const entries = Object.entries(grouped)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 12);
+      const START = 100,
+        END = 30;
+      const step =
+        entries.length > 1 ? (START - END) / (entries.length - 1) : 0;
       return entries.map(([name, total], i) => ({
         month: name,
         total: parseFloat(total.toFixed(2)),
@@ -308,11 +329,15 @@ export default function Dashboard() {
     if (activeTab === "ALL") return [];
     const grouped = {};
     filtered.forEach((t) => {
-      grouped[t.transaction_date] = (grouped[t.transaction_date] ?? 0) + parseFloat(t.amount);
+      grouped[t.transaction_date] =
+        (grouped[t.transaction_date] ?? 0) + parseFloat(t.amount);
     });
     return Object.entries(grouped)
       .sort(([a], [b]) => a.localeCompare(b))
-      .map(([date, total]) => ({ date: new Date(date + "T00:00:00").getTime(), total: parseFloat(total.toFixed(2)) }));
+      .map(([date, total]) => ({
+        date: new Date(date + "T00:00:00").getTime(),
+        total: parseFloat(total.toFixed(2)),
+      }));
   }, [filtered, activeTab]);
 
   const sorted = useMemo(
@@ -348,7 +373,12 @@ export default function Dashboard() {
       className="min-h-dvh"
       style={{ backgroundColor: dark ? "var(--dark-bg)" : "var(--light-bg)" }}
     >
-      <Navbar transactions={transactions} onSelectTransaction={handleSelectTransaction} onDeleteRecurringPayment={refreshTransactions} onSaveRecurringPayment={refreshTransactions} />
+      <Navbar
+        transactions={transactions}
+        onSelectTransaction={handleSelectTransaction}
+        onDeleteRecurringPayment={refreshTransactions}
+        onSaveRecurringPayment={refreshTransactions}
+      />
 
       <CategoryTabs
         activeTab={activeTab}
@@ -414,7 +444,11 @@ export default function Dashboard() {
                   label="PAYMENTS"
                   value={String(summary.txCount)}
                   activeColor={activeColor}
-                  deltaLabel={summary.txCount > 0 ? `avg ${fmt(summary.avgTx)} each` : null}
+                  deltaLabel={
+                    summary.txCount > 0
+                      ? `avg ${fmt(summary.avgTx)} each`
+                      : null
+                  }
                   deltaUp={true}
                 />
               ) : (
@@ -457,7 +491,9 @@ export default function Dashboard() {
                 }
               />
               <SummaryCard
-                label={INCOME_TYPES.has(activeTab) ? "% OF INCOME" : "% OF EXPENSES"}
+                label={
+                  INCOME_TYPES.has(activeTab) ? "% OF INCOME" : "% OF EXPENSES"
+                }
                 value={
                   summary.pctOfTotal != null
                     ? `${summary.pctOfTotal.toFixed(1)}%`
@@ -515,7 +551,11 @@ export default function Dashboard() {
                     {pieData.map((entry) => (
                       <div
                         key={entry.name}
-                        style={{ display: "flex", alignItems: "center", gap: 6 }}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 6,
+                        }}
                       >
                         <span
                           style={{
@@ -538,15 +578,33 @@ export default function Dashboard() {
                 <Empty />
               )
             ) : areaData.length > 0 ? (
-              <ResponsiveContainer width="100%" height={280} style={{ pointerEvents: "none" }}>
+              <ResponsiveContainer
+                width="100%"
+                height={280}
+                style={{ pointerEvents: "none" }}
+              >
                 <AreaChart data={areaData}>
                   <defs>
                     <linearGradient id="areaFill" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor={activeColor} stopOpacity={0.3} />
-                      <stop offset="95%" stopColor={activeColor} stopOpacity={0.02} />
+                      <stop
+                        offset="5%"
+                        stopColor={activeColor}
+                        stopOpacity={0.3}
+                      />
+                      <stop
+                        offset="95%"
+                        stopColor={activeColor}
+                        stopOpacity={0.02}
+                      />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={dark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.06)"} />
+                  <CartesianGrid
+                    strokeDasharray="3 3"
+                    vertical={false}
+                    stroke={
+                      dark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.06)"
+                    }
+                  />
                   <XAxis
                     dataKey="date"
                     type="number"
@@ -555,7 +613,12 @@ export default function Dashboard() {
                     axisLine={false}
                     tickLine={false}
                     tick={{ fontSize: 12, fill: text }}
-                    tickFormatter={(v) => new Date(v).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                    tickFormatter={(v) =>
+                      new Date(v).toLocaleDateString("en-US", {
+                        month: "short",
+                        day: "numeric",
+                      })
+                    }
                   />
                   <YAxis
                     axisLine={false}
@@ -565,14 +628,31 @@ export default function Dashboard() {
                   />
                   <Tooltip
                     {...tooltipProps}
-                    cursor={{ stroke: activeColor, strokeWidth: 1, strokeDasharray: "4 4" }}
+                    cursor={{
+                      stroke: activeColor,
+                      strokeWidth: 1,
+                      strokeDasharray: "4 4",
+                    }}
                     content={({ payload }) => {
                       if (!payload?.length) return null;
                       const { date, total } = payload[0].payload;
                       return (
-                        <div style={{ ...tooltipProps.contentStyle, padding: "8px 12px" }}>
-                          <p style={{ margin: 0, opacity: 0.7, fontSize: 12 }}>{new Date(date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</p>
-                          <p style={{ margin: 0, fontWeight: 600 }}>{fmt(total)}</p>
+                        <div
+                          style={{
+                            ...tooltipProps.contentStyle,
+                            padding: "8px 12px",
+                          }}
+                        >
+                          <p style={{ margin: 0, opacity: 0.7, fontSize: 12 }}>
+                            {new Date(date).toLocaleDateString("en-US", {
+                              month: "short",
+                              day: "numeric",
+                              year: "numeric",
+                            })}
+                          </p>
+                          <p style={{ margin: 0, fontWeight: 600 }}>
+                            {fmt(total)}
+                          </p>
                         </div>
                       );
                     }}
@@ -706,37 +786,45 @@ export default function Dashboard() {
       <RenderWakeButton />
 
       {isDemo() && (
-        <div style={{
-          position: "fixed",
-          bottom: "24px",
-          left: "24px",
-          zIndex: 100,
-          display: "flex",
-          alignItems: "center",
-          gap: "7px",
-          padding: "6px 12px",
-          borderRadius: "8px",
-          border: `1px solid ${dark ? "rgba(251,191,36,0.2)" : "rgba(217,119,6,0.25)"}`,
-          backgroundColor: dark ? "rgba(251,191,36,0.08)" : "rgba(251,191,36,0.12)",
-          backdropFilter: "blur(8px)",
-          pointerEvents: "none",
-          userSelect: "none",
-        }}>
-          <span style={{
-            width: "6px",
-            height: "6px",
-            borderRadius: "50%",
-            backgroundColor: "#fbbf24",
-            flexShrink: 0,
-            animation: "demo-pulse 1.8s ease-in-out infinite",
-          }} />
-          <span style={{
-            fontSize: "11px",
-            fontWeight: 600,
-            letterSpacing: "0.04em",
-            color: dark ? "rgba(251,191,36,0.7)" : "rgba(146,64,14,0.75)",
-            whiteSpace: "nowrap",
-          }}>
+        <div
+          style={{
+            position: "fixed",
+            bottom: "24px",
+            left: "24px",
+            zIndex: 100,
+            display: "flex",
+            alignItems: "center",
+            gap: "7px",
+            padding: "6px 12px",
+            borderRadius: "8px",
+            border: `1px solid ${dark ? "rgba(251,191,36,0.2)" : "rgba(217,119,6,0.25)"}`,
+            backgroundColor: dark
+              ? "rgba(251,191,36,0.08)"
+              : "rgba(251,191,36,0.12)",
+            backdropFilter: "blur(8px)",
+            pointerEvents: "none",
+            userSelect: "none",
+          }}
+        >
+          <span
+            style={{
+              width: "6px",
+              height: "6px",
+              borderRadius: "50%",
+              backgroundColor: "#fbbf24",
+              flexShrink: 0,
+              animation: "demo-pulse 1.8s ease-in-out infinite",
+            }}
+          />
+          <span
+            style={{
+              fontSize: "11px",
+              fontWeight: 600,
+              letterSpacing: "0.04em",
+              color: dark ? "rgba(251,191,36,0.7)" : "rgba(146,64,14,0.75)",
+              whiteSpace: "nowrap",
+            }}
+          >
             Demo · Not live data
           </span>
         </div>
