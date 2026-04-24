@@ -14,6 +14,8 @@ export function getPresetRange(label) {
   if (label === "Current Month") {
     from.setDate(1);
     from.setHours(0, 0, 0, 0);
+    to.setMonth(to.getMonth() + 1, 0);
+    to.setHours(23, 59, 59, 999);
   } else if (label === "Last Month") {
     from.setMonth(from.getMonth() - 1, 1);
     from.setHours(0, 0, 0, 0);

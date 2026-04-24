@@ -4,15 +4,19 @@ import { useTheme } from "../hooks/useTheme";
 import { useAuth } from "../context/AuthContext";
 import { CATEGORY_CONFIG, fmt } from "../utils/finance";
 import RecurringPaymentsModal from "./RecurringPaymentsModal";
+import AccountPanel from "./AccountPanel";
 
 export default function Navbar({ transactions = [], onSelectTransaction, onDeleteRecurringPayment, onSaveRecurringPayment }) {
   const dark = useTheme();
-  const { logout, user } = useAuth();
+  const { logout, user, isDemo } = useAuth();
   const navigate = useNavigate();
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [recurringOpen, setRecurringOpen] = useState(false);
   const [rpSave, setRpSave] = useState({ isDirty: false, isSaving: false, onSave: null });
+  const [accountOpen, setAccountOpen] = useState(false);
+  const [acctSave, setAcctSave] = useState({ isDirty: false, isSaving: false, saveStatus: null, onSave: null });
   const [recurringHovered, setRecurringHovered] = useState(false);
+  const [feedbackHovered, setFeedbackHovered] = useState(false);
   const [themeHovered, setThemeHovered] = useState(false);
   const [menuHovered, setMenuHovered] = useState(false);
   const [query, setQuery] = useState("");
@@ -162,31 +166,23 @@ export default function Navbar({ transactions = [], onSelectTransaction, onDelet
             </div>
           </div>
 
+          {/* Avatar */}
           <button
-            onClick={toggleTheme}
-            onMouseEnter={() => setThemeHovered(true)}
-            onMouseLeave={() => setThemeHovered(false)}
-            className="p-2 rounded-lg cursor-pointer shrink-0"
+            onClick={() => { setDrawerOpen(true); setAccountOpen(true); }}
+            onMouseEnter={e => { e.currentTarget.style.boxShadow = `0 0 0 2px color-mix(in srgb, ${text} 35%, transparent)`; }}
+            onMouseLeave={e => { e.currentTarget.style.boxShadow = "none"; }}
+            className="w-8 h-8 rounded-full shrink-0 overflow-hidden flex items-center justify-center text-xs font-bold cursor-pointer"
             style={{
-              backgroundColor: themeHovered
-                ? `color-mix(in srgb, ${text} 15%, transparent)`
-                : "transparent",
-              transition: "background-color 150ms ease",
+              backgroundColor: `color-mix(in srgb, ${text} 12%, transparent)`,
+              color: text,
+              border: "none",
+              transition: "box-shadow 150ms ease",
             }}
-            aria-label="Toggle theme"
+            aria-label="Account"
           >
-            {dark ? (
-              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"
-                fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="4" />
-                <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
-              </svg>
-            ) : (
-              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24"
-                fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
-              </svg>
-            )}
+            {user?.avatar
+              ? <img src={user.avatar} alt="avatar" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+              : (user?.first_name?.[0]?.toUpperCase() ?? "?")}
           </button>
 
           <button
@@ -217,7 +213,7 @@ export default function Navbar({ transactions = [], onSelectTransaction, onDelet
         <div
           className="fixed inset-0 z-40"
           style={{ backgroundColor: "rgba(0,0,0,0.4)" }}
-          onClick={() => { setDrawerOpen(false); setRecurringOpen(false); }}
+          onClick={() => { setDrawerOpen(false); setRecurringOpen(false); setAccountOpen(false); }}
         />
       )}
 
@@ -225,7 +221,7 @@ export default function Navbar({ transactions = [], onSelectTransaction, onDelet
       <div
         className="fixed top-0 right-0 h-full z-50 flex flex-col border-l"
         style={{
-          width: recurringOpen ? "580px" : "288px",
+          width: recurringOpen ? "580px" : accountOpen ? "380px" : "288px",
           backgroundColor: bg,
           borderColor: border,
           color: text,
@@ -236,9 +232,9 @@ export default function Navbar({ transactions = [], onSelectTransaction, onDelet
         {/* Header */}
         <div className="px-5 py-4 flex items-center justify-between border-b shrink-0" style={{ borderColor: border }}>
           <div className="flex items-center gap-2">
-            {recurringOpen && (
+            {(recurringOpen || accountOpen) && (
               <button
-                onClick={() => { setRecurringOpen(false); setRpSave({ isDirty: false, isSaving: false, onSave: null }); }}
+                onClick={() => { setRecurringOpen(false); setAccountOpen(false); setRpSave({ isDirty: false, isSaving: false, onSave: null }); }}
                 className="p-1 rounded-lg cursor-pointer"
                 style={{ color: muted }}
                 aria-label="Back"
@@ -250,50 +246,29 @@ export default function Navbar({ transactions = [], onSelectTransaction, onDelet
               </button>
             )}
             <span className="text-sm font-semibold" style={{ color: muted }}>
-              {recurringOpen ? "Recurring Payments" : "Menu"}
+              {recurringOpen ? "Recurring Payments" : accountOpen ? "Account" : "Menu"}
             </span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            {recurringOpen && (() => {
-              const status = rpSave.isSaving ? "Saving…"
-                : rpSave.isDirty ? "Unsaved"
-                : rpSave.saveStatus === "saved" ? "Saved"
-                : null;
-              const statusColor = rpSave.saveStatus === "saved" && !rpSave.isDirty
-                ? "var(--category-income)"
-                : `color-mix(in srgb, ${text} 40%, transparent)`;
-              return status ? (
-                <span style={{ fontSize: "11px", color: statusColor, transition: "color 0.3s" }}>
-                  {status}
-                </span>
-              ) : null;
+            {(recurringOpen || accountOpen) && (() => {
+              const save = recurringOpen ? rpSave : acctSave;
+              const status = save.isSaving ? "Saving…" : save.isDirty ? "Unsaved" : save.saveStatus === "saved" ? "Saved" : null;
+              const statusColor = save.saveStatus === "saved" && !save.isDirty ? "var(--category-income)" : `color-mix(in srgb, ${text} 40%, transparent)`;
+              return status ? <span style={{ fontSize: "11px", color: statusColor, transition: "color 0.3s" }}>{status}</span> : null;
             })()}
-            {recurringOpen && (
-              <button
-                onClick={() => rpSave.onSave?.()}
-                disabled={!rpSave.isDirty || rpSave.isSaving}
-                style={{
-                  fontSize: "12px",
-                  fontWeight: 600,
-                  padding: "4px 12px",
-                  borderRadius: "8px",
-                  border: "1px solid var(--category-income)",
-                  color: "var(--category-income)",
-                  backgroundColor: rpSave.isDirty
-                    ? "color-mix(in srgb, var(--category-income) 18%, transparent)"
-                    : "transparent",
-                  boxShadow: rpSave.isDirty
-                    ? "0 0 0 2px color-mix(in srgb, var(--category-income) 20%, transparent)"
-                    : "none",
-                  cursor: rpSave.isDirty && !rpSave.isSaving ? "pointer" : "default",
-                  opacity: rpSave.isDirty ? (rpSave.isSaving ? 0.6 : 1) : 0.25,
-                  transition: "all 0.2s ease",
-                }}
-              >
-                {rpSave.isSaving ? "Saving…" : "Save"}
-              </button>
-            )}
-          <button onClick={() => { setDrawerOpen(false); setRecurringOpen(false); }} className="p-1 rounded-lg cursor-pointer" aria-label="Close menu">
+            {(recurringOpen || accountOpen) && (() => {
+              const save = recurringOpen ? rpSave : acctSave;
+              return (
+                <button
+                  onClick={() => save.onSave?.()}
+                  disabled={!save.isDirty || save.isSaving}
+                  style={{ fontSize: "12px", fontWeight: 600, padding: "4px 12px", borderRadius: "8px", border: "1px solid var(--category-income)", color: "var(--category-income)", backgroundColor: save.isDirty ? "color-mix(in srgb, var(--category-income) 18%, transparent)" : "transparent", boxShadow: save.isDirty ? "0 0 0 2px color-mix(in srgb, var(--category-income) 20%, transparent)" : "none", cursor: save.isDirty && !save.isSaving ? "pointer" : "default", opacity: save.isDirty ? (save.isSaving ? 0.6 : 1) : 0.25, transition: "all 0.2s ease" }}
+                >
+                  {save.isSaving ? "Saving…" : "Save"}
+                </button>
+              );
+            })()}
+          <button onClick={() => { setDrawerOpen(false); setRecurringOpen(false); setAccountOpen(false); }} className="p-1 rounded-lg cursor-pointer" aria-label="Close menu">
             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"
               fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M18 6 6 18M6 6l12 12" />
@@ -305,20 +280,31 @@ export default function Navbar({ transactions = [], onSelectTransaction, onDelet
         {/* Recurring panel */}
         {recurringOpen ? (
           <RecurringPaymentsModal inline onSaveStateChange={setRpSave} onDelete={onDeleteRecurringPayment} onSaved={onSaveRecurringPayment} />
+        ) : accountOpen ? (
+          <AccountPanel onSaveStateChange={setAcctSave} />
         ) : (
           <>
-            <div className="px-5 py-5 flex items-center gap-3">
+            <button
+              className="px-5 py-5 flex items-center gap-3 w-full text-left cursor-pointer"
+              style={{ background: "transparent", border: "none" }}
+              onClick={() => setAccountOpen(true)}
+            >
               <div
-                className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold shrink-0"
+                className="w-10 h-10 rounded-full shrink-0 overflow-hidden flex items-center justify-center text-sm font-bold"
                 style={{ backgroundColor: `color-mix(in srgb, ${text} 12%, transparent)`, color: text }}
               >
-                {user?.first_name?.[0]?.toUpperCase() ?? "?"}
+                {user?.avatar
+                  ? <img src={user.avatar} alt="avatar" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  : (user?.first_name?.[0]?.toUpperCase() ?? "?")}
               </div>
-              <div>
+              <div className="flex-1 min-w-0">
                 <p className="text-sm font-semibold">{user ? `${user.first_name} ${user.last_name}` : "—"}</p>
-                <p className="text-xs" style={{ color: muted }}>{user?.email_address ?? "—"}</p>
+                <p className="text-xs truncate" style={{ color: muted }}>{user?.email_address ?? "—"}</p>
               </div>
-            </div>
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: muted, flexShrink: 0 }}>
+                <path d="M9 18l6-6-6-6" />
+              </svg>
+            </button>
 
             <div className="mx-5 border-t" style={{ borderColor: border }} />
 
@@ -351,7 +337,59 @@ export default function Navbar({ transactions = [], onSelectTransaction, onDelet
 
             <div className="mx-5 border-t" style={{ borderColor: border }} />
 
-            <div className="px-3 py-3">
+            <div className="px-3 py-3 flex flex-col gap-3">
+              <button
+                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium cursor-pointer text-left"
+                style={{
+                  color: text,
+                  border: "1px solid",
+                  borderColor: themeHovered ? `color-mix(in srgb, ${text} 40%, transparent)` : `color-mix(in srgb, ${text} 18%, transparent)`,
+                  backgroundColor: themeHovered ? `color-mix(in srgb, ${text} 10%, transparent)` : `color-mix(in srgb, ${text} 5%, transparent)`,
+                  transition: "background-color 150ms ease, border-color 150ms ease",
+                }}
+                onMouseEnter={() => setThemeHovered(true)}
+                onMouseLeave={() => setThemeHovered(false)}
+                onClick={toggleTheme}
+              >
+                {dark ? (
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
+                  </svg>
+                ) : (
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
+                  </svg>
+                )}
+                {dark ? "Light Mode" : "Dark Mode"}
+              </button>
+              {!isDemo() && (
+                <a
+                  href="https://forms.gle/BC6ebwbZtgYmSYBeA"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-left"
+                  style={{
+                    color: text,
+                    textDecoration: "none",
+                    border: "1px solid",
+                    borderColor: feedbackHovered
+                      ? `color-mix(in srgb, ${text} 40%, transparent)`
+                      : `color-mix(in srgb, ${text} 18%, transparent)`,
+                    backgroundColor: feedbackHovered
+                      ? `color-mix(in srgb, ${text} 10%, transparent)`
+                      : `color-mix(in srgb, ${text} 5%, transparent)`,
+                    transition: "background-color 150ms ease, border-color 150ms ease",
+                  }}
+                  onMouseEnter={() => setFeedbackHovered(true)}
+                  onMouseLeave={() => setFeedbackHovered(false)}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
+                    fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                  </svg>
+                  Feedback
+                </a>
+              )}
               <button
                 className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium cursor-pointer transition-colors text-left"
                 style={{ color: "var(--category-expense)" }}

@@ -22,7 +22,7 @@ async def get_transaction_by_id(transaction_id: UUID, current_user: User = Depen
         raise HTTPException(status_code=404, detail=str(e))
     return result
 
-@router.post("/", response_model=TransactionResponse)
+@router.post("/", response_model=TransactionResponse, status_code=201)
 async def create_transaction(transaction: CreateTransaction, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     try:
         result = await transaction_service.create_transaction(transaction, current_user.id, db)

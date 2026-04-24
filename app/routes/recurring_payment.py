@@ -21,7 +21,7 @@ async def get_recurring_payment_by_id(recurring_payment_id: UUID, current_user: 
         raise HTTPException(status_code=404, detail=str(e))
     return result
 
-@router.post("/", response_model=RecurringPaymentResponse)
+@router.post("/", response_model=RecurringPaymentResponse, status_code=201)
 async def create_recurring_payments(recurring_payment: CreateRecurringPayment, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     try:
         result = await recurring_payment_service.create_recurring_payment(recurring_payment, current_user.id, db)

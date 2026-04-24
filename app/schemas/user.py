@@ -26,12 +26,14 @@ class UpdateUser(BaseModel):
     first_name: str | None = Field(default=None, min_length=2, max_length=20)
     last_name: str | None = Field(default=None, min_length=2, max_length=20)
     email_address: EmailStr | None = None
+    avatar: str | None = None
 
 class UserResponse(BaseModel):
     id: UUID
     first_name: str
     last_name: str
     email_address: EmailStr
+    avatar: str | None = None
     created_at: datetime
     updated_at: datetime
 

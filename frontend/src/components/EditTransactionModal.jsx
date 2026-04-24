@@ -70,7 +70,7 @@ export default function EditTransactionModal({ transaction, onClose, onSaved }) 
         className="w-full max-w-md rounded-2xl border shadow-2xl"
         style={{ backgroundColor: bg, borderColor: catColor, color: text }}
       >
-        <div className="px-6 py-4 border-b flex items-center justify-between" style={{ borderColor: border }}>
+        <div className="px-4 sm:px-6 py-4 border-b flex items-center justify-between" style={{ borderColor: border }}>
           <h2 className="text-base font-semibold">Edit Transaction</h2>
           <button onClick={onClose} className="transition-colors cursor-pointer">
             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"
@@ -80,7 +80,7 @@ export default function EditTransactionModal({ transaction, onClose, onSaved }) 
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="px-6 py-5 space-y-4">
+        <form onSubmit={handleSubmit} className="px-4 sm:px-6 py-5 space-y-4">
           <div>
             <label className="block text-sm font-medium mb-1.5">Name</label>
             <input
@@ -130,7 +130,7 @@ export default function EditTransactionModal({ transaction, onClose, onSaved }) 
             </div>
           </div>
 
-          <div>
+          <div className="min-w-0">
             <label className="block text-sm font-medium mb-1.5">Date</label>
             <input
               type="date"
@@ -139,7 +139,7 @@ export default function EditTransactionModal({ transaction, onClose, onSaved }) 
               onChange={handleChange}
               required
               className="w-full rounded-xl px-4 py-2.5 text-sm focus:outline-none border"
-              style={inputStyle}
+              style={{ ...inputStyle, WebkitAppearance: "none", appearance: "none", minWidth: 0 }}
             />
           </div>
 

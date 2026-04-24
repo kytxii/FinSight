@@ -1,38 +1,267 @@
-import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import { useState, useEffect, useMemo, useCallback, useRef, useTransition } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  PieChart,
-  Pie,
-  Cell,
-  Tooltip,
-  ResponsiveContainer,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
+  PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid,
+  AreaChart, Area,
 } from "recharts";
-import { getTransactions, createTransaction } from "../api/transactions";
-import {
-  CATEGORIES,
-  CATEGORY_CONFIG,
-  INCOME_TYPES,
-  fmt,
-} from "../utils/finance";
+import { getTransactions, createTransaction, deleteTransaction } from "../api/transactions";
+import EditTransactionModal from "../components/EditTransactionModal";
+import { CATEGORIES, CATEGORY_CONFIG, INCOME_TYPES, fmt } from "../utils/finance";
 import { useTheme } from "../hooks/useTheme";
 import { useAuth } from "../context/AuthContext";
 import { PRESETS, getPresetRange } from "../components/DateRangeFilter";
 import Footer from "../components/Footer";
 import RenderWakeButton from "../components/RenderWakeButton";
 import RecurringPaymentsModal from "../components/RecurringPaymentsModal";
+import AccountPanel from "../components/AccountPanel";
+
+// ── Icons ────────────────────────────────────────────────────────────────────
+
+function IconDashboard({ size = 20 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="3" width="7" height="7" rx="1" />
+      <rect x="14" y="3" width="7" height="7" rx="1" />
+      <rect x="3" y="14" width="7" height="7" rx="1" />
+      <rect x="14" y="14" width="7" height="7" rx="1" />
+    </svg>
+  );
+}
+
+function IconAnalytics({ size = 20 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="18" y1="20" x2="18" y2="10" />
+      <line x1="12" y1="20" x2="12" y2="4" />
+      <line x1="6" y1="20" x2="6" y2="14" />
+    </svg>
+  );
+}
+
+function IconPlus({ size = 24 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="12" y1="5" x2="12" y2="19" />
+      <line x1="5" y1="12" x2="19" y2="12" />
+    </svg>
+  );
+}
+
+function IconAI({ size = 20 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" />
+    </svg>
+  );
+}
+
+function IconMore({ size = 20 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="3" y1="6" x2="21" y2="6" />
+      <line x1="3" y1="12" x2="21" y2="12" />
+      <line x1="3" y1="18" x2="21" y2="18" />
+    </svg>
+  );
+}
+
+function IconChevronLeft({ size = 16 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M15 18l-6-6 6-6" />
+    </svg>
+  );
+}
+
+// ── Swipeable row ─────────────────────────────────────────────────────────────
+
+const REVEAL_W = 130;
+
+function SwipeableRow({ id, openId, setOpenId, onEdit, onDelete, border, surface, text, children }) {
+  const contentRef = useRef(null);
+  const startXRef = useRef(0);
+  const startYRef = useRef(0);
+  const startOffsetRef = useRef(0);
+  const currentOffsetRef = useRef(0);
+  const movedRef = useRef(false);
+  const isOpen = openId === id;
+
+  const setTransform = (x) => {
+    currentOffsetRef.current = x;
+    if (contentRef.current) contentRef.current.style.transform = `translateX(${x}px)`;
+  };
+
+  const animateTo = (x) => {
+    if (!contentRef.current) return;
+    contentRef.current.style.transition = "transform 0.22s ease";
+    setTransform(x);
+    setTimeout(() => { if (contentRef.current) contentRef.current.style.transition = "none"; }, 220);
+  };
+
+  const snapTo = (target) => {
+    animateTo(target);
+    setOpenId(target === -REVEAL_W ? id : (prev) => (prev === id ? null : prev));
+  };
+
+  // Close when another row opens
+  useEffect(() => {
+    if (!isOpen && currentOffsetRef.current !== 0) animateTo(0);
+  }, [isOpen]);
+
+  // Non-passive touchmove so we can preventDefault during horizontal drag
+  useEffect(() => {
+    const el = contentRef.current;
+    if (!el) return;
+    const onMove = (e) => {
+      const dx = e.touches[0].clientX - startXRef.current;
+      const dy = e.touches[0].clientY - startYRef.current;
+      if (!movedRef.current) {
+        if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+        if (Math.abs(dy) > Math.abs(dx)) return; // vertical scroll — let browser handle it
+        movedRef.current = true;
+      }
+      e.preventDefault();
+      setTransform(Math.max(-REVEAL_W, Math.min(0, startOffsetRef.current + dx)));
+    };
+    el.addEventListener("touchmove", onMove, { passive: false });
+    return () => el.removeEventListener("touchmove", onMove);
+  }, []);
+
+  const handleTouchStart = (e) => {
+    startXRef.current = e.touches[0].clientX;
+    startYRef.current = e.touches[0].clientY;
+    startOffsetRef.current = currentOffsetRef.current;
+    movedRef.current = false;
+    if (contentRef.current) contentRef.current.style.transition = "none";
+  };
+
+  const handleTouchEnd = () => {
+    if (!movedRef.current) return;
+    snapTo(currentOffsetRef.current < -REVEAL_W / 2 ? -REVEAL_W : 0);
+  };
+
+  return (
+    <div style={{ position: "relative", overflow: "hidden", borderTop: `1px solid ${border}`, zIndex: isOpen ? 10 : "auto" }}>
+      <div style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: REVEAL_W, display: "flex", backgroundColor: `color-mix(in srgb, ${surface} 80%, #888)` }}>
+        <button
+          onClick={() => { snapTo(0); onEdit(); }}
+          style={{ flex: 1, background: "transparent", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: text }}
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+        </button>
+        <button
+          onClick={() => { snapTo(0); onDelete(); }}
+          style={{ flex: 1, background: "transparent", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--category-expense)" }}
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+        </button>
+      </div>
+      <div
+        ref={contentRef}
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+        style={{ transform: "translateX(0)", position: "relative", zIndex: 1, willChange: "transform" }}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
+// ── Transaction list shared component ────────────────────────────────────────
+
+function TransactionList({ items, total, page, setPage, perPage, setPerPage, accentColor, highlightId, text, muted, border, surface, onEdit, onDelete }) {
+  const [openId, setOpenId] = useState(null);
+
+  if (total === 0) {
+    return (
+      <p className="px-4 py-8 text-center text-sm" style={{ color: muted }}>No transactions</p>
+    );
+  }
+  return (
+    <>
+      {openId !== null && (
+        <div
+          style={{ position: "fixed", inset: 0, zIndex: 5 }}
+          onTouchStart={() => setOpenId(null)}
+          onClick={() => setOpenId(null)}
+        />
+      )}
+      {items.map((t) => {
+        const isIncome = INCOME_TYPES.has(t.category);
+        return (
+          <SwipeableRow
+            key={t.id}
+            id={t.id}
+            openId={openId}
+            setOpenId={setOpenId}
+            onEdit={() => onEdit(t)}
+            onDelete={() => onDelete(t.id)}
+            border={border}
+            surface={surface}
+            text={text}
+          >
+            <div
+              className="px-4 py-3 flex items-center gap-3"
+              style={{
+                backgroundColor: t.id === highlightId
+                  ? `color-mix(in srgb, var(--category-${t.category.toLowerCase()}) 12%, transparent)`
+                  : surface,
+                transition: "background-color 0.6s ease",
+              }}
+            >
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate" style={{ color: text }}>{t.name}</p>
+                <p className="text-xs" style={{ color: muted }}>
+                  <span className="font-medium" style={{ color: `var(--category-${t.category.toLowerCase()})` }}>
+                    {CATEGORY_CONFIG[t.category]?.label}
+                  </span>
+                  {" · "}
+                  {new Date(t.transaction_date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                </p>
+              </div>
+              <p className="text-sm font-bold shrink-0" style={{ color: isIncome ? "var(--category-income)" : "var(--category-expense)" }}>
+                {isIncome ? "+" : "-"}{fmt(t.amount)}
+              </p>
+            </div>
+          </SwipeableRow>
+        );
+      })}
+      <div className="px-4 py-3 border-t flex items-center justify-between text-xs" style={{ borderColor: border, color: muted }}>
+        <div className="flex items-center gap-2">
+          <span>Rows:</span>
+          {[10, 20, 50].map((n) => (
+            <button
+              key={n}
+              onClick={() => setPerPage(n)}
+              className="px-3 py-2 rounded-lg border font-semibold cursor-pointer transition-all duration-150"
+              style={{
+                color: perPage === n ? accentColor : muted,
+                borderColor: perPage === n ? accentColor : border,
+                backgroundColor: perPage === n ? `color-mix(in srgb, ${accentColor} 12%, transparent)` : "transparent",
+              }}
+            >
+              {n}
+            </button>
+          ))}
+        </div>
+        <div className="flex items-center gap-2">
+          <span>{`${(page - 1) * perPage + 1}–${Math.min(page * perPage, total)}`} of {total}</span>
+          <button onClick={() => setPage(page - 1)} disabled={page === 1} className="px-3 py-2 rounded-lg border font-semibold cursor-pointer disabled:opacity-30" style={{ color: muted, borderColor: border }}>←</button>
+          <button onClick={() => setPage(page + 1)} disabled={page * perPage >= total} className="px-3 py-2 rounded-lg border font-semibold cursor-pointer disabled:opacity-30" style={{ color: muted, borderColor: border }}>→</button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
 
 export default function MobileDashboard() {
   const dark = useTheme();
   const { logout, user } = useAuth();
   const navigate = useNavigate();
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const [recurringOpen, setRecurringOpen] = useState(false);
-  const [rpSave, setRpSave] = useState({ isDirty: false, isSaving: false, onSave: null });
 
   const bg = dark ? "var(--dark-bg)" : "var(--light-bg)";
   const surface = dark ? "var(--dark-surface)" : "var(--light-surface)";
@@ -40,8 +269,37 @@ export default function MobileDashboard() {
   const text = dark ? "var(--dark-text)" : "var(--light-text)";
   const muted = `color-mix(in srgb, ${text} 50%, transparent)`;
 
+  // ── Navigation
+  const [navTab, setNavTab] = useState("dashboard");
+  const [addSheetOpen, setAddSheetOpen] = useState(false);
+  const [entrySheetOpen, setEntrySheetOpen] = useState(false);
+
+  // ── Drawer / Recurring / Account
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [recurringOpen, setRecurringOpen] = useState(false);
+  const [rpSave, setRpSave] = useState({ isDirty: false, isSaving: false, onSave: null });
+  const [accountOpen, setAccountOpen] = useState(false);
+  const [acctSave, setAcctSave] = useState({ isDirty: false, isSaving: false, saveStatus: null, onSave: null });
+
+  // ── Data
   const [transactions, setTransactions] = useState([]);
-  const [quickMode, setQuickMode] = useState(true);
+
+  useEffect(() => {
+    getTransactions().then((res) => setTransactions(res.data));
+  }, []);
+
+  function refresh() {
+    getTransactions().then((res) => setTransactions(res.data));
+  }
+
+  const [editingTransaction, setEditingTransaction] = useState(null);
+
+  const handleDelete = async (id) => {
+    await deleteTransaction(id);
+    refresh();
+  };
+
+  // ── Quick entry
   const [quickCat, setQuickCat] = useState("EXPENSE");
   const [quickForm, setQuickForm] = useState({
     name: "",
@@ -50,8 +308,45 @@ export default function MobileDashboard() {
   });
   const [quickLoading, setQuickLoading] = useState(false);
   const [quickError, setQuickError] = useState("");
-  const [page, setPage] = useState(1);
-  const [perPage, setPerPage] = useState(10);
+  const quickColor = `var(--category-${quickCat.toLowerCase()})`;
+  const inputStyle = { backgroundColor: bg, borderColor: border, color: text };
+
+  const handleQuickSubmit = async (e) => {
+    e.preventDefault();
+    setQuickError("");
+    setQuickLoading(true);
+    try {
+      await createTransaction({ ...quickForm, category: quickCat, amount: parseFloat(quickForm.amount) });
+      setQuickForm((f) => ({ ...f, name: "", amount: "" }));
+      setEntrySheetOpen(false);
+      setAddSheetOpen(false);
+      refresh();
+    } catch (err) {
+      setQuickError(err.response?.data?.detail ?? "Something went wrong");
+    } finally {
+      setQuickLoading(false);
+    }
+  };
+
+  // ── Dashboard state (always ALL)
+  const [dashPreset, setDashPreset] = useState("Current Month");
+  const [dashDateRange, setDashDateRange] = useState(() => getPresetRange("Current Month"));
+  const [isDashPending, startDashTransition] = useTransition();
+  const [dashPage, setDashPage] = useState(1);
+  const [dashPerPage, setDashPerPage] = useState(10);
+
+  // ── Analytics state
+  const [analyticsTab, setAnalyticsTab] = useState("ALL");
+  const [analyticsPreset, setAnalyticsPreset] = useState("Current Month");
+  const [analyticsFromVal, setAnalyticsFromVal] = useState("");
+  const [analyticsToVal, setAnalyticsToVal] = useState("");
+  const [analyticsDateRange, setAnalyticsDateRange] = useState(() => getPresetRange("Current Month"));
+  const [analyticsPage, setAnalyticsPage] = useState(1);
+  const [analyticsPerPage, setAnalyticsPerPage] = useState(10);
+  const [analyticsAmountSort, setAnalyticsAmountSort] = useState(null);
+  const [analyticsTypeFilter, setAnalyticsTypeFilter] = useState(null);
+
+  // ── Search
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
@@ -59,41 +354,31 @@ export default function MobileDashboard() {
   const debounceRef = useRef(null);
   const searchContainerRef = useRef(null);
   const tableRef = useRef(null);
-  const [activeTab, setActiveTab] = useState("ALL");
-  const [activePreset, setActivePreset] = useState("Current Month");
-  const [fromVal, setFromVal] = useState("");
-  const [toVal, setToVal] = useState("");
-  const [dateRange, setDateRange] = useState(() => {
-    const now = new Date();
-    const from = new Date(now);
-    from.setDate(1);
-    from.setHours(0, 0, 0, 0);
-    const to = new Date(now);
-    to.setHours(23, 59, 59, 999);
-    return { from, to };
-  });
+  const touchStartY = useRef(0);
+  const dragYRef = useRef(0);
+  const [dragY, setDragY] = useState(0);
 
-  function handlePreset(label) {
-    setActivePreset(label);
-    setFromVal("");
-    setToVal("");
-    setDateRange(getPresetRange(label));
+  function onSheetTouchStart(e) {
+    touchStartY.current = e.touches[0].clientY;
+    dragYRef.current = 0;
+    setDragY(0);
   }
 
-  function handleCustom(from, to) {
-    setActivePreset(null);
-    setDateRange({
-      from: from ? new Date(from + "T00:00:00") : null,
-      to: to ? new Date(to + "T23:59:59") : null,
-    });
+  function onSheetTouchMove(e) {
+    const delta = e.touches[0].clientY - touchStartY.current;
+    if (delta > 0) {
+      dragYRef.current = delta;
+      setDragY(delta);
+    }
   }
 
-  useEffect(() => {
-    getTransactions().then((res) => setTransactions(res.data));
-  }, []);
-
-  function refresh() {
-    getTransactions().then((res) => setTransactions(res.data));
+  function onSheetTouchEnd() {
+    if (dragYRef.current > 80) {
+      setAddSheetOpen(false);
+      setEntrySheetOpen(false);
+    }
+    dragYRef.current = 0;
+    setDragY(0);
   }
 
   const handleQueryChange = (e) => {
@@ -105,18 +390,12 @@ export default function MobileDashboard() {
   };
 
   const handleSearchKeyDown = (e) => {
-    if (e.key === "Escape") {
-      setSearchOpen(false);
-      setQuery("");
-      setDebouncedQuery("");
-    }
+    if (e.key === "Escape") { setSearchOpen(false); setQuery(""); setDebouncedQuery(""); }
   };
 
   useEffect(() => {
     function onMouseDown(e) {
-      if (searchContainerRef.current && !searchContainerRef.current.contains(e.target)) {
-        setSearchOpen(false);
-      }
+      if (searchContainerRef.current && !searchContainerRef.current.contains(e.target)) setSearchOpen(false);
     }
     document.addEventListener("mousedown", onMouseDown);
     return () => document.removeEventListener("mousedown", onMouseDown);
@@ -136,305 +415,194 @@ export default function MobileDashboard() {
   }, [debouncedQuery, transactions]);
 
   const handleSelectTransaction = useCallback((t) => {
-    setQuery("");
-    setDebouncedQuery("");
-    setSearchOpen(false);
-    setActiveTab("ALL");
-    setDateRange({ from: null, to: null });
-    const allSorted = [...transactions].sort(
-      (a, b) => new Date(b.transaction_date) - new Date(a.transaction_date)
-    );
+    setQuery(""); setDebouncedQuery(""); setSearchOpen(false);
+    setNavTab("dashboard");
+    const allSorted = [...transactions].sort((a, b) => new Date(b.transaction_date) - new Date(a.transaction_date));
     const idx = allSorted.findIndex((tx) => tx.id === t.id);
-    if (idx !== -1) setPage(Math.ceil((idx + 1) / perPage));
-    setQuickMode(false);
+    if (idx !== -1) setDashPage(Math.ceil((idx + 1) / dashPerPage));
     setHighlightId(t.id);
     setTimeout(() => setHighlightId(null), 2500);
     setTimeout(() => tableRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
-  }, [transactions, perPage]);
+  }, [transactions, dashPerPage]);
 
-  const activeColor = `var(--category-${activeTab.toLowerCase()})`;
-  const quickColor = `var(--category-${quickCat.toLowerCase()})`;
-  const tooltipProps = {
-    contentStyle: {
-      backgroundColor: dark ? "var(--dark-surface)" : "var(--light-surface)",
-      borderColor: dark ? "var(--dark-border)" : "var(--light-border)",
-      borderRadius: "12px",
-      color: text,
-    },
-    labelStyle: { color: text },
-    itemStyle: { color: text },
-  };
-
-  const handleQuickSubmit = async (e) => {
-    e.preventDefault();
-    setQuickError("");
-    setQuickLoading(true);
-    try {
-      await createTransaction({
-        ...quickForm,
-        category: quickCat,
-        amount: parseFloat(quickForm.amount),
-      });
-      setQuickForm((f) => ({ ...f, name: "", amount: "" }));
-      refresh();
-    } catch (err) {
-      setQuickError(err.response?.data?.detail ?? "Something went wrong");
-    } finally {
-      setQuickLoading(false);
-    }
-  };
-
-  const recent = useMemo(
-    () =>
-      [...transactions]
-        .sort(
-          (a, b) => new Date(b.transaction_date) - new Date(a.transaction_date),
-        )
-        .slice(0, 5),
-    [transactions],
-  );
-
-  const filtered = useMemo(() => {
-    let result =
-      activeTab === "ALL"
-        ? transactions
-        : transactions.filter((t) => t.category === activeTab);
-
-    if (dateRange.from || dateRange.to) {
-      result = result.filter((t) => {
-        const date = new Date(t.transaction_date + "T00:00:00");
-        if (dateRange.from && date < dateRange.from) return false;
-        if (dateRange.to && date > dateRange.to) return false;
-        return true;
-      });
-    }
-
-    return result;
-  }, [transactions, activeTab, dateRange]);
-
-  const summary = useMemo(() => {
-    const totalIn = filtered
-      .filter((t) => INCOME_TYPES.has(t.category))
-      .reduce((s, t) => s + parseFloat(t.amount), 0);
-    const totalOut = filtered
-      .filter((t) => !INCOME_TYPES.has(t.category))
-      .reduce((s, t) => s + parseFloat(t.amount), 0);
-
-    const savingsRate =
-      totalIn > 0 ? ((totalIn - totalOut) / totalIn) * 100 : null;
-
-    let days = 1;
-    if (dateRange.from && dateRange.to) {
-      days = Math.max(
-        1,
-        Math.round((dateRange.to - dateRange.from) / (1000 * 60 * 60 * 24)),
-      );
-    } else if (filtered.length > 0) {
-      const timestamps = filtered.map((t) =>
-        new Date(t.transaction_date + "T00:00:00").getTime(),
-      );
-      days = Math.max(
-        1,
-        Math.round(
-          (Math.max(...timestamps) - Math.min(...timestamps)) /
-            (1000 * 60 * 60 * 24),
-        ) + 1,
-      );
-    }
-    const avgDailySpending = totalOut / days;
-
-    let savingsRateDelta = null;
-    if (dateRange.from) {
-      const periodMs =
-        (dateRange.to ?? new Date()).getTime() - dateRange.from.getTime();
-      const prevFrom = new Date(dateRange.from.getTime() - periodMs);
-      const prevTo = dateRange.from;
-      const prevFiltered = transactions
-        .filter((t) => activeTab === "ALL" || t.category === activeTab)
-        .filter((t) => {
-          const d = new Date(t.transaction_date + "T00:00:00");
-          return d >= prevFrom && d < prevTo;
-        });
-      const prevIn = prevFiltered
-        .filter((t) => INCOME_TYPES.has(t.category))
-        .reduce((s, t) => s + parseFloat(t.amount), 0);
-      const prevOut = prevFiltered
-        .filter((t) => !INCOME_TYPES.has(t.category))
-        .reduce((s, t) => s + parseFloat(t.amount), 0);
-      if (prevIn > 0 && savingsRate !== null) {
-        savingsRateDelta = savingsRate - ((prevIn - prevOut) / prevIn) * 100;
-      }
-    }
-
-    let avgDailySpendingDelta = null;
-    if (dateRange.from) {
-      const periodMs =
-        (dateRange.to ?? new Date()).getTime() - dateRange.from.getTime();
-      const prevFrom = new Date(dateRange.from.getTime() - periodMs);
-      const prevTo = dateRange.from;
-      const prevTotalOut = transactions
-        .filter((t) => activeTab === "ALL" || t.category === activeTab)
-        .filter((t) => {
-          const d = new Date(t.transaction_date + "T00:00:00");
-          return d >= prevFrom && d < prevTo;
-        })
-        .filter((t) => !INCOME_TYPES.has(t.category))
-        .reduce((s, t) => s + parseFloat(t.amount), 0);
-      avgDailySpendingDelta = avgDailySpending - prevTotalOut / days;
-    }
-
-    const categoryTotal = totalIn + totalOut;
-    let categoryDelta = null;
-    let pctOfTotal = null;
-    if (activeTab !== "ALL") {
-      const isIncomeCategory = INCOME_TYPES.has(activeTab);
-      const allPeriodTotal = transactions
-        .filter((t) => {
-          if (!dateRange.from && !dateRange.to) return true;
-          const d = new Date(t.transaction_date + "T00:00:00");
-          if (dateRange.from && d < dateRange.from) return false;
-          if (dateRange.to && d > dateRange.to) return false;
-          return true;
-        })
-        .filter((t) =>
-          isIncomeCategory
-            ? INCOME_TYPES.has(t.category)
-            : !INCOME_TYPES.has(t.category),
-        )
-        .reduce((s, t) => s + parseFloat(t.amount), 0);
-      if (allPeriodTotal > 0)
-        pctOfTotal = (categoryTotal / allPeriodTotal) * 100;
-
-      if (dateRange.from) {
-        const periodMs =
-          (dateRange.to ?? new Date()).getTime() - dateRange.from.getTime();
-        const prevFrom = new Date(dateRange.from.getTime() - periodMs);
-        const prevTo = dateRange.from;
-        const prevTotal = transactions
-          .filter((t) => t.category === activeTab)
-          .filter((t) => {
-            const d = new Date(t.transaction_date + "T00:00:00");
-            return d >= prevFrom && d < prevTo;
-          })
-          .reduce((s, t) => s + parseFloat(t.amount), 0);
-        if (prevTotal > 0)
-          categoryDelta = ((categoryTotal - prevTotal) / prevTotal) * 100;
-      }
-    }
-
-    const txCount = filtered.length;
-    const avgTx = txCount > 0 ? categoryTotal / txCount : 0;
-
-    return {
-      totalIn,
-      totalOut,
-      savingsRate,
-      savingsRateDelta,
-      avgDailySpending,
-      avgDailySpendingDelta,
-      categoryTotal,
-      txCount,
-      avgTx,
-      pctOfTotal,
-      categoryDelta,
-    };
-  }, [filtered, transactions, activeTab, dateRange]);
-
-  const pieData = useMemo(() => {
-    if (activeTab !== "ALL") {
-      const grouped = {};
-      filtered.forEach((t) => {
-        grouped[t.name] = (grouped[t.name] ?? 0) + parseFloat(t.amount);
-      });
-      const entries = Object.entries(grouped).sort((a, b) => b[1] - a[1]);
-      const START = 100,
-        END = 40;
-      const step =
-        entries.length > 1 ? (START - END) / (entries.length - 1) : 0;
-      return entries.map(([name, value], i) => ({
-        name,
-        value: parseFloat(value.toFixed(2)),
-        color: `color-mix(in srgb, ${activeColor} ${Math.round(START - i * step)}%, black)`,
-      }));
-    }
-    const grouped = {};
-    filtered.forEach((t) => {
-      grouped[t.category] = (grouped[t.category] ?? 0) + parseFloat(t.amount);
+  // ── Dashboard computed
+  const dashFiltered = useMemo(() => {
+    if (!dashDateRange.from && !dashDateRange.to) return transactions;
+    return transactions.filter((t) => {
+      const d = new Date(t.transaction_date + "T00:00:00");
+      if (dashDateRange.from && d < dashDateRange.from) return false;
+      if (dashDateRange.to && d > dashDateRange.to) return false;
+      return true;
     });
+  }, [transactions, dashDateRange]);
+
+  const dashSorted = useMemo(
+    () => [...dashFiltered].sort((a, b) => new Date(b.transaction_date) - new Date(a.transaction_date)),
+    [dashFiltered]
+  );
+  const dashPaginated = dashSorted.slice((dashPage - 1) * dashPerPage, dashPage * dashPerPage);
+  useEffect(() => { setDashPage(1); }, [dashFiltered, dashPerPage]);
+
+  const dashSummary = useMemo(() => {
+    const totalIn = dashFiltered.filter((t) => INCOME_TYPES.has(t.category)).reduce((s, t) => s + parseFloat(t.amount), 0);
+    const totalOut = dashFiltered.filter((t) => !INCOME_TYPES.has(t.category)).reduce((s, t) => s + parseFloat(t.amount), 0);
+    const net = totalIn - totalOut;
+    let days = 1;
+    if (dashDateRange.from && dashDateRange.to) {
+      days = Math.max(1, Math.round((dashDateRange.to - dashDateRange.from) / (1000 * 60 * 60 * 24)));
+    } else if (dashFiltered.length > 0) {
+      const timestamps = dashFiltered.map((t) => new Date(t.transaction_date).getTime());
+      days = Math.max(1, Math.round((Math.max(...timestamps) - Math.min(...timestamps)) / (1000 * 60 * 60 * 24)) + 1);
+    }
+    const refDate = dashDateRange.from ?? new Date();
+    const daysInMonth = new Date(refDate.getFullYear(), refDate.getMonth() + 1, 0).getDate();
+    const projectedMonthlySpend = (totalOut / days) * daysInMonth;
+    return { totalIn, totalOut, net, projectedMonthlySpend };
+  }, [dashFiltered, dashDateRange]);
+
+  const dashPieData = useMemo(() => {
+    const grouped = {};
+    dashFiltered.forEach((t) => { grouped[t.category] = (grouped[t.category] ?? 0) + parseFloat(t.amount); });
     return Object.entries(grouped).map(([cat, value]) => ({
       name: CATEGORY_CONFIG[cat]?.label ?? cat,
       value: parseFloat(value.toFixed(2)),
       color: `var(--category-${cat.toLowerCase()})`,
     }));
-  }, [filtered, activeTab]);
+  }, [dashFiltered]);
 
-  const barData = useMemo(() => {
-    if (activeTab !== "ALL") {
-      const grouped = {};
-      filtered.forEach((t) => {
-        grouped[t.name] = (grouped[t.name] ?? 0) + parseFloat(t.amount);
+
+  // ── Analytics computed
+  const analyticsColor = `var(--category-${analyticsTab.toLowerCase()})`;
+
+  const analyticsFiltered = useMemo(() => {
+    let result = analyticsTab === "ALL" ? transactions : transactions.filter((t) => t.category === analyticsTab);
+    if (analyticsDateRange.from || analyticsDateRange.to) {
+      result = result.filter((t) => {
+        const d = new Date(t.transaction_date + "T00:00:00");
+        if (analyticsDateRange.from && d < analyticsDateRange.from) return false;
+        if (analyticsDateRange.to && d > analyticsDateRange.to) return false;
+        return true;
       });
-      return Object.entries(grouped)
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 10)
-        .map(([name, total]) => ({
-          month: name,
-          total: parseFloat(total.toFixed(2)),
-        }));
+    }
+    return result;
+  }, [transactions, analyticsTab, analyticsDateRange]);
+
+  const analyticsSorted = useMemo(() => {
+    let arr = [...analyticsFiltered];
+    if (analyticsTypeFilter === "income") arr = arr.filter(t => INCOME_TYPES.has(t.category));
+    else if (analyticsTypeFilter === "expense") arr = arr.filter(t => !INCOME_TYPES.has(t.category));
+    if (analyticsAmountSort === "asc") return arr.sort((a, b) => parseFloat(a.amount) - parseFloat(b.amount));
+    if (analyticsAmountSort === "desc") return arr.sort((a, b) => parseFloat(b.amount) - parseFloat(a.amount));
+    return arr.sort((a, b) => new Date(b.transaction_date) - new Date(a.transaction_date));
+  }, [analyticsFiltered, analyticsAmountSort, analyticsTypeFilter]);
+  const analyticsPaginated = analyticsSorted.slice((analyticsPage - 1) * analyticsPerPage, analyticsPage * analyticsPerPage);
+  useEffect(() => { setAnalyticsPage(1); }, [analyticsFiltered, analyticsPerPage]);
+
+  useEffect(() => {
+    document.body.style.overflow = (addSheetOpen || entrySheetOpen) ? "hidden" : "";
+    return () => { document.body.style.overflow = ""; };
+  }, [addSheetOpen, entrySheetOpen]);
+
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const handler = () => setKeyboardOpen(vv.height < window.screen.height * 0.8);
+    vv.addEventListener("resize", handler);
+    return () => vv.removeEventListener("resize", handler);
+  }, []);
+
+
+  const analyticsSummary = useMemo(() => {
+    const totalIn = analyticsFiltered.filter((t) => INCOME_TYPES.has(t.category)).reduce((s, t) => s + parseFloat(t.amount), 0);
+    const totalOut = analyticsFiltered.filter((t) => !INCOME_TYPES.has(t.category)).reduce((s, t) => s + parseFloat(t.amount), 0);
+    const categoryTotal = totalIn + totalOut;
+    const txCount = analyticsFiltered.length;
+    const avgTx = txCount > 0 ? categoryTotal / txCount : 0;
+    const savingsRate = totalIn > 0 ? ((totalIn - totalOut) / totalIn) * 100 : null;
+
+    let pctOfTotal = null;
+    if (analyticsTab !== "ALL") {
+      const isIncome = INCOME_TYPES.has(analyticsTab);
+      const periodTotal = transactions
+        .filter((t) => {
+          if (!analyticsDateRange.from && !analyticsDateRange.to) return true;
+          const d = new Date(t.transaction_date + "T00:00:00");
+          if (analyticsDateRange.from && d < analyticsDateRange.from) return false;
+          if (analyticsDateRange.to && d > analyticsDateRange.to) return false;
+          return true;
+        })
+        .filter((t) => isIncome ? INCOME_TYPES.has(t.category) : !INCOME_TYPES.has(t.category))
+        .reduce((s, t) => s + parseFloat(t.amount), 0);
+      if (periodTotal > 0) pctOfTotal = (categoryTotal / periodTotal) * 100;
+    }
+
+    return { totalIn, totalOut, categoryTotal, txCount, avgTx, savingsRate, pctOfTotal };
+  }, [analyticsFiltered, transactions, analyticsTab, analyticsDateRange]);
+
+  const analyticsAreaData = useMemo(() => {
+    if (analyticsTab === "ALL") return [];
+    const grouped = {};
+    analyticsFiltered.forEach((t) => { grouped[t.transaction_date] = (grouped[t.transaction_date] ?? 0) + parseFloat(t.amount); });
+    return Object.entries(grouped)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, total]) => ({ date: new Date(date + "T00:00:00").getTime(), total: parseFloat(total.toFixed(2)) }));
+  }, [analyticsFiltered, analyticsTab]);
+
+
+  const analyticsBarData = useMemo(() => {
+    if (analyticsTab !== "ALL") {
+      const grouped = {};
+      analyticsFiltered.forEach((t) => { grouped[t.name] = (grouped[t.name] ?? 0) + parseFloat(t.amount); });
+      const entries = Object.entries(grouped).sort((a, b) => b[1] - a[1]).slice(0, 10);
+      const START = 100, END = 30;
+      const step = entries.length > 1 ? (START - END) / (entries.length - 1) : 0;
+      return entries.map(([name, total], i) => ({
+        month: name,
+        total: parseFloat(total.toFixed(2)),
+        color: `color-mix(in srgb, ${analyticsColor} ${Math.round(START - i * step)}%, black)`,
+      }));
     }
     const grouped = {};
-    filtered.forEach((t) => {
-      const month = new Date(
-        t.transaction_date + "T00:00:00",
-      ).toLocaleDateString("en-US", {
-        month: "short",
-        year: "2-digit",
-      });
+    analyticsFiltered.forEach((t) => {
+      const month = new Date(t.transaction_date + "T00:00:00").toLocaleDateString("en-US", { month: "short", year: "2-digit" });
       if (!grouped[month]) grouped[month] = { income: 0, expense: 0 };
-      if (INCOME_TYPES.has(t.category)) {
-        grouped[month].income += parseFloat(t.amount);
-      } else {
-        grouped[month].expense += parseFloat(t.amount);
-      }
+      if (INCOME_TYPES.has(t.category)) grouped[month].income += parseFloat(t.amount);
+      else grouped[month].expense += parseFloat(t.amount);
     });
     return Object.entries(grouped)
       .sort((a, b) => new Date("1 " + a[0]) - new Date("1 " + b[0]))
-      .map(([month, { income, expense }]) => ({
-        month,
-        income: parseFloat(income.toFixed(2)),
-        expense: parseFloat(expense.toFixed(2)),
-      }));
-  }, [filtered, activeTab]);
+      .map(([month, { income, expense }]) => ({ month, income: parseFloat(income.toFixed(2)), expense: parseFloat(expense.toFixed(2)) }));
+  }, [analyticsFiltered, analyticsTab, analyticsColor]);
 
-  const sorted = useMemo(
-    () =>
-      [...filtered].sort(
-        (a, b) => new Date(b.transaction_date) - new Date(a.transaction_date),
-      ),
-    [filtered],
-  );
-  const paginated = sorted.slice((page - 1) * perPage, page * perPage);
 
-  useEffect(() => {
-    setPage(1);
-  }, [filtered, perPage]);
+  const analyticsSmallMultiples = useMemo(() => {
+    if (analyticsTab !== "ALL") return [];
+    const byCategory = {};
+    analyticsFiltered.forEach((t) => {
+      byCategory[t.category] = (byCategory[t.category] ?? 0) + parseFloat(t.amount);
+    });
+    return Object.entries(byCategory)
+      .map(([cat, total]) => ({ cat, total: parseFloat(total.toFixed(2)) }))
+      .sort((a, b) => b.total - a.total);
+  }, [analyticsFiltered, analyticsTab]);
 
-  const inputStyle = { backgroundColor: bg, borderColor: border, color: text };
+  const tooltipProps = {
+    contentStyle: { backgroundColor: surface, borderColor: border, borderRadius: "12px", color: text },
+    labelStyle: { color: text },
+    itemStyle: { color: text },
+  };
+
+  // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-dvh" style={{ backgroundColor: bg, color: text }}>
-      {/* Header */}
-      <header
-        className="border-b sticky top-0 z-20 px-4 py-3 flex items-center gap-3"
-        style={{ backgroundColor: surface, borderColor: border }}
-      >
+    <div className="min-h-dvh flex flex-col" style={{ backgroundColor: bg, color: text }}>
+
+      {/* ── Header ── */}
+      <header className="border-b sticky top-0 z-20 px-4 py-3 flex items-center gap-3" style={{ backgroundColor: surface, borderColor: border }}>
         <span
           className="font-mono text-2xl font-bold bg-clip-text text-transparent shrink-0"
-          style={{
-            backgroundImage: dark
-              ? "linear-gradient(to right, #ffffff, #d1d5db, #9ca3af)"
-              : "linear-gradient(to right, #000000, #374151, #6b7280)",
-          }}
+          style={{ backgroundImage: dark ? "linear-gradient(to right, #ffffff, #d1d5db, #9ca3af)" : "linear-gradient(to right, #000000, #374151, #6b7280)" }}
         >
           FinSight
         </span>
@@ -449,28 +617,16 @@ export default function MobileDashboard() {
             style={{ backgroundColor: bg, borderColor: border, color: text, outline: "none" }}
           />
           {searchOpen && suggestions.length > 0 && (
-            <div
-              className="absolute top-full mt-1.5 left-0 right-0 rounded-xl border shadow-lg overflow-hidden z-50"
-              style={{ backgroundColor: surface, borderColor: border }}
-            >
+            <div className="absolute top-full mt-1.5 left-0 right-0 rounded-xl border shadow-lg overflow-hidden z-50" style={{ backgroundColor: surface, borderColor: border }}>
               {suggestions.map((t) => {
                 const catColor = `var(--category-${t.category.toLowerCase()})`;
-                const date = new Date(t.transaction_date + "T00:00:00").toLocaleDateString("en-US", {
-                  month: "short", day: "numeric",
-                });
+                const date = new Date(t.transaction_date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
                 return (
-                  <button
-                    key={t.id}
-                    onMouseDown={() => handleSelectTransaction(t)}
-                    className="w-full flex items-center gap-2 px-3 py-2.5 text-left"
-                    style={{ backgroundColor: surface, color: text }}
-                  >
+                  <button key={t.id} onMouseDown={() => handleSelectTransaction(t)} className="w-full flex items-center gap-2 px-3 py-2.5 text-left" style={{ backgroundColor: surface, color: text }}>
                     <span style={{ width: 7, height: 7, borderRadius: "50%", backgroundColor: catColor, flexShrink: 0 }} />
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold truncate">{t.name}</p>
-                      <p className="text-xs truncate" style={{ color: catColor }}>
-                        {CATEGORY_CONFIG[t.category]?.label ?? t.category} · {date}
-                      </p>
+                      <p className="text-xs truncate" style={{ color: catColor }}>{CATEGORY_CONFIG[t.category]?.label ?? t.category} · {date}</p>
                     </div>
                     <span className="text-sm font-bold shrink-0" style={{ color: catColor }}>{fmt(t.amount)}</span>
                   </button>
@@ -479,142 +635,560 @@ export default function MobileDashboard() {
             </div>
           )}
           {searchOpen && debouncedQuery.trim() && suggestions.length === 0 && (
-            <div
-              className="absolute top-full mt-1.5 left-0 right-0 rounded-xl border shadow-lg px-3 py-2.5 text-sm z-50"
-              style={{ backgroundColor: surface, borderColor: border, color: muted }}
-            >
+            <div className="absolute top-full mt-1.5 left-0 right-0 rounded-xl border shadow-lg px-3 py-2.5 text-sm z-50" style={{ backgroundColor: surface, borderColor: border, color: muted }}>
               No transactions found
             </div>
           )}
         </div>
         <button
-          onClick={() => document.documentElement.classList.toggle("dark")}
-          className="p-2 rounded-lg cursor-pointer shrink-0"
-          aria-label="Toggle theme"
+          onClick={() => setAccountOpen(true)}
+          className="w-8 h-8 rounded-full shrink-0 cursor-pointer overflow-hidden flex items-center justify-center text-xs font-bold"
+          style={{ backgroundColor: `color-mix(in srgb, ${text} 12%, transparent)`, color: text }}
+          aria-label="Open account"
         >
-          {dark ? (
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="18"
-              height="18"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <circle cx="12" cy="12" r="4" />
-              <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
-            </svg>
-          ) : (
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="18"
-              height="18"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
-            </svg>
-          )}
-        </button>
-        <button
-          onClick={() => setDrawerOpen(true)}
-          className="p-2 rounded-lg cursor-pointer shrink-0"
-          aria-label="Open menu"
-        >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="18"
-            height="18"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <line x1="3" y1="6" x2="21" y2="6" />
-            <line x1="3" y1="12" x2="21" y2="12" />
-            <line x1="3" y1="18" x2="21" y2="18" />
-          </svg>
+          {user?.avatar
+            ? <img src={user.avatar} alt="avatar" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+            : (user?.first_name?.[0]?.toUpperCase() ?? "?")}
         </button>
       </header>
 
-      {/* Overlay */}
-      {drawerOpen && (
-        <div
-          className="fixed inset-0 z-40"
-          style={{ backgroundColor: "rgba(0,0,0,0.4)" }}
-          onClick={() => setDrawerOpen(false)}
-        />
-      )}
+      {/* ── Main content ── */}
+      <main className="flex-1 px-4 pt-4 pb-28 space-y-4">
 
-      {/* Recurring Payments — full-screen overlay */}
-      {recurringOpen && (
-        <div
-          className="fixed inset-0 z-50 flex flex-col"
-          style={{ backgroundColor: surface, color: text }}
-        >
-          <div
-            className="px-5 py-4 flex items-center justify-between border-b shrink-0"
-            style={{ borderColor: border }}
-          >
-            <div className="flex items-center gap-2">
+        {/* Dashboard tab */}
+        {navTab === "dashboard" && (
+          <>
+            {/* Date preset */}
+            <div className="flex gap-2 overflow-x-auto -mr-4 pr-4" style={{ scrollbarWidth: "none" }}>
+              {PRESETS.map((label) => {
+                const active = dashPreset === label;
+                return (
+                  <button
+                    key={label}
+                    onClick={() => { setDashPreset(label); startDashTransition(() => setDashDateRange(getPresetRange(label))); }}
+                    className="px-3 py-1.5 text-xs font-semibold rounded-xl border cursor-pointer transition-all duration-150 active:scale-95 shrink-0"
+                    style={{
+                      color: active ? "var(--category-all)" : muted,
+                      borderColor: active ? "var(--category-all)" : border,
+                      backgroundColor: active ? `color-mix(in srgb, var(--category-all) 12%, transparent)` : "transparent",
+                      touchAction: "manipulation",
+                    }}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Summary cards */}
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                { label: "INCOME", value: fmt(dashSummary.totalIn), color: "var(--category-income)" },
+                { label: "EXPENSES", value: fmt(dashSummary.totalOut), color: "var(--category-expense)" },
+                { label: "NET", value: (dashSummary.net >= 0 ? "+" : "-") + fmt(Math.abs(dashSummary.net)), color: dashSummary.net >= 0 ? "var(--category-income)" : "var(--category-expense)" },
+                { label: "PROJ. MONTHLY", value: fmt(dashSummary.projectedMonthlySpend), color: "var(--category-all)" },
+              ].map(({ label, value, color }) => (
+                <div key={label} className="rounded-2xl px-4 py-4 border" style={{ backgroundColor: surface, borderColor: border, borderTopColor: color, borderTopWidth: "3px" }}>
+                  <p className="text-xs font-medium mb-1" style={{ color: muted }}>{label}</p>
+                  <p className="text-lg font-bold tracking-tight" style={{ color }}>{value}</p>
+                </div>
+              ))}
+            </div>
+
+            {/* Donut chart */}
+            {isDashPending ? (
+              <div className="rounded-2xl border p-4 animate-pulse" style={{ backgroundColor: surface, borderColor: border, height: 300 }} />
+            ) : dashPieData.length > 0 && (
+              <div className="rounded-2xl border p-4" style={{ backgroundColor: surface, borderColor: border }}>
+                <p className="text-base font-semibold mb-3" style={{ color: text }}>Breakdown by Category</p>
+                <div style={{ position: "relative" }}>
+                  <ResponsiveContainer width="100%" height={240} style={{ pointerEvents: "none" }}>
+                    <PieChart>
+                      <Pie data={dashPieData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={55} outerRadius={80} strokeWidth={0} animationBegin={0} animationDuration={500}>
+                        {dashPieData.map((entry) => <Cell key={entry.name} fill={entry.color} />)}
+                      </Pie>
+                      <Tooltip {...tooltipProps} formatter={(v) => fmt(v)} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                  <div style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
+                    <span style={{ fontSize: 26, fontWeight: 700, color: text, lineHeight: 1 }}>{dashFiltered.length}</span>
+                    <span style={{ fontSize: 11, color: muted, marginTop: 4 }}>transactions</span>
+                  </div>
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 16px", justifyContent: "center", marginTop: 8 }}>
+                  {dashPieData.map((entry) => (
+                    <div key={entry.name} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <span style={{ width: 9, height: 9, borderRadius: "50%", backgroundColor: entry.color, flexShrink: 0, display: "inline-block" }} />
+                      <span style={{ color: text, fontSize: 12 }}>{entry.name}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Transaction table */}
+
+            <div ref={tableRef} className="rounded-2xl border" style={{ backgroundColor: surface, borderColor: border }}>
+              <p className="px-4 py-3 text-base font-semibold border-b" style={{ borderColor: border, color: text }}>Recent Transactions</p>
+              <TransactionList
+                items={dashPaginated}
+                total={dashSorted.length}
+                page={dashPage}
+                setPage={setDashPage}
+                perPage={dashPerPage}
+                setPerPage={setDashPerPage}
+                accentColor="var(--category-all)"
+                highlightId={highlightId}
+                text={text} muted={muted} border={border} surface={surface}
+                onEdit={setEditingTransaction}
+                onDelete={handleDelete}
+              />
+            </div>
+          </>
+        )}
+
+        {/* Analytics tab */}
+        {navTab === "analytics" && (
+          <>
+            {/* Filters */}
+            <div className="flex flex-col gap-2">
+              <div className="grid grid-cols-2 gap-3">
+                <select
+                  value={analyticsTab}
+                  onChange={(e) => setAnalyticsTab(e.target.value)}
+                  className="rounded-xl px-3 py-2 text-xs font-semibold border cursor-pointer w-full"
+                  style={{ color: text, borderColor: analyticsColor, backgroundColor: dark ? `color-mix(in srgb, ${analyticsColor} 12%, transparent)` : "var(--light-surface)", boxShadow: `0 0 0 2px color-mix(in srgb, ${analyticsColor} 20%, transparent)`, colorScheme: dark ? "dark" : "light" }}
+                >
+                  {CATEGORIES.map((cat) => (
+                    <option key={cat} value={cat} style={{ backgroundColor: bg, color: text }}>
+                      {cat === "ALL" ? "All" : CATEGORY_CONFIG[cat].label}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={analyticsPreset ?? "custom"}
+                  onChange={(e) => { setAnalyticsPreset(e.target.value); setAnalyticsFromVal(""); setAnalyticsToVal(""); setAnalyticsDateRange(getPresetRange(e.target.value)); }}
+                  className="rounded-xl px-3 py-2 text-xs font-semibold border cursor-pointer w-full"
+                  style={{ color: text, borderColor: analyticsColor, backgroundColor: dark ? `color-mix(in srgb, ${analyticsColor} 12%, transparent)` : "var(--light-surface)", boxShadow: `0 0 0 2px color-mix(in srgb, ${analyticsColor} 20%, transparent)`, colorScheme: dark ? "dark" : "light" }}
+                >
+                  {PRESETS.map((label) => <option key={label} value={label} style={{ backgroundColor: bg, color: text }}>{label}</option>)}
+                  {!analyticsPreset && <option value="custom" disabled style={{ backgroundColor: bg, color: text }}>Custom</option>}
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                {[
+                  { label: "From", val: analyticsFromVal, onChange: (v) => { setAnalyticsFromVal(v); setAnalyticsPreset(null); setAnalyticsDateRange((r) => ({ ...r, from: v ? new Date(v + "T00:00:00") : null })); } },
+                  { label: "To", val: analyticsToVal, onChange: (v) => { setAnalyticsToVal(v); setAnalyticsPreset(null); setAnalyticsDateRange((r) => ({ ...r, to: v ? new Date(v + "T23:59:59") : null })); } },
+                ].map(({ label, val, onChange }) => (
+                  <div key={label} className="flex items-center gap-2 min-w-0">
+                    <span className="text-[10px] uppercase font-bold shrink-0" style={{ color: muted }}>{label}</span>
+                    <input type="date" value={val} onChange={(e) => onChange(e.target.value)} className="flex-1 rounded-xl px-2 py-2 text-[10px] font-semibold border min-w-0"
+                      style={{ backgroundColor: dark ? "var(--dark-bg)" : "var(--light-surface)", borderColor: border, color: text, colorScheme: dark ? "dark" : "light" }} />
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Summary cards — single category only */}
+            {analyticsTab !== "ALL" && (
+              <div className="grid grid-cols-2 gap-3">
+                {[
+                  { label: `${CATEGORY_CONFIG[analyticsTab]?.label.toUpperCase()} TOTAL`, value: fmt(analyticsSummary.categoryTotal), color: analyticsColor },
+                  { label: "TRANSACTIONS", value: String(analyticsSummary.txCount), color: analyticsColor },
+                  { label: "AVG TRANSACTION", value: fmt(analyticsSummary.avgTx), color: analyticsColor },
+                  { label: INCOME_TYPES.has(analyticsTab) ? "% OF TOTAL INCOME" : "% OF TOTAL EXPENSES", value: analyticsSummary.pctOfTotal != null ? `${analyticsSummary.pctOfTotal.toFixed(1)}%` : "—", color: analyticsColor },
+                ].map(({ label, value, color }) => (
+                  <div key={label} className="rounded-2xl px-4 py-4 border" style={{ backgroundColor: surface, borderColor: border, borderTopColor: color, borderTopWidth: "3px" }}>
+                    <p className="text-xs font-medium mb-1" style={{ color: muted }}>{label}</p>
+                    <p className="text-lg font-bold tracking-tight" style={{ color }}>{value}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Area chart (single category) */}
+            {analyticsTab !== "ALL" && analyticsAreaData.length > 0 && (
+              <div className="rounded-2xl border p-4" style={{ backgroundColor: surface, borderColor: analyticsColor }}>
+                <p className="text-base font-semibold mb-3" style={{ color: text }}>{CATEGORY_CONFIG[analyticsTab]?.label} Over Time</p>
+                <ResponsiveContainer width="100%" height={220} style={{ pointerEvents: "none" }}>
+                  <AreaChart data={analyticsAreaData}>
+                    <defs>
+                      <linearGradient id="areaFillMobile" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor={analyticsColor} stopOpacity={0.3} />
+                        <stop offset="95%" stopColor={analyticsColor} stopOpacity={0.02} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={dark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.06)"} />
+                    <XAxis dataKey="date" type="number" scale="time" domain={["dataMin", "dataMax"]} axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: text }} tickFormatter={(v) => new Date(v).toLocaleDateString("en-US", { month: "short", day: "numeric" })} />
+                    <YAxis axisLine={false} tickLine={false} tickFormatter={(v) => `$${v}`} tick={{ fontSize: 11, fill: text }} />
+                    <Tooltip {...tooltipProps} cursor={{ stroke: analyticsColor, strokeWidth: 1, strokeDasharray: "4 4" }}
+                      content={({ payload }) => {
+                        if (!payload?.length) return null;
+                        const { date, total } = payload[0].payload;
+                        return (
+                          <div style={{ ...tooltipProps.contentStyle, padding: "8px 12px" }}>
+                            <p style={{ margin: 0, opacity: 0.7, fontSize: 11 }}>{new Date(date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</p>
+                            <p style={{ margin: 0, fontWeight: 600 }}>{fmt(total)}</p>
+                          </div>
+                        );
+                      }}
+                    />
+                    <Area key={analyticsTab} type="monotone" dataKey="total" stroke={analyticsColor} strokeWidth={2} fill="url(#areaFillMobile)"
+                      dot={{ fill: analyticsColor, r: 4, strokeWidth: 0 }} activeDot={{ r: 6, strokeWidth: 0 }}
+                      isAnimationActive animationBegin={0} animationDuration={1000} animationEasing="ease-out"
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+
+            {/* Category overview bar — ALL only */}
+            {analyticsTab === "ALL" && analyticsSmallMultiples.length > 0 && (
+              <div className="rounded-2xl border p-4" style={{ backgroundColor: surface, borderColor: border }}>
+                <p className="text-base font-semibold mb-3" style={{ color: text }}>Spending by Category</p>
+                {(() => {
+                  const max = Math.max(...analyticsSmallMultiples.map((d) => d.total));
+                  return (
+                    <div className="space-y-2">
+                      {analyticsSmallMultiples.map(({ cat, total }) => {
+                        const catColor = `var(--category-${cat.toLowerCase()})`;
+                        const pct = max > 0 ? (total / max) * 100 : 0;
+                        return (
+                          <div key={cat} className="flex items-center gap-2">
+                            <span style={{ width: 100, fontSize: 11, fontWeight: 600, color: catColor, flexShrink: 0, textAlign: "right" }}>
+                              {CATEGORY_CONFIG[cat]?.label ?? cat}
+                            </span>
+                            <div style={{ flex: 1, height: 10, borderRadius: 5, backgroundColor: `color-mix(in srgb, ${catColor} 15%, transparent)` }}>
+                              <div style={{ width: `${pct}%`, height: "100%", borderRadius: 5, backgroundColor: catColor, transition: "width 0.4s ease" }} />
+                            </div>
+                            <span style={{ width: 68, fontSize: 11, fontWeight: 600, color: text, flexShrink: 0 }}>{fmt(total)}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+
+
+            {/* Top by name — single category */}
+            {analyticsTab !== "ALL" && analyticsBarData.length > 0 && (
+              <div className="rounded-2xl border p-4" style={{ backgroundColor: surface, borderColor: analyticsColor }}>
+                <p className="text-base font-semibold mb-3" style={{ color: text }}>Top {CATEGORY_CONFIG[analyticsTab]?.label} by Name</p>
+                <ResponsiveContainer width="100%" height={200} style={{ pointerEvents: "none" }}>
+                  <BarChart data={analyticsBarData} barSize={20}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={dark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.06)"} />
+                    <XAxis dataKey="month" axisLine={false} tickLine={false} interval={0} height={50}
+                      tick={(props) => {
+                        const val = props.payload?.value ?? "";
+                        const label = val.length > 10 ? val.slice(0, 10) + "…" : val;
+                        return <text x={props.x} y={props.y} dy={6} textAnchor="end" fontSize={11} style={{ fill: text }} transform={`rotate(-35, ${props.x}, ${props.y})`}>{label}</text>;
+                      }}
+                    />
+                    <YAxis axisLine={false} tickLine={false} tickFormatter={(v) => `$${v}`} tick={{ fontSize: 10, fill: text }} />
+                    <Tooltip {...tooltipProps} formatter={(v) => fmt(v)} cursor={false} />
+                    <Bar dataKey="total" radius={[5, 5, 0, 0]} barSize={20}>
+                      {analyticsBarData.map((entry) => <Cell key={entry.month} fill={entry.color} />)}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            )}
+
+            {/* Transaction table */}
+            <div className="rounded-2xl border" style={{ backgroundColor: surface, borderColor: analyticsColor }}>
+              <div className="px-4 py-3 border-b flex items-center justify-between" style={{ borderColor: border }}>
+                <p className="text-base font-semibold" style={{ color: text }}>Transactions</p>
+                <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
+                <button
+                  onClick={() => setAnalyticsTypeFilter(f => f === null ? "income" : f === "income" ? "expense" : null)}
+                  style={{ color: analyticsTypeFilter === "income" ? "var(--category-income)" : analyticsTypeFilter === "expense" ? "var(--category-expense)" : muted, display: "flex", alignItems: "center", gap: 3, fontSize: 12, fontWeight: 600, background: `color-mix(in srgb, ${text} 6%, transparent)`, border: "none", cursor: "pointer", borderRadius: 8, padding: "3px 8px" }}
+                >
+                  {analyticsTypeFilter === "income" ? "Income" : analyticsTypeFilter === "expense" ? "Expense" : "All"}
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    {analyticsTypeFilter === "income"
+                      ? <><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></>
+                      : analyticsTypeFilter === "expense"
+                      ? <><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/><polyline points="17 18 23 18 23 12"/></>
+                      : <><path d="M12 19V5M5 12l7-7 7 7" opacity="0.4"/><path d="M12 5v14M5 12l7 7 7-7" opacity="0.4"/></>
+                    }
+                  </svg>
+                </button>
+                <button
+                  onClick={() => setAnalyticsAmountSort(s => s === "desc" ? "asc" : s === "asc" ? null : "desc")}
+                  style={{ color: analyticsAmountSort ? analyticsColor : muted, display: "flex", alignItems: "center", gap: 3, fontSize: 12, fontWeight: 600, background: `color-mix(in srgb, ${text} 6%, transparent)`, border: "none", cursor: "pointer", borderRadius: 8, padding: "3px 8px" }}
+                >
+                  Amount
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    {analyticsAmountSort === "asc"
+                      ? <path d="M12 19V5M5 12l7-7 7 7"/>
+                      : analyticsAmountSort === "desc"
+                      ? <path d="M12 5v14M5 12l7 7 7-7"/>
+                      : <><path d="M12 19V5M5 12l7-7 7 7" opacity="0.4"/><path d="M12 5v14M5 12l7 7 7-7" opacity="0.4"/></>
+                    }
+                  </svg>
+                </button>
+                </div>
+              </div>
+              <TransactionList
+                items={analyticsPaginated}
+                total={analyticsSorted.length}
+                page={analyticsPage}
+                setPage={setAnalyticsPage}
+                perPage={analyticsPerPage}
+                setPerPage={setAnalyticsPerPage}
+                accentColor={analyticsColor}
+                highlightId={null}
+                text={text} muted={muted} border={border} surface={surface}
+                onEdit={setEditingTransaction}
+                onDelete={handleDelete}
+              />
+            </div>
+          </>
+        )}
+
+        {/* AI tab */}
+        {navTab === "ai" && (
+          <div className="flex flex-col h-[calc(100dvh-12rem)]">
+            <div className="flex-1 flex flex-col items-center justify-center gap-3 rounded-2xl border" style={{ backgroundColor: surface, borderColor: border }}>
+              <IconAI size={36} />
+              <p className="text-base font-semibold" style={{ color: text }}>FinSight AI</p>
+              <p className="text-sm text-center px-8" style={{ color: muted }}>AI assistant coming soon. Ask questions about your spending, get insights, and more.</p>
+            </div>
+          </div>
+        )}
+
+      </main>
+
+      {/* ── Bottom nav ── */}
+      <nav
+        className="fixed bottom-0 left-0 right-0 z-30 border-t flex items-center"
+        style={{ backgroundColor: surface, borderColor: border, paddingBottom: "env(safe-area-inset-bottom)", transform: "translateZ(0)", willChange: "transform" }}
+      >
+        {[
+          { id: "dashboard", label: "Dashboard", Icon: IconDashboard },
+          { id: "analytics", label: "Analytics", Icon: IconAnalytics },
+          { id: "add", label: "Add", Icon: null },
+          { id: "ai", label: "AI", Icon: IconAI },
+          { id: "more", label: "Menu", Icon: IconMore },
+        ].map(({ id, label, Icon }) => {
+          if (id === "add") {
+            return (
               <button
-                onClick={() => { setRecurringOpen(false); setRpSave({ isDirty: false, isSaving: false, onSave: null }); }}
-                className="p-1 rounded-lg cursor-pointer"
-                style={{ color: muted }}
-                aria-label="Back"
+                key="add"
+                onClick={() => setAddSheetOpen(true)}
+                className="flex-1 flex flex-col items-center justify-center py-3 cursor-pointer"
+                aria-label="Add"
               >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
-                  fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M15 18l-6-6 6-6" />
-                </svg>
+                <div
+                  className="w-11 h-11 rounded-full flex items-center justify-center"
+                  style={{ backgroundColor: "var(--category-income)", color: "#000" }}
+                >
+                  <IconPlus size={22} />
+                </div>
+              </button>
+            );
+          }
+          if (id === "more") {
+            return (
+              <button
+                key="more"
+                onClick={() => setDrawerOpen(true)}
+                className="flex-1 flex flex-col items-center justify-center gap-1 py-3 cursor-pointer"
+              >
+                <span style={{ color: muted }}><IconMore size={20} /></span>
+                <span className="text-[10px] font-semibold" style={{ color: muted }}>Menu</span>
+              </button>
+            );
+          }
+          const active = navTab === id;
+          const color = active ? "var(--category-all)" : muted;
+          return (
+            <button
+              key={id}
+              onClick={() => setNavTab(id)}
+              className="flex-1 flex flex-col items-center justify-center gap-1 py-3 cursor-pointer"
+            >
+              <span style={{ color }}><Icon size={20} /></span>
+              <span className="text-[10px] font-semibold" style={{ color }}>{label}</span>
+            </button>
+          );
+        })}
+      </nav>
+
+      {/* ── Overlay ── */}
+      <div
+        className="fixed inset-0 z-40"
+        style={{ backgroundColor: "rgba(0,0,0,0.5)", opacity: addSheetOpen ? 1 : 0, pointerEvents: addSheetOpen ? "auto" : "none", transition: "opacity 250ms ease" }}
+        onClick={() => { setAddSheetOpen(false); setEntrySheetOpen(false); }}
+      />
+
+      {/* ── Add sheet ── */}
+      <div
+        className="fixed bottom-0 left-0 right-0 z-50 rounded-t-2xl border-t border-x p-5 space-y-3"
+        style={{
+          backgroundColor: surface, borderColor: border,
+          paddingBottom: "calc(1.25rem + env(safe-area-inset-bottom))",
+          transform: `translateY(${addSheetOpen && !entrySheetOpen ? dragY : 100}${addSheetOpen && !entrySheetOpen && dragY > 0 ? "" : "%"})`,
+          transition: dragY > 0 ? "none" : "transform 300ms cubic-bezier(0.32, 0.72, 0, 1)",
+        }}
+        onTouchStart={onSheetTouchStart}
+        onTouchMove={onSheetTouchMove}
+        onTouchEnd={onSheetTouchEnd}
+      >
+        <div className="w-10 h-1 rounded-full mx-auto mb-4" style={{ backgroundColor: border }} />
+        <p className="text-sm font-semibold mb-1" style={{ color: muted }}>Add</p>
+
+        <button
+          onClick={() => setEntrySheetOpen(true)}
+          className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl border text-left cursor-pointer active:scale-[0.97] transition-transform duration-150"
+          style={{ backgroundColor: bg, borderColor: border, color: text }}
+        >
+          <span style={{ color: "var(--category-income)" }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+          </span>
+          <div>
+            <p className="text-sm font-semibold">Transaction</p>
+            <p className="text-xs" style={{ color: muted }}>Add a single transaction</p>
+          </div>
+        </button>
+        <button
+          className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl border text-left cursor-not-allowed opacity-50"
+          style={{ backgroundColor: bg, borderColor: border, color: text }}
+          disabled
+        >
+          <span style={{ color: muted }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="3" width="18" height="18" rx="2" /><line x1="3" y1="9" x2="21" y2="9" /><line x1="3" y1="15" x2="21" y2="15" /><line x1="9" y1="3" x2="9" y2="21" />
+            </svg>
+          </span>
+          <div>
+            <p className="text-sm font-semibold">Batch Add</p>
+            <p className="text-xs" style={{ color: muted }}>Coming soon</p>
+          </div>
+        </button>
+
+      </div>
+
+      {/* ── Entry sheet ── */}
+      <div
+        className="fixed bottom-0 left-0 right-0 z-50 border-t border-x"
+        style={{
+          backgroundColor: surface, borderColor: border,
+          borderRadius: keyboardOpen ? "16px 16px 16px 16px" : "16px 16px 0 0",
+          borderBottom: keyboardOpen ? `1px solid ${border}` : "none",
+          transition: "border-radius 150ms ease, border-bottom 150ms ease",
+          paddingBottom: "env(safe-area-inset-bottom)",
+          transform: `translateY(${entrySheetOpen ? dragY : 100}${entrySheetOpen && dragY > 0 ? "" : "%"})`,
+          transition: dragY > 0 ? "none" : "transform 300ms cubic-bezier(0.32, 0.72, 0, 1)",
+        }}
+        onTouchStart={onSheetTouchStart}
+        onTouchMove={onSheetTouchMove}
+        onTouchEnd={onSheetTouchEnd}
+      >
+        <div
+          className="px-5 py-4 flex items-center justify-between border-b"
+          style={{ borderColor: border }}
+          onTouchStart={onSheetTouchStart}
+          onTouchMove={onSheetTouchMove}
+          onTouchEnd={onSheetTouchEnd}
+        >
+          <div className="flex items-center gap-2">
+            <button onClick={() => setEntrySheetOpen(false)} className="p-1 rounded-lg cursor-pointer active:scale-90 transition-transform duration-150" style={{ color: muted }}>
+              <IconChevronLeft />
+            </button>
+            <p className="text-sm font-semibold" style={{ color: text }}>New Transaction</p>
+          </div>
+        </div>
+          <div className="p-5 space-y-3">
+            {/* Category pills — two rows, proportionally sized to label length */}
+            {[Object.entries(CATEGORY_CONFIG).slice(0, 4), Object.entries(CATEGORY_CONFIG).slice(4)].map((row, ri) => (
+              <div key={ri} className="flex gap-2">
+                {row.map(([key, cfg]) => {
+                  const active = quickCat === key;
+                  const color = `var(--category-${key.toLowerCase()})`;
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => { setQuickCat(key); setQuickForm((f) => ({ ...f, name: key === "TIPS" ? "Cash" : f.name })); }}
+                      className="py-1.5 rounded-xl text-xs font-semibold border cursor-pointer active:scale-95 transition-all duration-150 text-center"
+                      style={{
+                        flex: cfg.label.length + 4,
+                        color: active ? color : muted,
+                        borderColor: active ? color : border,
+                        backgroundColor: active ? `color-mix(in srgb, ${color} 15%, transparent)` : "transparent",
+                        boxShadow: active ? `0 0 0 2px color-mix(in srgb, ${color} 20%, transparent)` : "none",
+                      }}
+                    >
+                      {cfg.label}
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
+            {/* Fallback dropdown — uncomment to restore
+            <select
+              value={quickCat}
+              onChange={(e) => { setQuickCat(e.target.value); setQuickForm((f) => ({ ...f, name: e.target.value === "TIPS" ? "Cash" : "" })); }}
+              className="w-full rounded-xl px-4 py-2.5 text-sm font-semibold border cursor-pointer"
+              style={{ ...inputStyle, borderColor: quickColor }}
+            >
+              {Object.entries(CATEGORY_CONFIG).map(([key, cfg]) => <option key={key} value={key}>{cfg.label}</option>)}
+            </select>
+            */}
+            <form onSubmit={handleQuickSubmit} className="space-y-3">
+              <input
+                type="text"
+                placeholder="Name"
+                value={quickForm.name}
+                onChange={(e) => quickCat !== "TIPS" && setQuickForm((f) => ({ ...f, name: e.target.value }))}
+                required={quickCat !== "TIPS"}
+                disabled={quickCat === "TIPS"}
+                className="w-full rounded-xl px-4 py-2.5 text-sm border"
+                style={quickCat === "TIPS" ? { ...inputStyle, cursor: "not-allowed", opacity: 0.5 } : inputStyle}
+              />
+              <div className="grid grid-cols-2 gap-3">
+                <input type="number" placeholder="0.00" value={quickForm.amount} onChange={(e) => setQuickForm((f) => ({ ...f, amount: e.target.value }))} required min="0.01" step="0.01" className="rounded-xl px-4 py-2.5 text-sm border" style={inputStyle} />
+                <input type="date" value={quickForm.transaction_date} onChange={(e) => setQuickForm((f) => ({ ...f, transaction_date: e.target.value }))} required className="rounded-xl px-3 py-2.5 text-sm border" style={inputStyle} />
+              </div>
+              {quickError && <p className="text-xs text-red-500">{quickError}</p>}
+              <button
+                type="submit"
+                disabled={quickLoading}
+                className="w-full py-2.5 rounded-xl text-sm font-bold tracking-wide disabled:opacity-50 cursor-pointer active:scale-95 border"
+                style={{ color: quickColor, borderColor: quickColor, backgroundColor: `color-mix(in srgb, ${quickColor} 12%, transparent)`, boxShadow: `0 0 0 2px color-mix(in srgb, ${quickColor} 20%, transparent)` }}
+              >
+                {quickLoading ? "Saving…" : "Add Transaction"}
+              </button>
+            </form>
+          </div>
+        </div>
+
+      {/* ── Drawer overlay ── */}
+      {drawerOpen && <div className="fixed inset-0 z-40" style={{ backgroundColor: "rgba(0,0,0,0.4)" }} onClick={() => setDrawerOpen(false)} />}
+
+      {/* ── Recurring payments overlay ── */}
+      {recurringOpen && (
+        <div className="fixed inset-0 z-50 flex flex-col" style={{ backgroundColor: surface, color: text }}>
+          <div className="px-5 py-4 flex items-center justify-between border-b shrink-0" style={{ borderColor: border }}>
+            <div className="flex items-center gap-2">
+              <button onClick={() => { setRecurringOpen(false); setRpSave({ isDirty: false, isSaving: false, onSave: null }); }} className="p-1 rounded-lg cursor-pointer" style={{ color: muted }}>
+                <IconChevronLeft />
               </button>
               <span className="text-sm font-semibold" style={{ color: muted }}>Recurring Payments</span>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
               {(() => {
-                const status = rpSave.isSaving ? "Saving…"
-                  : rpSave.isDirty ? "Unsaved"
-                  : rpSave.saveStatus === "saved" ? "Saved"
-                  : null;
-                const statusColor = rpSave.saveStatus === "saved" && !rpSave.isDirty
-                  ? "var(--category-income)"
-                  : `color-mix(in srgb, ${text} 40%, transparent)`;
-                return status ? (
-                  <span style={{ fontSize: "11px", color: statusColor, transition: "color 0.3s" }}>
-                    {status}
-                  </span>
-                ) : null;
+                const status = rpSave.isSaving ? "Saving…" : rpSave.isDirty ? "Unsaved" : rpSave.saveStatus === "saved" ? "Saved" : null;
+                const statusColor = rpSave.saveStatus === "saved" && !rpSave.isDirty ? "var(--category-income)" : `color-mix(in srgb, ${text} 40%, transparent)`;
+                return status ? <span style={{ fontSize: "11px", color: statusColor, transition: "color 0.3s" }}>{status}</span> : null;
               })()}
-              <button
-                onClick={() => rpSave.onSave?.()}
-                disabled={!rpSave.isDirty || rpSave.isSaving}
-                style={{
-                  fontSize: "12px",
-                  fontWeight: 600,
-                  padding: "4px 12px",
-                  borderRadius: "8px",
-                  border: "1px solid var(--category-income)",
-                  color: "var(--category-income)",
-                  backgroundColor: rpSave.isDirty
-                    ? "color-mix(in srgb, var(--category-income) 18%, transparent)"
-                    : "transparent",
-                  boxShadow: rpSave.isDirty
-                    ? "0 0 0 2px color-mix(in srgb, var(--category-income) 20%, transparent)"
-                    : "none",
-                  cursor: rpSave.isDirty && !rpSave.isSaving ? "pointer" : "default",
-                  opacity: rpSave.isDirty ? (rpSave.isSaving ? 0.6 : 1) : 0.25,
-                  transition: "all 0.2s ease",
-                }}
-              >
+              <button onClick={() => rpSave.onSave?.()} disabled={!rpSave.isDirty || rpSave.isSaving}
+                style={{ fontSize: "12px", fontWeight: 600, padding: "4px 12px", borderRadius: "8px", border: "1px solid var(--category-income)", color: "var(--category-income)", backgroundColor: rpSave.isDirty ? "color-mix(in srgb, var(--category-income) 18%, transparent)" : "transparent", boxShadow: rpSave.isDirty ? "0 0 0 2px color-mix(in srgb, var(--category-income) 20%, transparent)" : "none", cursor: rpSave.isDirty && !rpSave.isSaving ? "pointer" : "default", opacity: rpSave.isDirty ? (rpSave.isSaving ? 0.6 : 1) : 0.25, transition: "all 0.2s ease" }}>
                 {rpSave.isSaving ? "Saving…" : "Save"}
               </button>
             </div>
@@ -623,828 +1197,134 @@ export default function MobileDashboard() {
         </div>
       )}
 
-      {/* Drawer */}
+      {/* ── Account overlay ── */}
+      {accountOpen && (
+        <div className="fixed inset-0 z-50 flex flex-col" style={{ backgroundColor: surface, color: text }}>
+          <div className="px-5 py-4 flex items-center justify-between border-b shrink-0" style={{ borderColor: border }}>
+            <div className="flex items-center gap-2">
+              <button onClick={() => setAccountOpen(false)} className="p-1 rounded-lg cursor-pointer" style={{ color: muted }}>
+                <IconChevronLeft />
+              </button>
+              <span className="text-sm font-semibold" style={{ color: muted }}>Account</span>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              {(() => {
+                const status = acctSave.isSaving ? "Saving…" : acctSave.isDirty ? "Unsaved" : acctSave.saveStatus === "saved" ? "Saved" : null;
+                const statusColor = acctSave.saveStatus === "saved" && !acctSave.isDirty ? "var(--category-income)" : `color-mix(in srgb, ${text} 40%, transparent)`;
+                return status ? <span style={{ fontSize: "11px", color: statusColor, transition: "color 0.3s" }}>{status}</span> : null;
+              })()}
+              <button
+                onClick={() => acctSave.onSave?.()}
+                disabled={!acctSave.isDirty || acctSave.isSaving}
+                style={{ fontSize: "12px", fontWeight: 600, padding: "4px 12px", borderRadius: "8px", border: "1px solid var(--category-income)", color: "var(--category-income)", backgroundColor: acctSave.isDirty ? "color-mix(in srgb, var(--category-income) 18%, transparent)" : "transparent", boxShadow: acctSave.isDirty ? "0 0 0 2px color-mix(in srgb, var(--category-income) 20%, transparent)" : "none", cursor: acctSave.isDirty && !acctSave.isSaving ? "pointer" : "default", opacity: acctSave.isDirty ? (acctSave.isSaving ? 0.6 : 1) : 0.25, transition: "all 0.2s ease" }}
+              >
+                {acctSave.isSaving ? "Saving…" : "Save"}
+              </button>
+            </div>
+          </div>
+          <AccountPanel onSaveStateChange={setAcctSave} />
+        </div>
+      )}
+
+      {/* ── Drawer ── */}
       <div
         className="fixed top-0 right-0 h-full w-72 z-50 flex flex-col border-l"
-        style={{
-          backgroundColor: surface,
-          borderColor: border,
-          color: text,
-          transform: drawerOpen ? "translateX(0)" : "translateX(100%)",
-          transition: "transform 250ms ease",
-        }}
+        style={{ backgroundColor: surface, borderColor: border, color: text, transform: drawerOpen ? "translateX(0)" : "translateX(100%)", transition: "transform 250ms ease" }}
       >
-        <div
-          className="px-5 py-4 flex items-center justify-between border-b shrink-0"
-          style={{ borderColor: border }}
-        >
+        <div className="px-5 py-4 flex items-center justify-between border-b shrink-0" style={{ borderColor: border }}>
           <span className="text-sm font-semibold" style={{ color: muted }}>Menu</span>
-          <button
-            onClick={() => setDrawerOpen(false)}
-            className="p-1 rounded-lg cursor-pointer"
-            aria-label="Close menu"
-          >
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"
-              fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <button onClick={() => setDrawerOpen(false)} className="p-1 rounded-lg cursor-pointer" aria-label="Close menu">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M18 6 6 18M6 6l12 12" />
             </svg>
           </button>
         </div>
-
-        <>
-            <div className="px-5 py-5 flex items-center gap-3">
-              <div
-                className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold shrink-0"
-                style={{
-                  backgroundColor: `color-mix(in srgb, ${text} 12%, transparent)`,
-                  color: text,
-                }}
-              >
-                {user?.first_name?.[0]?.toUpperCase() ?? "?"}
-              </div>
-              <div>
-                <p className="text-sm font-semibold">{user ? `${user.first_name} ${user.last_name}` : "—"}</p>
-                <p className="text-xs" style={{ color: muted }}>
-                  {user?.email_address ?? "—"}
-                </p>
-              </div>
-            </div>
-
-            <div className="mx-5 border-t" style={{ borderColor: border }} />
-
-            <div className="px-3 py-3 flex-1">
-              <button
-                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium cursor-pointer text-left border"
-                style={{
-                  color: text,
-                  borderColor: `color-mix(in srgb, ${text} 18%, transparent)`,
-                  backgroundColor: `color-mix(in srgb, ${text} 5%, transparent)`,
-                }}
-                onClick={() => { setDrawerOpen(false); setRecurringOpen(true); }}
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
-                  fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-                  <path d="M3 3v5h5" />
-                  <path d="M12 7v5l4 2" />
-                </svg>
-                Recurring Payments
-              </button>
-            </div>
-
-            <div className="mx-5 border-t" style={{ borderColor: border }} />
-
-            <div className="px-3 py-3">
-              <button
-                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium cursor-pointer transition-colors text-left"
-                style={{ color: "var(--category-expense)" }}
-                onClick={() => { logout(); navigate("/login"); }}
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
-                  fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-                  <polyline points="16 17 21 12 16 7" />
-                  <line x1="21" y1="12" x2="9" y2="12" />
-                </svg>
-                Log out
-              </button>
-            </div>
-          </>
-      </div>
-
-      {/* Mode toggle */}
-      <div className="px-4 pt-4 pb-0 flex justify-center">
-        <div
-          className="rounded-xl p-1 flex w-full max-w-xs"
-          style={{ backgroundColor: bg, border: `1px solid ${border}` }}
+        <button
+          className="px-5 py-5 flex items-center gap-3 w-full text-left cursor-pointer"
+          style={{ background: "transparent", border: "none" }}
+          onClick={() => { setDrawerOpen(false); setAccountOpen(true); }}
         >
-          {["Quick Entry", "Analytics"].map((label, i) => {
-            const active = i === 0 ? quickMode : !quickMode;
-            return (
-              <button
-                key={label}
-                onClick={() => setQuickMode(i === 0)}
-                className="flex-1 py-2 rounded-lg text-sm font-semibold cursor-pointer"
-                style={{
-                  backgroundColor: active ? surface : "transparent",
-                  color: active ? text : muted,
-                  boxShadow: active ? "0 1px 6px rgba(0,0,0,0.18)" : "none",
-                  transition:
-                    "background-color 200ms ease, color 200ms ease, box-shadow 200ms ease",
-                }}
-              >
-                {label}
-              </button>
-            );
-          })}
+          <div className="w-10 h-10 rounded-full shrink-0 overflow-hidden flex items-center justify-center text-sm font-bold" style={{ backgroundColor: `color-mix(in srgb, ${text} 12%, transparent)`, color: text }}>
+            {user?.avatar
+              ? <img src={user.avatar} alt="avatar" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+              : (user?.first_name?.[0]?.toUpperCase() ?? "?")}
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-semibold">{user ? `${user.first_name} ${user.last_name}` : "—"}</p>
+            <p className="text-xs truncate" style={{ color: muted }}>{user?.email_address ?? "—"}</p>
+          </div>
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: muted, flexShrink: 0 }}>
+            <path d="M9 18l6-6-6-6" />
+          </svg>
+        </button>
+        <div className="mx-5 border-t" style={{ borderColor: border }} />
+        <div className="px-3 py-3 flex-1">
+          <button
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium cursor-pointer text-left border"
+            style={{ color: text, borderColor: `color-mix(in srgb, ${text} 18%, transparent)`, backgroundColor: `color-mix(in srgb, ${text} 5%, transparent)` }}
+            onClick={() => { setDrawerOpen(false); setRecurringOpen(true); }}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" /><path d="M12 7v5l4 2" />
+            </svg>
+            Recurring Payments
+          </button>
+        </div>
+        <div className="mx-5 border-t" style={{ borderColor: border }} />
+        <div className="px-3 py-3 flex-shrink-0 flex flex-col gap-3">
+          <button
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium cursor-pointer text-left border"
+            style={{ color: text, borderColor: `color-mix(in srgb, ${text} 18%, transparent)`, backgroundColor: `color-mix(in srgb, ${text} 5%, transparent)` }}
+            onClick={() => document.documentElement.classList.toggle("dark")}
+          >
+            {dark ? (
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
+              </svg>
+            ) : (
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
+              </svg>
+            )}
+            {dark ? "Light Mode" : "Dark Mode"}
+          </button>
+          <a
+            href="https://forms.gle/BC6ebwbZtgYmSYBeA"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-left border"
+            style={{ color: text, textDecoration: "none", borderColor: `color-mix(in srgb, ${text} 18%, transparent)`, backgroundColor: `color-mix(in srgb, ${text} 5%, transparent)` }}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+            </svg>
+            Feedback
+          </a>
+        </div>
+        <div className="mx-5 border-t" style={{ borderColor: border }} />
+        <div className="px-3 py-3">
+          <button
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium cursor-pointer text-left"
+            style={{ color: "var(--category-expense)" }}
+            onClick={() => { logout(); navigate("/login"); }}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" />
+            </svg>
+            Log out
+          </button>
         </div>
       </div>
 
-      <main className="px-4 pt-4 pb-8 space-y-4">
-        {quickMode ? (
-          <>
-            {/* Quick entry card */}
-            <div
-              className="rounded-2xl border p-4"
-              style={{ backgroundColor: surface, borderColor: quickColor }}
-            >
-              <p
-                className="text-base font-semibold mb-3"
-                style={{ color: text }}
-              >
-                Quick Entry
-              </p>
+      {editingTransaction && (
+        <EditTransactionModal
+          transaction={editingTransaction}
+          onClose={() => setEditingTransaction(null)}
+          onSaved={() => { setEditingTransaction(null); refresh(); }}
+        />
+      )}
 
-              <select
-                value={quickCat}
-                onChange={(e) => {
-                  setQuickCat(e.target.value);
-                  setQuickForm((f) => ({
-                    ...f,
-                    name: e.target.value === "TIPS" ? "Cash" : "",
-                  }));
-                }}
-                className="w-full rounded-xl px-4 py-2.5 text-sm font-semibold focus:outline-none mb-3 cursor-pointer border"
-                style={inputStyle}
-              >
-                {Object.entries(CATEGORY_CONFIG).map(([key, cfg]) => (
-                  <option key={key} value={key}>
-                    {cfg.label}
-                  </option>
-                ))}
-              </select>
-
-              <form onSubmit={handleQuickSubmit} className="space-y-3">
-                <input
-                  type="text"
-                  placeholder="Name (e.g. Groceries, Utilities…)"
-                  value={quickForm.name}
-                  onChange={(e) =>
-                    quickCat !== "TIPS" &&
-                    setQuickForm((f) => ({ ...f, name: e.target.value }))
-                  }
-                  required={quickCat !== "TIPS"}
-                  disabled={quickCat === "TIPS"}
-                  className="w-full rounded-xl px-4 py-2.5 text-sm focus:outline-none border"
-                  style={
-                    quickCat === "TIPS"
-                      ? {
-                          ...inputStyle,
-                          backgroundImage: `repeating-linear-gradient(45deg, transparent, transparent 5px, color-mix(in srgb, ${text} 10%, transparent) 5px, color-mix(in srgb, ${text} 10%, transparent) 10px)`,
-                          cursor: "not-allowed",
-                          opacity: 0.5,
-                        }
-                      : inputStyle
-                  }
-                />
-                <div className="grid grid-cols-[auto_1fr] gap-3">
-                  <input
-                    type="number"
-                    placeholder="0.00"
-                    value={quickForm.amount}
-                    onChange={(e) =>
-                      setQuickForm((f) => ({ ...f, amount: e.target.value }))
-                    }
-                    required
-                    min="0.01"
-                    step="0.01"
-                    className="w-full min-w-0 rounded-xl px-4 py-2.5 text-sm focus:outline-none border"
-                    style={inputStyle}
-                  />
-                  <input
-                    type="date"
-                    value={quickForm.transaction_date}
-                    onChange={(e) =>
-                      setQuickForm((f) => ({
-                        ...f,
-                        transaction_date: e.target.value,
-                      }))
-                    }
-                    required
-                    className="min-w-0 rounded-xl px-3 py-2.5 text-sm focus:outline-none border"
-                    style={inputStyle}
-                  />
-                </div>
-                {quickError && (
-                  <p className="text-xs text-red-500">{quickError}</p>
-                )}
-                <button
-                  type="submit"
-                  disabled={quickLoading}
-                  className="w-full py-2.5 rounded-xl text-sm font-bold tracking-wide disabled:opacity-50 transition-all cursor-pointer active:scale-95 border"
-                  style={{
-                    color: quickColor,
-                    borderColor: quickColor,
-                    backgroundColor: `color-mix(in srgb, ${quickColor} 12%, transparent)`,
-                    boxShadow: `0 0 0 2px color-mix(in srgb, ${quickColor} 20%, transparent)`,
-                  }}
-                >
-                  {quickLoading
-                    ? "Saving…"
-                    : `Add ${["DEBT", "INCOME"].includes(quickCat) ? CATEGORY_CONFIG[quickCat].label : CATEGORY_CONFIG[quickCat].label.replace(/s$/, "")}`}
-                </button>
-              </form>
-            </div>
-
-            {/* Recent */}
-            <div
-              className="rounded-2xl border"
-              style={{ backgroundColor: surface, borderColor: border }}
-            >
-              <p
-                className="px-4 py-3 text-base font-semibold border-b"
-                style={{ borderColor: border, color: text }}
-              >
-                Recent
-              </p>
-              {recent.length === 0 ? (
-                <p
-                  className="px-4 py-8 text-center text-sm"
-                  style={{ color: muted }}
-                >
-                  No transactions yet
-                </p>
-              ) : (
-                recent.map((t) => {
-                  const isIncome = INCOME_TYPES.has(t.category);
-                  return (
-                    <div
-                      key={t.id}
-                      className="px-4 py-3 border-t flex items-center gap-3"
-                      style={{ borderColor: border }}
-                    >
-                      <div className="flex-1 min-w-0">
-                        <p
-                          className="text-sm font-medium truncate"
-                          style={{ color: text }}
-                        >
-                          {t.name}
-                        </p>
-                        <p className="text-xs" style={{ color: muted }}>
-                          <span
-                            className="font-medium"
-                            style={{
-                              color: `var(--category-${t.category.toLowerCase()})`,
-                            }}
-                          >
-                            {CATEGORY_CONFIG[t.category]?.label}
-                          </span>
-                          {" · "}
-                          {new Date(
-                            t.transaction_date + "T00:00:00",
-                          ).toLocaleDateString("en-US", {
-                            month: "short",
-                            day: "numeric",
-                          })}
-                        </p>
-                      </div>
-                      <p
-                        className="text-sm font-bold shrink-0"
-                        style={{
-                          color: isIncome
-                            ? "var(--category-income)"
-                            : "var(--category-expense)",
-                        }}
-                      >
-                        {isIncome ? "+" : "-"}
-                        {fmt(t.amount)}
-                      </p>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </>
-        ) : (
-          <>
-            {/* Category + date preset dropdowns */}
-            <div className="flex flex-col gap-2">
-              <div className="grid grid-cols-2 gap-3">
-                <select
-                  value={activeTab}
-                  onChange={(e) => setActiveTab(e.target.value)}
-                  className="rounded-xl px-3 py-2 text-xs font-semibold border cursor-pointer w-full"
-                  style={{
-                    color: text,
-                    borderColor: activeColor,
-                    backgroundColor: dark
-                      ? `color-mix(in srgb, ${activeColor} 12%, transparent)`
-                      : "var(--light-surface)",
-                    boxShadow: `0 0 0 2px color-mix(in srgb, ${activeColor} 20%, transparent)`,
-                    colorScheme: dark ? "dark" : "light",
-                  }}
-                >
-                  {CATEGORIES.map((cat) => (
-                    <option
-                      key={cat}
-                      value={cat}
-                      style={{ backgroundColor: bg, color: text }}
-                    >
-                      {cat === "ALL" ? "All" : CATEGORY_CONFIG[cat].label}
-                    </option>
-                  ))}
-                </select>
-
-                <select
-                  value={activePreset ?? "custom"}
-                  onChange={(e) => handlePreset(e.target.value)}
-                  className="rounded-xl px-3 py-2 text-xs font-semibold border cursor-pointer w-full"
-                  style={{
-                    color: text,
-                    borderColor: activeColor,
-                    backgroundColor: dark
-                      ? `color-mix(in srgb, ${activeColor} 12%, transparent)`
-                      : "var(--light-surface)",
-                    boxShadow: `0 0 0 2px color-mix(in srgb, ${activeColor} 20%, transparent)`,
-                    colorScheme: dark ? "dark" : "light",
-                  }}
-                >
-                  {PRESETS.map((label) => (
-                    <option
-                      key={label}
-                      value={label}
-                      style={{ backgroundColor: bg, color: text }}
-                    >
-                      {label}
-                    </option>
-                  ))}
-                  {!activePreset && (
-                    <option
-                      value="custom"
-                      disabled
-                      style={{ backgroundColor: bg, color: text }}
-                    >
-                      Custom
-                    </option>
-                  )}
-                </select>
-              </div>
-
-              {/* Date Range Inputs */}
-              <div className="grid grid-cols-2 gap-3 items-center">
-                <div className="flex items-center gap-2 min-w-0">
-                  <span
-                    className="text-[10px] uppercase font-bold w-7 shrink-0 pr-10"
-                    style={{ color: muted }}
-                  >
-                    From
-                  </span>
-                  <div className="relative flex-1 min-w-0 overflow-hidden">
-                    <input
-                      type="date"
-                      value={fromVal}
-                      onChange={(e) => {
-                        setFromVal(e.target.value);
-                        handleCustom(e.target.value, toVal);
-                      }}
-                      className="rounded-xl pl-3 pr-1 py-2 text-[10px] font-semibold border w-[87%]"
-                      style={{
-                        backgroundColor: dark
-                          ? "var(--dark-bg)"
-                          : "var(--light-surface)",
-                        borderColor: border,
-                        color: text,
-                        colorScheme: dark ? "dark" : "light",
-                      }}
-                    />
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-2 min-w-0">
-                  <span
-                    className="text-[10px] uppercase font-bold w-7 shrink-0"
-                    style={{ color: muted }}
-                  >
-                    To
-                  </span>
-                  <div className="relative flex-1 min-w-0 overflow-hidden">
-                    <input
-                      type="date"
-                      value={toVal}
-                      onChange={(e) => {
-                        setToVal(e.target.value);
-                        handleCustom(fromVal, e.target.value);
-                      }}
-                      className="rounded-xl pl-3 pr-1 py-2 text-[10px] font-semibold border w-[87%]"
-                      style={{
-                        backgroundColor: dark
-                          ? "var(--dark-bg)"
-                          : "var(--light-surface)",
-                        borderColor: border,
-                        color: text,
-                        colorScheme: dark ? "dark" : "light",
-                      }}
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Summary 2×2 */}
-            <div className="grid grid-cols-2 gap-3">
-              {[
-                activeTab === "ALL"
-                  ? { label: "INCOME", value: fmt(summary.totalIn) }
-                  : {
-                      label: `${CATEGORY_CONFIG[activeTab].label.toUpperCase()} TOTAL`,
-                      value: fmt(summary.categoryTotal),
-                    },
-                activeTab === "ALL"
-                  ? { label: "EXPENSES", value: fmt(summary.totalOut) }
-                  : INCOME_TYPES.has(activeTab)
-                  ? {
-                      label: "PAYMENTS",
-                      value: String(summary.txCount),
-                      deltaLabel: summary.txCount > 0 ? `avg ${fmt(summary.avgTx)} each` : null,
-                      deltaUp: true,
-                    }
-                  : { label: "AVG TRANSACTION", value: fmt(summary.avgTx) },
-                activeTab === "ALL"
-                  ? {
-                      label: "SAVINGS RATE",
-                      value:
-                        summary.savingsRate !== null
-                          ? `${summary.savingsRate.toFixed(1)}%`
-                          : "—",
-                      deltaLabel:
-                        summary.savingsRateDelta != null
-                          ? `${summary.savingsRateDelta >= 0 ? "↑" : "↓"} ${Math.abs(summary.savingsRateDelta).toFixed(1)}% vs last month`
-                          : null,
-                      deltaUp: summary.savingsRateDelta >= 0,
-                    }
-                  : {
-                      label: "VS LAST MONTH",
-                      value:
-                        summary.categoryDelta != null
-                          ? `${summary.categoryDelta >= 0 ? "+" : ""}${summary.categoryDelta.toFixed(1)}%`
-                          : "—",
-                      deltaLabel:
-                        summary.categoryDelta != null
-                          ? summary.categoryDelta >= 0
-                            ? "↑ higher than last month"
-                            : "↓ lower than last month"
-                          : null,
-                      deltaUp: INCOME_TYPES.has(activeTab)
-                        ? summary.categoryDelta >= 0
-                        : summary.categoryDelta <= 0,
-                      valueColor:
-                        summary.categoryDelta != null
-                          ? (
-                              INCOME_TYPES.has(activeTab)
-                                ? summary.categoryDelta >= 0
-                                : summary.categoryDelta <= 0
-                            )
-                            ? "var(--category-income)"
-                            : "var(--category-expense)"
-                          : undefined,
-                    },
-                activeTab === "ALL"
-                  ? {
-                      label: "AVG DAILY SPENDING",
-                      value: fmt(summary.avgDailySpending),
-                      deltaLabel:
-                        summary.avgDailySpendingDelta != null
-                          ? `${summary.avgDailySpendingDelta >= 0 ? "↑" : "↓"} ${fmt(Math.abs(summary.avgDailySpendingDelta))} vs last month`
-                          : null,
-                      deltaUp: summary.avgDailySpendingDelta <= 0,
-                    }
-                  : {
-                      label: INCOME_TYPES.has(activeTab)
-                        ? "% OF INCOME"
-                        : "% OF SPENDING",
-                      value:
-                        summary.pctOfTotal != null
-                          ? `${summary.pctOfTotal.toFixed(1)}%`
-                          : "—",
-                    },
-              ].map(({ label, value, deltaLabel, deltaUp, valueColor }) => (
-                <div
-                  key={label}
-                  className="rounded-2xl px-4 py-4 border"
-                  style={{
-                    backgroundColor: surface,
-                    borderColor: border,
-                    color: text,
-                    borderTopColor: activeColor,
-                    borderTopWidth: "3px",
-                  }}
-                >
-                  <p
-                    className="text-xs font-medium mb-1"
-                    style={{ color: text }}
-                  >
-                    {label}
-                  </p>
-                  <p
-                    className="text-lg font-bold tracking-tight"
-                    style={valueColor ? { color: valueColor } : { color: text }}
-                  >
-                    {value}
-                  </p>
-                  {deltaLabel != null && (
-                    <p
-                      className="text-xs font-semibold mt-1"
-                      style={{
-                        color: deltaUp
-                          ? "var(--category-income)"
-                          : "var(--category-expense)",
-                      }}
-                    >
-                      {deltaLabel}
-                    </p>
-                  )}
-                </div>
-              ))}
-            </div>
-
-            {/* Pie chart */}
-            {pieData.length > 0 && (
-              <div
-                className="rounded-2xl border p-4"
-                style={{ backgroundColor: surface, borderColor: activeColor }}
-              >
-                <p
-                  className="text-base font-semibold mb-3"
-                  style={{ color: text }}
-                >
-                  {activeTab === "ALL"
-                    ? "Breakdown By Category"
-                    : `${CATEGORY_CONFIG[activeTab].label} Breakdown`}
-                </p>
-                <ResponsiveContainer
-                  width="100%"
-                  height={280}
-                  style={{ pointerEvents: "none" }}
-                >
-                  <PieChart>
-                    <Pie
-                      data={pieData}
-                      dataKey="value"
-                      nameKey="name"
-                      cx="50%"
-                      cy="50%"
-                      outerRadius={80}
-                      strokeWidth={0}
-                    >
-                      {pieData.map((entry) => (
-                        <Cell key={entry.name} fill={entry.color} />
-                      ))}
-                    </Pie>
-                    <Tooltip {...tooltipProps} formatter={(v) => fmt(v)} />
-                  </PieChart>
-                </ResponsiveContainer>
-                <div
-                  style={{
-                    display: "flex",
-                    flexWrap: "wrap",
-                    gap: "6px 16px",
-                    justifyContent: "center",
-                    marginTop: 8,
-                  }}
-                >
-                  {pieData.map((entry) => (
-                    <div
-                      key={entry.name}
-                      style={{ display: "flex", alignItems: "center", gap: 6 }}
-                    >
-                      <span
-                        style={{
-                          width: 9,
-                          height: 9,
-                          borderRadius: "50%",
-                          backgroundColor: entry.color,
-                          flexShrink: 0,
-                          display: "inline-block",
-                        }}
-                      />
-                      <span style={{ color: text, fontSize: 12 }}>
-                        {entry.name}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Bar chart */}
-            {barData.length > 0 && (
-              <div
-                className="rounded-2xl border p-4"
-                style={{ backgroundColor: surface, borderColor: activeColor }}
-              >
-                <p
-                  className="text-base font-semibold mb-3"
-                  style={{ color: text }}
-                >
-                  {activeTab === "ALL"
-                    ? "Monthly Totals"
-                    : `Top ${CATEGORY_CONFIG[activeTab].label} by Name`}
-                </p>
-                <ResponsiveContainer
-                  width="100%"
-                  height={200}
-                  style={{ pointerEvents: "none" }}
-                >
-                  <BarChart data={barData} barSize={20}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                    <XAxis
-                      dataKey="month"
-                      axisLine={false}
-                      tickLine={false}
-                      interval={0}
-                      height={activeTab !== "ALL" ? 50 : 24}
-                      tick={
-                        activeTab !== "ALL"
-                          ? (props) => {
-                              const val = props.payload?.value ?? "";
-                              const label =
-                                val.length > 10 ? val.slice(0, 10) + "…" : val;
-                              return (
-                                <text
-                                  x={props.x}
-                                  y={props.y}
-                                  dy={6}
-                                  textAnchor="end"
-                                  fontSize={11}
-                                  style={{ fill: text }}
-                                  transform={`rotate(-35, ${props.x}, ${props.y})`}
-                                >
-                                  {label}
-                                </text>
-                              );
-                            }
-                          : { fontSize: 11, fill: text }
-                      }
-                    />
-                    <YAxis
-                      axisLine={false}
-                      tickLine={false}
-                      tickFormatter={(v) => `$${v}`}
-                      tick={{ fontSize: 10, fill: text }}
-                    />
-                    <Tooltip
-                      {...tooltipProps}
-                      formatter={(v) => fmt(v)}
-                      cursor={false}
-                    />
-                    {activeTab === "ALL" ? (
-                      <>
-                        <Bar
-                          dataKey="income"
-                          fill="var(--category-income)"
-                          radius={[5, 5, 0, 0]}
-                          barSize={14}
-                        />
-                        <Bar
-                          dataKey="expense"
-                          fill="var(--category-expense)"
-                          radius={[5, 5, 0, 0]}
-                          barSize={14}
-                        />
-                      </>
-                    ) : (
-                      <Bar
-                        dataKey="total"
-                        fill={activeColor}
-                        radius={[5, 5, 0, 0]}
-                        barSize={20}
-                      />
-                    )}
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            )}
-
-            {/* Transaction list */}
-            <div
-              ref={tableRef}
-              className="rounded-2xl border"
-              style={{ backgroundColor: surface, borderColor: activeColor }}
-            >
-              <p
-                className="px-4 py-3 text-base font-semibold border-b"
-                style={{ borderColor: border, color: text }}
-              >
-                Transactions
-              </p>
-              {sorted.length === 0 ? (
-                <p
-                  className="px-4 py-8 text-center text-sm"
-                  style={{ color: muted }}
-                >
-                  No transactions
-                </p>
-              ) : (
-                paginated.map((t) => {
-                  const isIncome = INCOME_TYPES.has(t.category);
-                  return (
-                    <div
-                      key={t.id}
-                      className="px-4 py-3 border-t flex items-center gap-3"
-                      style={{
-                        borderColor: border,
-                        backgroundColor: t.id === highlightId
-                          ? `color-mix(in srgb, var(--category-${t.category.toLowerCase()}) 12%, transparent)`
-                          : undefined,
-                        transition: "background-color 0.6s ease",
-                      }}
-                    >
-                      <div className="flex-1 min-w-0">
-                        <p
-                          className="text-sm font-medium truncate"
-                          style={{ color: text }}
-                        >
-                          {t.name}
-                        </p>
-                        <p className="text-xs" style={{ color: muted }}>
-                          <span
-                            className="font-medium"
-                            style={{
-                              color: `var(--category-${t.category.toLowerCase()})`,
-                            }}
-                          >
-                            {CATEGORY_CONFIG[t.category]?.label}
-                          </span>
-                          {" · "}
-                          {new Date(
-                            t.transaction_date + "T00:00:00",
-                          ).toLocaleDateString("en-US", {
-                            month: "short",
-                            day: "numeric",
-                            year: "numeric",
-                          })}
-                        </p>
-                      </div>
-                      <p
-                        className="text-sm font-bold shrink-0"
-                        style={{
-                          color: isIncome
-                            ? "var(--category-income)"
-                            : "var(--category-expense)",
-                        }}
-                      >
-                        {isIncome ? "+" : "-"}
-                        {fmt(t.amount)}
-                      </p>
-                    </div>
-                  );
-                })
-              )}
-              {sorted.length > 0 && (
-                <div
-                  className="px-4 py-3 border-t flex items-center justify-between text-xs"
-                  style={{ borderColor: border, color: muted }}
-                >
-                  <div className="flex items-center gap-2">
-                    <span>Rows:</span>
-                    {[10, 20, 50].map((n) => (
-                      <button
-                        key={n}
-                        onClick={() => setPerPage(n)}
-                        className="px-2 py-1 rounded-lg border font-semibold cursor-pointer transition-all duration-150"
-                        style={{
-                          color: perPage === n ? activeColor : muted,
-                          borderColor: perPage === n ? activeColor : border,
-                          backgroundColor:
-                            perPage === n
-                              ? `color-mix(in srgb, ${activeColor} 12%, transparent)`
-                              : "transparent",
-                        }}
-                      >
-                        {n}
-                      </button>
-                    ))}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span>
-                      {`${(page - 1) * perPage + 1}–${Math.min(page * perPage, sorted.length)}`}{" "}
-                      of {sorted.length}
-                    </span>
-                    <button
-                      onClick={() => setPage(page - 1)}
-                      disabled={page === 1}
-                      className="px-2 py-1 rounded-lg border font-semibold cursor-pointer disabled:opacity-30"
-                      style={{ color: muted, borderColor: border }}
-                    >
-                      ←
-                    </button>
-                    <button
-                      onClick={() => setPage(page + 1)}
-                      disabled={page * perPage >= sorted.length}
-                      className="px-2 py-1 rounded-lg border font-semibold cursor-pointer disabled:opacity-30"
-                      style={{ color: muted, borderColor: border }}
-                    >
-                      →
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          </>
-        )}
-      </main>
-
-      <Footer />
+      {transactions.length === 0 && <Footer />}
       <RenderWakeButton />
     </div>
   );
