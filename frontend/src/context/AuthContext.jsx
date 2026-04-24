@@ -1,5 +1,6 @@
-import { createContext, useContext, useState } from "react";
+import { createContext, useContext, useState, useEffect } from "react";
 import { initDemo, clearDemo } from "../api/demoStore";
+import client from "../api/client";
 
 const AuthContext = createContext(null);
 
@@ -41,6 +42,15 @@ export function AuthProvider({ children }) {
   };
 
   const isDemo = () => localStorage.getItem("demo") === "true";
+
+  // Sync user from server on startup so cross-device changes (e.g. avatar) are picked up
+  useEffect(() => {
+    if (!token || isDemo()) return;
+    client.get("/users/me").then((res) => {
+      setUser(res.data);
+      localStorage.setItem("user", JSON.stringify(res.data));
+    }).catch(() => {});
+  }, []);
 
   return (
     <AuthContext.Provider value={{ token, user, setUser, login, logout, enterDemoMode, isDemo }}>

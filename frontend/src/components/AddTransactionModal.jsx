@@ -70,16 +70,9 @@ export default function AddTransactionModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center px-4"
-      style={{ background: "rgba(0,0,0,0.5)" }}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
+      className="w-full rounded-2xl border shadow-2xl"
+      style={{ backgroundColor: bg, borderColor: catColor, color: text }}
     >
-      <div
-        className="w-full max-w-md rounded-2xl border shadow-2xl"
-        style={{ backgroundColor: bg, borderColor: catColor, color: text }}
-      >
         <div
           className="px-6 py-4 border-b flex items-center justify-between"
           style={{ borderColor: border }}
@@ -121,40 +114,37 @@ export default function AddTransactionModal({
             />
           </div>
 
-          <div className="flex gap-3">
-            <div className="flex-1">
-              <label className="block text-sm font-medium mb-1.5">Amount</label>
-              <input
-                type="number"
-                name="amount"
-                value={form.amount}
-                onChange={handleChange}
-                required
-                min="0.01"
-                step="0.01"
-                placeholder="$0.00"
-                className="w-full rounded-xl px-4 py-2.5 text-sm focus:outline-none border"
-                style={inputStyle}
-              />
-            </div>
-            <div className="flex-1">
-              <label className="block text-sm font-medium mb-1.5">
-                Category
-              </label>
-              <select
-                name="category"
-                value={form.category}
-                onChange={handleChange}
-                className="w-full rounded-xl px-4 py-2.5 text-sm focus:outline-none border"
-                style={{ ...inputStyle, borderColor: catColor, color: catColor }}
-              >
-                {CATEGORY_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-            </div>
+          <div>
+            <label className="block text-sm font-medium mb-1.5">Amount</label>
+            <input
+              type="number"
+              name="amount"
+              value={form.amount}
+              onChange={handleChange}
+              required
+              min="0.01"
+              step="0.01"
+              placeholder="$0.00"
+              className="w-full rounded-xl px-4 py-2.5 text-sm focus:outline-none border"
+              style={inputStyle}
+            />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium mb-1.5">Category</label>
+            <select
+              name="category"
+              value={form.category}
+              onChange={handleChange}
+              className="w-full rounded-xl px-4 py-2.5 text-sm focus:outline-none border"
+              style={{ ...inputStyle, borderColor: catColor, color: catColor }}
+            >
+              {CATEGORY_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
           </div>
 
           <div>
@@ -213,7 +203,6 @@ export default function AddTransactionModal({
             </button>
           </div>
         </form>
-      </div>
     </div>
   );
 }

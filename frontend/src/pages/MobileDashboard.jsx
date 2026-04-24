@@ -5,7 +5,8 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
   AreaChart, Area,
 } from "recharts";
-import { getTransactions, createTransaction } from "../api/transactions";
+import { getTransactions, createTransaction, deleteTransaction } from "../api/transactions";
+import EditTransactionModal from "../components/EditTransactionModal";
 import { CATEGORIES, CATEGORY_CONFIG, INCOME_TYPES, fmt } from "../utils/finance";
 import { useTheme } from "../hooks/useTheme";
 import { useAuth } from "../context/AuthContext";
@@ -13,6 +14,7 @@ import { PRESETS, getPresetRange } from "../components/DateRangeFilter";
 import Footer from "../components/Footer";
 import RenderWakeButton from "../components/RenderWakeButton";
 import RecurringPaymentsModal from "../components/RecurringPaymentsModal";
+import AccountPanel from "../components/AccountPanel";
 
 // ── Icons ────────────────────────────────────────────────────────────────────
 
@@ -72,9 +74,106 @@ function IconChevronLeft({ size = 16 }) {
   );
 }
 
+// ── Swipeable row ─────────────────────────────────────────────────────────────
+
+const REVEAL_W = 130;
+
+function SwipeableRow({ id, openId, setOpenId, onEdit, onDelete, border, surface, text, children }) {
+  const contentRef = useRef(null);
+  const startXRef = useRef(0);
+  const startYRef = useRef(0);
+  const startOffsetRef = useRef(0);
+  const currentOffsetRef = useRef(0);
+  const movedRef = useRef(false);
+  const isOpen = openId === id;
+
+  const setTransform = (x) => {
+    currentOffsetRef.current = x;
+    if (contentRef.current) contentRef.current.style.transform = `translateX(${x}px)`;
+  };
+
+  const animateTo = (x) => {
+    if (!contentRef.current) return;
+    contentRef.current.style.transition = "transform 0.22s ease";
+    setTransform(x);
+    setTimeout(() => { if (contentRef.current) contentRef.current.style.transition = "none"; }, 220);
+  };
+
+  const snapTo = (target) => {
+    animateTo(target);
+    setOpenId(target === -REVEAL_W ? id : (prev) => (prev === id ? null : prev));
+  };
+
+  // Close when another row opens
+  useEffect(() => {
+    if (!isOpen && currentOffsetRef.current !== 0) animateTo(0);
+  }, [isOpen]);
+
+  // Non-passive touchmove so we can preventDefault during horizontal drag
+  useEffect(() => {
+    const el = contentRef.current;
+    if (!el) return;
+    const onMove = (e) => {
+      const dx = e.touches[0].clientX - startXRef.current;
+      const dy = e.touches[0].clientY - startYRef.current;
+      if (!movedRef.current) {
+        if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+        if (Math.abs(dy) > Math.abs(dx)) return; // vertical scroll — let browser handle it
+        movedRef.current = true;
+      }
+      e.preventDefault();
+      setTransform(Math.max(-REVEAL_W, Math.min(0, startOffsetRef.current + dx)));
+    };
+    el.addEventListener("touchmove", onMove, { passive: false });
+    return () => el.removeEventListener("touchmove", onMove);
+  }, []);
+
+  const handleTouchStart = (e) => {
+    startXRef.current = e.touches[0].clientX;
+    startYRef.current = e.touches[0].clientY;
+    startOffsetRef.current = currentOffsetRef.current;
+    movedRef.current = false;
+    if (contentRef.current) contentRef.current.style.transition = "none";
+  };
+
+  const handleTouchEnd = () => {
+    if (!movedRef.current) return;
+    snapTo(currentOffsetRef.current < -REVEAL_W / 2 ? -REVEAL_W : 0);
+  };
+
+  return (
+    <div style={{ position: "relative", overflow: "hidden", borderTop: `1px solid ${border}`, zIndex: isOpen ? 10 : "auto" }}>
+      <div style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: REVEAL_W, display: "flex", backgroundColor: `color-mix(in srgb, ${surface} 80%, #888)` }}>
+        <button
+          onClick={() => { snapTo(0); onEdit(); }}
+          style={{ flex: 1, background: "transparent", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: text }}
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+        </button>
+        <button
+          onClick={() => { snapTo(0); onDelete(); }}
+          style={{ flex: 1, background: "transparent", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--category-expense)" }}
+        >
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+        </button>
+      </div>
+      <div
+        ref={contentRef}
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+        style={{ transform: "translateX(0)", position: "relative", zIndex: 1, willChange: "transform" }}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
 // ── Transaction list shared component ────────────────────────────────────────
 
-function TransactionList({ items, total, page, setPage, perPage, setPerPage, accentColor, highlightId, text, muted, border, surface }) {
+function TransactionList({ items, total, page, setPage, perPage, setPerPage, accentColor, highlightId, text, muted, border, surface, onEdit, onDelete }) {
+  const [openId, setOpenId] = useState(null);
+
   if (total === 0) {
     return (
       <p className="px-4 py-8 text-center text-sm" style={{ color: muted }}>No transactions</p>
@@ -82,34 +181,51 @@ function TransactionList({ items, total, page, setPage, perPage, setPerPage, acc
   }
   return (
     <>
+      {openId !== null && (
+        <div
+          style={{ position: "fixed", inset: 0, zIndex: 5 }}
+          onTouchStart={() => setOpenId(null)}
+          onClick={() => setOpenId(null)}
+        />
+      )}
       {items.map((t) => {
         const isIncome = INCOME_TYPES.has(t.category);
         return (
-          <div
+          <SwipeableRow
             key={t.id}
-            className="px-4 py-3 border-t flex items-center gap-3"
-            style={{
-              borderColor: border,
-              backgroundColor: t.id === highlightId
-                ? `color-mix(in srgb, var(--category-${t.category.toLowerCase()}) 12%, transparent)`
-                : undefined,
-              transition: "background-color 0.6s ease",
-            }}
+            id={t.id}
+            openId={openId}
+            setOpenId={setOpenId}
+            onEdit={() => onEdit(t)}
+            onDelete={() => onDelete(t.id)}
+            border={border}
+            surface={surface}
+            text={text}
           >
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium truncate" style={{ color: text }}>{t.name}</p>
-              <p className="text-xs" style={{ color: muted }}>
-                <span className="font-medium" style={{ color: `var(--category-${t.category.toLowerCase()})` }}>
-                  {CATEGORY_CONFIG[t.category]?.label}
-                </span>
-                {" · "}
-                {new Date(t.transaction_date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+            <div
+              className="px-4 py-3 flex items-center gap-3"
+              style={{
+                backgroundColor: t.id === highlightId
+                  ? `color-mix(in srgb, var(--category-${t.category.toLowerCase()}) 12%, transparent)`
+                  : surface,
+                transition: "background-color 0.6s ease",
+              }}
+            >
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate" style={{ color: text }}>{t.name}</p>
+                <p className="text-xs" style={{ color: muted }}>
+                  <span className="font-medium" style={{ color: `var(--category-${t.category.toLowerCase()})` }}>
+                    {CATEGORY_CONFIG[t.category]?.label}
+                  </span>
+                  {" · "}
+                  {new Date(t.transaction_date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                </p>
+              </div>
+              <p className="text-sm font-bold shrink-0" style={{ color: isIncome ? "var(--category-income)" : "var(--category-expense)" }}>
+                {isIncome ? "+" : "-"}{fmt(t.amount)}
               </p>
             </div>
-            <p className="text-sm font-bold shrink-0" style={{ color: isIncome ? "var(--category-income)" : "var(--category-expense)" }}>
-              {isIncome ? "+" : "-"}{fmt(t.amount)}
-            </p>
-          </div>
+          </SwipeableRow>
         );
       })}
       <div className="px-4 py-3 border-t flex items-center justify-between text-xs" style={{ borderColor: border, color: muted }}>
@@ -119,7 +235,7 @@ function TransactionList({ items, total, page, setPage, perPage, setPerPage, acc
             <button
               key={n}
               onClick={() => setPerPage(n)}
-              className="px-2 py-1 rounded-lg border font-semibold cursor-pointer transition-all duration-150"
+              className="px-3 py-2 rounded-lg border font-semibold cursor-pointer transition-all duration-150"
               style={{
                 color: perPage === n ? accentColor : muted,
                 borderColor: perPage === n ? accentColor : border,
@@ -132,8 +248,8 @@ function TransactionList({ items, total, page, setPage, perPage, setPerPage, acc
         </div>
         <div className="flex items-center gap-2">
           <span>{`${(page - 1) * perPage + 1}–${Math.min(page * perPage, total)}`} of {total}</span>
-          <button onClick={() => setPage(page - 1)} disabled={page === 1} className="px-2 py-1 rounded-lg border font-semibold cursor-pointer disabled:opacity-30" style={{ color: muted, borderColor: border }}>←</button>
-          <button onClick={() => setPage(page + 1)} disabled={page * perPage >= total} className="px-2 py-1 rounded-lg border font-semibold cursor-pointer disabled:opacity-30" style={{ color: muted, borderColor: border }}>→</button>
+          <button onClick={() => setPage(page - 1)} disabled={page === 1} className="px-3 py-2 rounded-lg border font-semibold cursor-pointer disabled:opacity-30" style={{ color: muted, borderColor: border }}>←</button>
+          <button onClick={() => setPage(page + 1)} disabled={page * perPage >= total} className="px-3 py-2 rounded-lg border font-semibold cursor-pointer disabled:opacity-30" style={{ color: muted, borderColor: border }}>→</button>
         </div>
       </div>
     </>
@@ -158,10 +274,12 @@ export default function MobileDashboard() {
   const [addSheetOpen, setAddSheetOpen] = useState(false);
   const [entrySheetOpen, setEntrySheetOpen] = useState(false);
 
-  // ── Drawer / Recurring
+  // ── Drawer / Recurring / Account
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [recurringOpen, setRecurringOpen] = useState(false);
   const [rpSave, setRpSave] = useState({ isDirty: false, isSaving: false, onSave: null });
+  const [accountOpen, setAccountOpen] = useState(false);
+  const [acctSave, setAcctSave] = useState({ isDirty: false, isSaving: false, saveStatus: null, onSave: null });
 
   // ── Data
   const [transactions, setTransactions] = useState([]);
@@ -173,6 +291,13 @@ export default function MobileDashboard() {
   function refresh() {
     getTransactions().then((res) => setTransactions(res.data));
   }
+
+  const [editingTransaction, setEditingTransaction] = useState(null);
+
+  const handleDelete = async (id) => {
+    await deleteTransaction(id);
+    refresh();
+  };
 
   // ── Quick entry
   const [quickCat, setQuickCat] = useState("EXPENSE");
@@ -218,6 +343,8 @@ export default function MobileDashboard() {
   const [analyticsDateRange, setAnalyticsDateRange] = useState(() => getPresetRange("Current Month"));
   const [analyticsPage, setAnalyticsPage] = useState(1);
   const [analyticsPerPage, setAnalyticsPerPage] = useState(10);
+  const [analyticsAmountSort, setAnalyticsAmountSort] = useState(null);
+  const [analyticsTypeFilter, setAnalyticsTypeFilter] = useState(null);
 
   // ── Search
   const [query, setQuery] = useState("");
@@ -320,9 +447,18 @@ export default function MobileDashboard() {
     const totalIn = dashFiltered.filter((t) => INCOME_TYPES.has(t.category)).reduce((s, t) => s + parseFloat(t.amount), 0);
     const totalOut = dashFiltered.filter((t) => !INCOME_TYPES.has(t.category)).reduce((s, t) => s + parseFloat(t.amount), 0);
     const net = totalIn - totalOut;
-    const savingsRate = totalIn > 0 ? (net / totalIn) * 100 : null;
-    return { totalIn, totalOut, net, savingsRate };
-  }, [dashFiltered]);
+    let days = 1;
+    if (dashDateRange.from && dashDateRange.to) {
+      days = Math.max(1, Math.round((dashDateRange.to - dashDateRange.from) / (1000 * 60 * 60 * 24)));
+    } else if (dashFiltered.length > 0) {
+      const timestamps = dashFiltered.map((t) => new Date(t.transaction_date).getTime());
+      days = Math.max(1, Math.round((Math.max(...timestamps) - Math.min(...timestamps)) / (1000 * 60 * 60 * 24)) + 1);
+    }
+    const refDate = dashDateRange.from ?? new Date();
+    const daysInMonth = new Date(refDate.getFullYear(), refDate.getMonth() + 1, 0).getDate();
+    const projectedMonthlySpend = (totalOut / days) * daysInMonth;
+    return { totalIn, totalOut, net, projectedMonthlySpend };
+  }, [dashFiltered, dashDateRange]);
 
   const dashPieData = useMemo(() => {
     const grouped = {};
@@ -351,10 +487,14 @@ export default function MobileDashboard() {
     return result;
   }, [transactions, analyticsTab, analyticsDateRange]);
 
-  const analyticsSorted = useMemo(
-    () => [...analyticsFiltered].sort((a, b) => new Date(b.transaction_date) - new Date(a.transaction_date)),
-    [analyticsFiltered]
-  );
+  const analyticsSorted = useMemo(() => {
+    let arr = [...analyticsFiltered];
+    if (analyticsTypeFilter === "income") arr = arr.filter(t => INCOME_TYPES.has(t.category));
+    else if (analyticsTypeFilter === "expense") arr = arr.filter(t => !INCOME_TYPES.has(t.category));
+    if (analyticsAmountSort === "asc") return arr.sort((a, b) => parseFloat(a.amount) - parseFloat(b.amount));
+    if (analyticsAmountSort === "desc") return arr.sort((a, b) => parseFloat(b.amount) - parseFloat(a.amount));
+    return arr.sort((a, b) => new Date(b.transaction_date) - new Date(a.transaction_date));
+  }, [analyticsFiltered, analyticsAmountSort, analyticsTypeFilter]);
   const analyticsPaginated = analyticsSorted.slice((analyticsPage - 1) * analyticsPerPage, analyticsPage * analyticsPerPage);
   useEffect(() => { setAnalyticsPage(1); }, [analyticsFiltered, analyticsPerPage]);
 
@@ -362,6 +502,16 @@ export default function MobileDashboard() {
     document.body.style.overflow = (addSheetOpen || entrySheetOpen) ? "hidden" : "";
     return () => { document.body.style.overflow = ""; };
   }, [addSheetOpen, entrySheetOpen]);
+
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const handler = () => setKeyboardOpen(vv.height < window.screen.height * 0.8);
+    vv.addEventListener("resize", handler);
+    return () => vv.removeEventListener("resize", handler);
+  }, []);
+
 
   const analyticsSummary = useMemo(() => {
     const totalIn = analyticsFiltered.filter((t) => INCOME_TYPES.has(t.category)).reduce((s, t) => s + parseFloat(t.amount), 0);
@@ -446,7 +596,7 @@ export default function MobileDashboard() {
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-dvh" style={{ backgroundColor: bg, color: text }}>
+    <div className="min-h-dvh flex flex-col" style={{ backgroundColor: bg, color: text }}>
 
       {/* ── Header ── */}
       <header className="border-b sticky top-0 z-20 px-4 py-3 flex items-center gap-3" style={{ backgroundColor: surface, borderColor: border }}>
@@ -491,17 +641,19 @@ export default function MobileDashboard() {
           )}
         </div>
         <button
-          onClick={() => setDrawerOpen(true)}
-          className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold shrink-0 cursor-pointer"
+          onClick={() => setAccountOpen(true)}
+          className="w-8 h-8 rounded-full shrink-0 cursor-pointer overflow-hidden flex items-center justify-center text-xs font-bold"
           style={{ backgroundColor: `color-mix(in srgb, ${text} 12%, transparent)`, color: text }}
-          aria-label="Open menu"
+          aria-label="Open account"
         >
-          {user?.first_name?.[0]?.toUpperCase() ?? "?"}
+          {user?.avatar
+            ? <img src={user.avatar} alt="avatar" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+            : (user?.first_name?.[0]?.toUpperCase() ?? "?")}
         </button>
       </header>
 
       {/* ── Main content ── */}
-      <main className="px-4 pt-4 pb-28 space-y-4">
+      <main className="flex-1 px-4 pt-4 pb-28 space-y-4">
 
         {/* Dashboard tab */}
         {navTab === "dashboard" && (
@@ -533,8 +685,8 @@ export default function MobileDashboard() {
               {[
                 { label: "INCOME", value: fmt(dashSummary.totalIn), color: "var(--category-income)" },
                 { label: "EXPENSES", value: fmt(dashSummary.totalOut), color: "var(--category-expense)" },
-                { label: "NET", value: fmt(dashSummary.net), color: dashSummary.net >= 0 ? "var(--category-income)" : "var(--category-expense)" },
-                { label: "CASH FLOW", value: dashSummary.savingsRate !== null ? `${dashSummary.savingsRate.toFixed(1)}%` : "—", color: "var(--category-all)" },
+                { label: "NET", value: (dashSummary.net >= 0 ? "+" : "-") + fmt(Math.abs(dashSummary.net)), color: dashSummary.net >= 0 ? "var(--category-income)" : "var(--category-expense)" },
+                { label: "PROJ. MONTHLY", value: fmt(dashSummary.projectedMonthlySpend), color: "var(--category-all)" },
               ].map(({ label, value, color }) => (
                 <div key={label} className="rounded-2xl px-4 py-4 border" style={{ backgroundColor: surface, borderColor: border, borderTopColor: color, borderTopWidth: "3px" }}>
                   <p className="text-xs font-medium mb-1" style={{ color: muted }}>{label}</p>
@@ -552,7 +704,7 @@ export default function MobileDashboard() {
                 <div style={{ position: "relative" }}>
                   <ResponsiveContainer width="100%" height={240} style={{ pointerEvents: "none" }}>
                     <PieChart>
-                      <Pie data={dashPieData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={55} outerRadius={80} strokeWidth={0}>
+                      <Pie data={dashPieData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={55} outerRadius={80} strokeWidth={0} animationBegin={0} animationDuration={500}>
                         {dashPieData.map((entry) => <Cell key={entry.name} fill={entry.color} />)}
                       </Pie>
                       <Tooltip {...tooltipProps} formatter={(v) => fmt(v)} />
@@ -577,7 +729,7 @@ export default function MobileDashboard() {
             {/* Transaction table */}
 
             <div ref={tableRef} className="rounded-2xl border" style={{ backgroundColor: surface, borderColor: border }}>
-              <p className="px-4 py-3 text-base font-semibold border-b" style={{ borderColor: border, color: text }}>Transactions</p>
+              <p className="px-4 py-3 text-base font-semibold border-b" style={{ borderColor: border, color: text }}>Recent Transactions</p>
               <TransactionList
                 items={dashPaginated}
                 total={dashSorted.length}
@@ -588,6 +740,8 @@ export default function MobileDashboard() {
                 accentColor="var(--category-all)"
                 highlightId={highlightId}
                 text={text} muted={muted} border={border} surface={surface}
+                onEdit={setEditingTransaction}
+                onDelete={handleDelete}
               />
             </div>
           </>
@@ -642,7 +796,7 @@ export default function MobileDashboard() {
                   { label: `${CATEGORY_CONFIG[analyticsTab]?.label.toUpperCase()} TOTAL`, value: fmt(analyticsSummary.categoryTotal), color: analyticsColor },
                   { label: "TRANSACTIONS", value: String(analyticsSummary.txCount), color: analyticsColor },
                   { label: "AVG TRANSACTION", value: fmt(analyticsSummary.avgTx), color: analyticsColor },
-                  { label: INCOME_TYPES.has(analyticsTab) ? "% OF INCOME" : "% OF EXPENSES", value: analyticsSummary.pctOfTotal != null ? `${analyticsSummary.pctOfTotal.toFixed(1)}%` : "—", color: analyticsColor },
+                  { label: INCOME_TYPES.has(analyticsTab) ? "% OF TOTAL INCOME" : "% OF TOTAL EXPENSES", value: analyticsSummary.pctOfTotal != null ? `${analyticsSummary.pctOfTotal.toFixed(1)}%` : "—", color: analyticsColor },
                 ].map(({ label, value, color }) => (
                   <div key={label} className="rounded-2xl px-4 py-4 border" style={{ backgroundColor: surface, borderColor: border, borderTopColor: color, borderTopWidth: "3px" }}>
                     <p className="text-xs font-medium mb-1" style={{ color: muted }}>{label}</p>
@@ -744,7 +898,39 @@ export default function MobileDashboard() {
 
             {/* Transaction table */}
             <div className="rounded-2xl border" style={{ backgroundColor: surface, borderColor: analyticsColor }}>
-              <p className="px-4 py-3 text-base font-semibold border-b" style={{ borderColor: border, color: text }}>Transactions</p>
+              <div className="px-4 py-3 border-b flex items-center justify-between" style={{ borderColor: border }}>
+                <p className="text-base font-semibold" style={{ color: text }}>Transactions</p>
+                <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
+                <button
+                  onClick={() => setAnalyticsTypeFilter(f => f === null ? "income" : f === "income" ? "expense" : null)}
+                  style={{ color: analyticsTypeFilter === "income" ? "var(--category-income)" : analyticsTypeFilter === "expense" ? "var(--category-expense)" : muted, display: "flex", alignItems: "center", gap: 3, fontSize: 12, fontWeight: 600, background: `color-mix(in srgb, ${text} 6%, transparent)`, border: "none", cursor: "pointer", borderRadius: 8, padding: "3px 8px" }}
+                >
+                  {analyticsTypeFilter === "income" ? "Income" : analyticsTypeFilter === "expense" ? "Expense" : "All"}
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    {analyticsTypeFilter === "income"
+                      ? <><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></>
+                      : analyticsTypeFilter === "expense"
+                      ? <><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/><polyline points="17 18 23 18 23 12"/></>
+                      : <><path d="M12 19V5M5 12l7-7 7 7" opacity="0.4"/><path d="M12 5v14M5 12l7 7 7-7" opacity="0.4"/></>
+                    }
+                  </svg>
+                </button>
+                <button
+                  onClick={() => setAnalyticsAmountSort(s => s === "desc" ? "asc" : s === "asc" ? null : "desc")}
+                  style={{ color: analyticsAmountSort ? analyticsColor : muted, display: "flex", alignItems: "center", gap: 3, fontSize: 12, fontWeight: 600, background: `color-mix(in srgb, ${text} 6%, transparent)`, border: "none", cursor: "pointer", borderRadius: 8, padding: "3px 8px" }}
+                >
+                  Amount
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    {analyticsAmountSort === "asc"
+                      ? <path d="M12 19V5M5 12l7-7 7 7"/>
+                      : analyticsAmountSort === "desc"
+                      ? <path d="M12 5v14M5 12l7 7 7-7"/>
+                      : <><path d="M12 19V5M5 12l7-7 7 7" opacity="0.4"/><path d="M12 5v14M5 12l7 7 7-7" opacity="0.4"/></>
+                    }
+                  </svg>
+                </button>
+                </div>
+              </div>
               <TransactionList
                 items={analyticsPaginated}
                 total={analyticsSorted.length}
@@ -755,6 +941,8 @@ export default function MobileDashboard() {
                 accentColor={analyticsColor}
                 highlightId={null}
                 text={text} muted={muted} border={border} surface={surface}
+                onEdit={setEditingTransaction}
+                onDelete={handleDelete}
               />
             </div>
           </>
@@ -887,9 +1075,12 @@ export default function MobileDashboard() {
 
       {/* ── Entry sheet ── */}
       <div
-        className="fixed bottom-0 left-0 right-0 z-50 rounded-t-2xl border-t border-x"
+        className="fixed bottom-0 left-0 right-0 z-50 border-t border-x"
         style={{
           backgroundColor: surface, borderColor: border,
+          borderRadius: keyboardOpen ? "16px 16px 16px 16px" : "16px 16px 0 0",
+          borderBottom: keyboardOpen ? `1px solid ${border}` : "none",
+          transition: "border-radius 150ms ease, border-bottom 150ms ease",
           paddingBottom: "env(safe-area-inset-bottom)",
           transform: `translateY(${entrySheetOpen ? dragY : 100}${entrySheetOpen && dragY > 0 ? "" : "%"})`,
           transition: dragY > 0 ? "none" : "transform 300ms cubic-bezier(0.32, 0.72, 0, 1)",
@@ -913,29 +1104,32 @@ export default function MobileDashboard() {
           </div>
         </div>
           <div className="p-5 space-y-3">
-            {/* Category pills */}
-            <div className="flex flex-wrap gap-2">
-              {Object.entries(CATEGORY_CONFIG).map(([key, cfg]) => {
-                const active = quickCat === key;
-                const color = `var(--category-${key.toLowerCase()})`;
-                return (
-                  <button
-                    key={key}
-                    type="button"
-                    onClick={() => { setQuickCat(key); setQuickForm((f) => ({ ...f, name: key === "TIPS" ? "Cash" : f.name })); }}
-                    className="px-3 py-1.5 rounded-xl text-xs font-semibold border cursor-pointer active:scale-95 transition-all duration-150"
-                    style={{
-                      color: active ? color : muted,
-                      borderColor: active ? color : border,
-                      backgroundColor: active ? `color-mix(in srgb, ${color} 15%, transparent)` : "transparent",
-                      boxShadow: active ? `0 0 0 2px color-mix(in srgb, ${color} 20%, transparent)` : "none",
-                    }}
-                  >
-                    {cfg.label}
-                  </button>
-                );
-              })}
-            </div>
+            {/* Category pills — two rows, proportionally sized to label length */}
+            {[Object.entries(CATEGORY_CONFIG).slice(0, 4), Object.entries(CATEGORY_CONFIG).slice(4)].map((row, ri) => (
+              <div key={ri} className="flex gap-2">
+                {row.map(([key, cfg]) => {
+                  const active = quickCat === key;
+                  const color = `var(--category-${key.toLowerCase()})`;
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => { setQuickCat(key); setQuickForm((f) => ({ ...f, name: key === "TIPS" ? "Cash" : f.name })); }}
+                      className="py-1.5 rounded-xl text-xs font-semibold border cursor-pointer active:scale-95 transition-all duration-150 text-center"
+                      style={{
+                        flex: cfg.label.length + 4,
+                        color: active ? color : muted,
+                        borderColor: active ? color : border,
+                        backgroundColor: active ? `color-mix(in srgb, ${color} 15%, transparent)` : "transparent",
+                        boxShadow: active ? `0 0 0 2px color-mix(in srgb, ${color} 20%, transparent)` : "none",
+                      }}
+                    >
+                      {cfg.label}
+                    </button>
+                  );
+                })}
+              </div>
+            ))}
             {/* Fallback dropdown — uncomment to restore
             <select
               value={quickCat}
@@ -1003,6 +1197,35 @@ export default function MobileDashboard() {
         </div>
       )}
 
+      {/* ── Account overlay ── */}
+      {accountOpen && (
+        <div className="fixed inset-0 z-50 flex flex-col" style={{ backgroundColor: surface, color: text }}>
+          <div className="px-5 py-4 flex items-center justify-between border-b shrink-0" style={{ borderColor: border }}>
+            <div className="flex items-center gap-2">
+              <button onClick={() => setAccountOpen(false)} className="p-1 rounded-lg cursor-pointer" style={{ color: muted }}>
+                <IconChevronLeft />
+              </button>
+              <span className="text-sm font-semibold" style={{ color: muted }}>Account</span>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              {(() => {
+                const status = acctSave.isSaving ? "Saving…" : acctSave.isDirty ? "Unsaved" : acctSave.saveStatus === "saved" ? "Saved" : null;
+                const statusColor = acctSave.saveStatus === "saved" && !acctSave.isDirty ? "var(--category-income)" : `color-mix(in srgb, ${text} 40%, transparent)`;
+                return status ? <span style={{ fontSize: "11px", color: statusColor, transition: "color 0.3s" }}>{status}</span> : null;
+              })()}
+              <button
+                onClick={() => acctSave.onSave?.()}
+                disabled={!acctSave.isDirty || acctSave.isSaving}
+                style={{ fontSize: "12px", fontWeight: 600, padding: "4px 12px", borderRadius: "8px", border: "1px solid var(--category-income)", color: "var(--category-income)", backgroundColor: acctSave.isDirty ? "color-mix(in srgb, var(--category-income) 18%, transparent)" : "transparent", boxShadow: acctSave.isDirty ? "0 0 0 2px color-mix(in srgb, var(--category-income) 20%, transparent)" : "none", cursor: acctSave.isDirty && !acctSave.isSaving ? "pointer" : "default", opacity: acctSave.isDirty ? (acctSave.isSaving ? 0.6 : 1) : 0.25, transition: "all 0.2s ease" }}
+              >
+                {acctSave.isSaving ? "Saving…" : "Save"}
+              </button>
+            </div>
+          </div>
+          <AccountPanel onSaveStateChange={setAcctSave} />
+        </div>
+      )}
+
       {/* ── Drawer ── */}
       <div
         className="fixed top-0 right-0 h-full w-72 z-50 flex flex-col border-l"
@@ -1016,15 +1239,24 @@ export default function MobileDashboard() {
             </svg>
           </button>
         </div>
-        <div className="px-5 py-5 flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold shrink-0" style={{ backgroundColor: `color-mix(in srgb, ${text} 12%, transparent)`, color: text }}>
-            {user?.first_name?.[0]?.toUpperCase() ?? "?"}
+        <button
+          className="px-5 py-5 flex items-center gap-3 w-full text-left cursor-pointer"
+          style={{ background: "transparent", border: "none" }}
+          onClick={() => { setDrawerOpen(false); setAccountOpen(true); }}
+        >
+          <div className="w-10 h-10 rounded-full shrink-0 overflow-hidden flex items-center justify-center text-sm font-bold" style={{ backgroundColor: `color-mix(in srgb, ${text} 12%, transparent)`, color: text }}>
+            {user?.avatar
+              ? <img src={user.avatar} alt="avatar" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+              : (user?.first_name?.[0]?.toUpperCase() ?? "?")}
           </div>
-          <div>
+          <div className="flex-1 min-w-0">
             <p className="text-sm font-semibold">{user ? `${user.first_name} ${user.last_name}` : "—"}</p>
-            <p className="text-xs" style={{ color: muted }}>{user?.email_address ?? "—"}</p>
+            <p className="text-xs truncate" style={{ color: muted }}>{user?.email_address ?? "—"}</p>
           </div>
-        </div>
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: muted, flexShrink: 0 }}>
+            <path d="M9 18l6-6-6-6" />
+          </svg>
+        </button>
         <div className="mx-5 border-t" style={{ borderColor: border }} />
         <div className="px-3 py-3 flex-1">
           <button
@@ -1039,7 +1271,7 @@ export default function MobileDashboard() {
           </button>
         </div>
         <div className="mx-5 border-t" style={{ borderColor: border }} />
-        <div className="px-3 py-3 flex-shrink-0">
+        <div className="px-3 py-3 flex-shrink-0 flex flex-col gap-3">
           <button
             className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium cursor-pointer text-left border"
             style={{ color: text, borderColor: `color-mix(in srgb, ${text} 18%, transparent)`, backgroundColor: `color-mix(in srgb, ${text} 5%, transparent)` }}
@@ -1056,6 +1288,18 @@ export default function MobileDashboard() {
             )}
             {dark ? "Light Mode" : "Dark Mode"}
           </button>
+          <a
+            href="https://forms.gle/BC6ebwbZtgYmSYBeA"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-left border"
+            style={{ color: text, textDecoration: "none", borderColor: `color-mix(in srgb, ${text} 18%, transparent)`, backgroundColor: `color-mix(in srgb, ${text} 5%, transparent)` }}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+            </svg>
+            Feedback
+          </a>
         </div>
         <div className="mx-5 border-t" style={{ borderColor: border }} />
         <div className="px-3 py-3">
@@ -1072,7 +1316,15 @@ export default function MobileDashboard() {
         </div>
       </div>
 
-      <Footer />
+      {editingTransaction && (
+        <EditTransactionModal
+          transaction={editingTransaction}
+          onClose={() => setEditingTransaction(null)}
+          onSaved={() => { setEditingTransaction(null); refresh(); }}
+        />
+      )}
+
+      {transactions.length === 0 && <Footer />}
       <RenderWakeButton />
     </div>
   );

@@ -114,9 +114,13 @@ export default function RenderWakeButton() {
           from { opacity: 0; transform: translateY(6px); }
           to   { opacity: 1; transform: translateY(0);   }
         }
+        @media (max-width: 768px) {
+          .wake-button-root { bottom: 120px !important; }
+        }
       `}</style>
 
       <div
+        className="wake-button-root"
         style={{
           position: "fixed",
           bottom: "24px",

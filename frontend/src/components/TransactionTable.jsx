@@ -2,7 +2,32 @@ import { useState, useEffect } from "react";
 import { CATEGORY_CONFIG, INCOME_TYPES, fmt } from "../utils/finance";
 import { useTheme } from "../hooks/useTheme";
 
-export default function TransactionTable({ rows, onAdd, onEdit, onDelete, activeColor, page, perPage, total, onPageChange, onPerPageChange, highlightId }) {
+function SortIcon({ active, dir, activeColor, muted }) {
+  if (active && dir === "asc") {
+    return (
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={activeColor} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+        <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/>
+        <polyline points="17 6 23 6 23 12"/>
+      </svg>
+    );
+  }
+  if (active && dir === "desc") {
+    return (
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={activeColor} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+        <polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/>
+        <polyline points="17 18 23 18 23 12"/>
+      </svg>
+    );
+  }
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={muted} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 19V5M5 12l7-7 7 7" opacity="0.4"/>
+      <path d="M12 5v14M5 12l7 7 7-7" opacity="0.4"/>
+    </svg>
+  );
+}
+
+export default function TransactionTable({ rows, onAdd, onEdit, onDelete, activeColor, page, perPage, total, onPageChange, onPerPageChange, highlightId, typeFilter, onTypeFilterChange, sortColumn, sortDir, onSort }) {
   const dark = useTheme();
   const [addHovered, setAddHovered] = useState(false);
   const [hoveredBtn, setHoveredBtn] = useState(null);
@@ -21,10 +46,30 @@ export default function TransactionTable({ rows, onAdd, onEdit, onDelete, active
     return () => document.removeEventListener("mousedown", onMouseDown);
   }, []);
 
-  const bg     = dark ? "var(--dark-surface)" : "var(--light-surface)";
+  const bg    = dark ? "var(--dark-surface)" : "var(--light-surface)";
   const border = dark ? "var(--dark-border)"  : "var(--light-border)";
   const text   = dark ? "var(--dark-text)"    : "var(--light-text)";
   const muted  = `color-mix(in srgb, ${text} 50%, transparent)`;
+
+  const colBtn = (col, label, align = "left") => {
+    if (!onSort) return <span>{label}</span>;
+    const active = sortColumn === col;
+    return (
+      <button
+        onClick={() => onSort(col)}
+        style={{
+          display: "inline-flex", alignItems: "center", gap: 5,
+          background: "none", border: "none", cursor: "pointer", padding: 0,
+          color: active ? activeColor : muted,
+          fontWeight: 500, fontSize: "inherit",
+          flexDirection: align === "right" ? "row-reverse" : "row",
+        }}
+      >
+        {label}
+        <SortIcon active={active} dir={sortDir} activeColor={activeColor} muted={muted} />
+      </button>
+    );
+  };
 
   return (
     <div className="rounded-2xl border" style={{ backgroundColor: bg, borderColor: activeColor, color: text }}>
@@ -35,34 +80,119 @@ export default function TransactionTable({ rows, onAdd, onEdit, onDelete, active
           100% { transform: scaleX(1); opacity: 0;   }
         }
       `}</style>
-      <div className="px-6 py-4 border-b flex items-center justify-between" style={{ borderColor: border }}>
+
+      {/* Card header */}
+      <div className="px-6 py-4 border-b flex items-center justify-between gap-3" style={{ borderColor: border }}>
         <h3 className="text-xl font-semibold">Transactions</h3>
-        <button
-          onClick={onAdd}
-          onMouseEnter={() => setAddHovered(true)}
-          onMouseLeave={() => setAddHovered(false)}
-          className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold rounded-xl border whitespace-nowrap transition-all duration-150 cursor-pointer active:scale-95"
-          style={{
-            color: activeColor,
-            borderColor: activeColor,
-            backgroundColor: `color-mix(in srgb, ${activeColor} ${addHovered ? "20%" : "12%"}, transparent)`,
-            boxShadow: `0 0 0 2px color-mix(in srgb, ${activeColor} 20%, transparent)`,
-          }}
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M5 12h14M12 5v14" />
-          </svg>
-          Add
-        </button>
+
+        {onAdd && (
+          <button
+            onClick={onAdd}
+            onMouseEnter={() => setAddHovered(true)}
+            onMouseLeave={() => setAddHovered(false)}
+            className="flex items-center gap-1.5 px-4 py-2 text-sm font-semibold rounded-xl border whitespace-nowrap transition-all duration-150 cursor-pointer active:scale-95"
+            style={{
+              color: activeColor,
+              borderColor: activeColor,
+              backgroundColor: `color-mix(in srgb, ${activeColor} ${addHovered ? "20%" : "12%"}, transparent)`,
+              boxShadow: `0 0 0 2px color-mix(in srgb, ${activeColor} 20%, transparent)`,
+            }}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M5 12h14M12 5v14" />
+            </svg>
+            Add
+          </button>
+        )}
       </div>
-      <table className="w-full">
+
+      <table className="w-full" style={{ tableLayout: "fixed" }}>
+        <colgroup>
+          <col style={{ width: "150px" }} />
+          <col />
+          <col style={{ width: "160px" }} />
+          <col style={{ width: "140px" }} />
+          <col style={{ width: "96px" }} />
+        </colgroup>
         <thead>
           <tr className="text-left text-base" style={{ color: muted }}>
-            <th className="px-6 py-3 font-medium">Date</th>
-            <th className="px-6 py-3 font-medium">Name</th>
+            <th className="px-6 py-3 font-medium">
+              {onSort ? (() => {
+                const active = sortColumn === "date";
+                return (
+                  <button
+                    onClick={() => onSort("date")}
+                    style={{
+                      display: "inline-flex", alignItems: "center", gap: 5,
+                      background: "none", border: "none", cursor: "pointer", padding: 0,
+                      color: active ? activeColor : muted,
+                      fontWeight: 500, fontSize: "inherit",
+                    }}
+                  >
+                    Date
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: active ? 1 : 0.45 }}>
+                      {sortDir === "asc" && active
+                        ? <path d="M12 19V5m0 0-7 7m7-7 7 7"/>
+                        : <path d="M12 5v14m0 0 7-7m-7 7-7-7"/>
+                      }
+                    </svg>
+                  </button>
+                );
+              })() : <span>Date</span>}
+            </th>
+            <th className="px-6 py-3 font-medium">
+              {onSort ? (() => {
+                const active = sortColumn === "name";
+                return (
+                  <button
+                    onClick={() => onSort("name")}
+                    style={{
+                      display: "inline-flex", alignItems: "center", gap: 5,
+                      background: "none", border: "none", cursor: "pointer", padding: 0,
+                      color: active ? activeColor : muted,
+                      fontWeight: 500, fontSize: "inherit",
+                    }}
+                  >
+                    Name
+                    {active ? (
+                      <span style={{ fontSize: "11px", fontWeight: 700, letterSpacing: "0.03em", lineHeight: 1 }}>
+                        {sortDir === "desc" ? "Z→A" : "A→Z"}
+                      </span>
+                    ) : (
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: 0.35 }}>
+                        <path d="M12 5v14m0 0 7-7m-7 7-7-7"/>
+                      </svg>
+                    )}
+                  </button>
+                );
+              })() : <span>Name</span>}
+            </th>
             <th className="px-6 py-3 font-medium">Category</th>
-            <th className="px-6 py-3 font-medium text-right" style={{ paddingRight: "24px" }}>Amount</th>
-            <th className="py-3" style={{ width: "96px", minWidth: "96px" }}></th>
+            <th className="px-6 py-3 font-medium text-right" style={{ paddingRight: "24px" }}>
+              {onSort ? (() => {
+                const active = sortColumn === "amount";
+                return (
+                  <button
+                    onClick={() => onSort("amount")}
+                    style={{
+                      display: "inline-flex", alignItems: "center", gap: 5,
+                      background: "none", border: "none", cursor: "pointer", padding: 0,
+                      color: active ? activeColor : muted,
+                      fontWeight: 500, fontSize: "inherit",
+                    }}
+                  >
+                    Amount
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ opacity: active ? 1 : 0.35 }}>
+                      {active && sortDir === "asc"
+                        ? <path d="M12 19V5m0 0-7 7m7-7 7 7"/>
+                        : <path d="M12 5v14m0 0 7-7m-7 7-7-7"/>
+                      }
+                    </svg>
+                  </button>
+                );
+              })() : <span>Amount</span>}
+            </th>
+            <th className="py-3"></th>
           </tr>
         </thead>
         <tbody>
@@ -74,28 +204,28 @@ export default function TransactionTable({ rows, onAdd, onEdit, onDelete, active
             </tr>
           ) : (
             rows.map((t) => (
-                <tr
-                  key={t.id}
-                  className="border-t"
-                  style={{
-                    borderColor: border,
-                    backgroundColor: t.id === highlightId && !deleting.has(t.id)
-                      ? `color-mix(in srgb, var(--category-${t.category.toLowerCase()}) 12%, transparent)`
-                      : undefined,
-                    transition: "background-color 0.6s ease",
-                    pointerEvents: deleting.has(t.id) ? "none" : undefined,
-                  }}
-                >
-                  {deleting.has(t.id) ? (
-                    <td colSpan={5} style={{ padding: 0, position: "relative", overflow: "hidden", height: "60px" }}>
-                      <div style={{
-                        position: "absolute", inset: 0,
-                        backgroundColor: `color-mix(in srgb, var(--category-expense) 18%, ${bg})`,
-                        transformOrigin: "right center",
-                        animation: "tx-bar-sweep 0.7s ease-out forwards",
-                      }} />
-                    </td>
-                  ) : (<>
+              <tr
+                key={t.id}
+                className="border-t"
+                style={{
+                  borderColor: border,
+                  backgroundColor: t.id === highlightId && !deleting.has(t.id)
+                    ? `color-mix(in srgb, var(--category-${t.category.toLowerCase()}) 12%, transparent)`
+                    : undefined,
+                  transition: "background-color 0.6s ease",
+                  pointerEvents: deleting.has(t.id) ? "none" : undefined,
+                }}
+              >
+                {deleting.has(t.id) ? (
+                  <td colSpan={5} style={{ padding: 0, position: "relative", overflow: "hidden", height: "60px" }}>
+                    <div style={{
+                      position: "absolute", inset: 0,
+                      backgroundColor: `color-mix(in srgb, var(--category-expense) 18%, ${bg})`,
+                      transformOrigin: "right center",
+                      animation: "tx-bar-sweep 0.7s ease-out forwards",
+                    }} />
+                  </td>
+                ) : (<>
                   <td className="px-6 py-4 text-base whitespace-nowrap" style={{ color: muted }}>
                     {new Date(t.transaction_date + "T00:00:00").toLocaleDateString("en-US", {
                       month: "short", day: "numeric", year: "numeric",
@@ -118,7 +248,6 @@ export default function TransactionTable({ rows, onAdd, onEdit, onDelete, active
                       style={{ position: "relative", width: "96px", height: "20px" }}
                       onMouseDown={e => e.stopPropagation()}
                     >
-                      {/* 3-dot button */}
                       <div style={{
                         position: "absolute", inset: 0,
                         display: "flex", alignItems: "center", justifyContent: "center",
@@ -139,7 +268,6 @@ export default function TransactionTable({ rows, onAdd, onEdit, onDelete, active
                           </svg>
                         </button>
                       </div>
-                      {/* Edit + Delete icons */}
                       <div style={{
                         position: "absolute", inset: 0,
                         display: "flex", alignItems: "center", justifyContent: "center", gap: "4px",
@@ -174,9 +302,9 @@ export default function TransactionTable({ rows, onAdd, onEdit, onDelete, active
                       </div>
                     </div>
                   </td>
-                  </>)}
-                </tr>
-              ))
+                </>)}
+              </tr>
+            ))
           )}
         </tbody>
       </table>
@@ -199,9 +327,7 @@ export default function TransactionTable({ rows, onAdd, onEdit, onDelete, active
                   borderColor: active || hov ? activeColor : border,
                   backgroundColor: active
                     ? dark ? `color-mix(in srgb, ${activeColor} ${hov ? "20%" : "12%"}, transparent)` : "var(--light-surface)"
-                    : hov
-                    ? `color-mix(in srgb, ${activeColor} 12%, transparent)`
-                    : "transparent",
+                    : hov ? `color-mix(in srgb, ${activeColor} 12%, transparent)` : "transparent",
                   boxShadow: active || hov ? `0 0 0 2px color-mix(in srgb, ${activeColor} 20%, transparent)` : "none",
                 }}
               >
