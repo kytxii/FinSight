@@ -39,6 +39,11 @@ export default function Dashboard() {
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [devMenuOpen, setDevMenuOpen] = useState(false);
+  const [devForceEmpty, setDevForceEmpty] = useState(false);
+  const [devDelay, setDevDelay] = useState(0);
+  const [devForceError, setDevForceError] = useState(false);
+  const [devLastFetch, setDevLastFetch] = useState(null);
+  const devForceErrorRef = useRef(false);
   const [activeTab, setActiveTab] = useState("ALL");
   const [addMode, setAddMode] = useState(null); // null | "menu" | "single" | "batch"
   const addOpen = addMode !== null;
@@ -119,15 +124,29 @@ export default function Dashboard() {
     return { from, to };
   });
 
+  async function devFetch() {
+    if (devForceErrorRef.current) {
+      devForceErrorRef.current = false;
+      setDevForceError(false);
+      throw new Error("Forced error");
+    }
+    if (devDelay > 0) await new Promise(r => setTimeout(r, devDelay));
+    return getTransactions();
+  }
+
   useEffect(() => {
-    getTransactions().then((res) => {
+    devFetch().then((res) => {
       setTransactions(res.data);
       setLoading(false);
-    });
+      setDevLastFetch(new Date());
+    }).catch(() => setLoading(false));
   }, []);
 
   function refreshTransactions() {
-    getTransactions().then((res) => setTransactions(res.data));
+    devFetch().then((res) => {
+      setTransactions(res.data);
+      setDevLastFetch(new Date());
+    }).catch(() => {});
   }
 
   async function handleDelete(t) {
@@ -166,6 +185,7 @@ export default function Dashboard() {
   );
 
   const filtered = useMemo(() => {
+    if (devForceEmpty) return [];
     let result =
       activeTab === "ALL"
         ? transactions
@@ -181,7 +201,7 @@ export default function Dashboard() {
     }
 
     return result;
-  }, [transactions, activeTab, dateRange]);
+  }, [transactions, activeTab, dateRange, devForceEmpty]);
 
   const summary = useMemo(() => {
     const totalIn = filtered
@@ -1138,19 +1158,51 @@ export default function Dashboard() {
       {devMenuOpen && !isDemo() && (
         <div style={{
           position: "fixed", bottom: 24, right: 24, zIndex: 9999,
-          width: 260, borderRadius: 14,
+          width: 280, borderRadius: 14,
           backgroundColor: surface, border: `1px solid ${border}`,
           boxShadow: dark ? "0 8px 32px rgba(0,0,0,0.5)" : "0 8px 32px rgba(0,0,0,0.12)",
-          overflow: "hidden",
+          overflow: "hidden", display: "flex", flexDirection: "column", maxHeight: "80vh",
         }}>
-          <div style={{ padding: "10px 14px 9px", borderBottom: `1px solid ${border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div style={{ padding: "10px 14px 9px", borderBottom: `1px solid ${border}`, display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
             <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", color: "var(--category-expense)" }}>DEV TOOLS</span>
             <button onClick={() => setDevMenuOpen(false)} style={{ background: "none", border: "none", cursor: "pointer", color: muted, display: "flex", padding: 2 }}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
             </button>
           </div>
-          <div style={{ padding: "8px 0" }}>
+          <div style={{ overflowY: "auto", padding: "6px 0 10px" }}>
+
+            <DevMenuSection label="LOADING & STATE" border={border} muted={muted} />
             <DevMenuRow label="Skeletons" active={loading} onToggle={() => setLoading(v => !v)} muted={muted} text={text} border={border} />
+            <DevMenuRow label="Force empty" active={devForceEmpty} onToggle={() => setDevForceEmpty(v => !v)} muted={muted} text={text} border={border} />
+            <DevMenuRow label="Force next error" active={devForceError} onToggle={() => { const next = !devForceError; setDevForceError(next); devForceErrorRef.current = next; }} muted={muted} text={text} border={border} />
+            <DevMenuButton label="Re-fetch" description="Reload transactions" onClick={() => { setLoading(true); refreshTransactions(); setTimeout(() => setLoading(false), devDelay + 200); }} muted={muted} text={text} border={border} />
+
+            <DevMenuSection label="NETWORK" border={border} muted={muted} />
+            <div style={{ padding: "4px 14px 6px", display: "flex", flexDirection: "column", gap: 4 }}>
+              <span style={{ fontSize: 11, color: muted }}>Slow network</span>
+              <div style={{ display: "flex", gap: 4 }}>
+                {[0, 500, 2000, 5000].map(ms => (
+                  <button key={ms} onClick={() => setDevDelay(ms)} style={{ flex: 1, padding: "3px 0", borderRadius: 6, border: `1px solid ${devDelay === ms ? "var(--category-expense)" : border}`, backgroundColor: devDelay === ms ? "color-mix(in srgb, var(--category-expense) 12%, transparent)" : "transparent", color: devDelay === ms ? "var(--category-expense)" : muted, fontSize: 10, fontWeight: 600, cursor: "pointer" }}>
+                    {ms === 0 ? "Off" : ms < 1000 ? `${ms}ms` : `${ms/1000}s`}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <DevMenuSection label="DATA" border={border} muted={muted} />
+            <DevMenuInfo label="Transactions" value={transactions.length} muted={muted} text={text} />
+            <DevMenuInfo label="Last fetch" value={devLastFetch ? devLastFetch.toLocaleTimeString() : "—"} muted={muted} text={text} />
+            <DevMenuInfo label="Date range" value={dateRange.from ? `${dateRange.from.toLocaleDateString("en-US",{month:"short",day:"numeric"})} → ${dateRange.to?.toLocaleDateString("en-US",{month:"short",day:"numeric"}) ?? "…"}` : "All time"} muted={muted} text={text} />
+            <DevMenuInfo label="Active tab" value={activeTab} muted={muted} text={text} />
+            <DevMenuInfo label="Sort" value={`${sortColumn} ${sortDir}`} muted={muted} text={text} />
+
+            <DevMenuSection label="UI" border={border} muted={muted} />
+            <DevMenuButton label="Toggle theme" description="Flip dark / light" onClick={() => document.documentElement.classList.toggle("dark")} muted={muted} text={text} border={border} />
+
+            <DevMenuSection label="SESSION" border={border} muted={muted} />
+            <DevMenuInfo label="Token expiry" value={(() => { try { const t = localStorage.getItem("token"); if (!t) return "None"; const p = JSON.parse(atob(t.split(".")[1])); return p.exp ? new Date(p.exp * 1000).toLocaleString() : "No exp"; } catch { return "Invalid"; } })()} muted={muted} text={text} />
+            <DevMenuButton label="Clear localStorage" description="Wipes all local data + reloads" onClick={() => { localStorage.clear(); window.location.reload(); }} muted={muted} text={"var(--category-expense)"} border={border} danger />
+
           </div>
         </div>
       )}
@@ -1214,6 +1266,37 @@ export default function Dashboard() {
         />
       )}
 
+    </div>
+  );
+}
+
+function DevMenuSection({ label, border, muted }) {
+  return (
+    <div style={{ padding: "8px 14px 4px", borderTop: `1px solid ${border}`, marginTop: 4 }}>
+      <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.1em", color: muted }}>{label}</span>
+    </div>
+  );
+}
+
+function DevMenuInfo({ label, value, muted, text }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "4px 14px", gap: 12 }}>
+      <span style={{ fontSize: 12, color: muted }}>{label}</span>
+      <span style={{ fontSize: 11, fontWeight: 600, color: text, fontFamily: "monospace", textAlign: "right", maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{value}</span>
+    </div>
+  );
+}
+
+function DevMenuButton({ label, description, onClick, muted, text, border, danger }) {
+  return (
+    <div style={{ padding: "3px 14px" }}>
+      <button onClick={onClick} style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "5px 8px", borderRadius: 8, border: `1px solid ${border}`, background: "transparent", cursor: "pointer", transition: "background-color 150ms ease" }}
+        onMouseEnter={e => e.currentTarget.style.backgroundColor = danger ? "color-mix(in srgb, var(--category-expense) 8%, transparent)" : `color-mix(in srgb, ${text} 6%, transparent)`}
+        onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}
+      >
+        <span style={{ fontSize: 12, fontWeight: 500, color: danger ? "var(--category-expense)" : text }}>{label}</span>
+        <span style={{ fontSize: 10, color: muted }}>{description}</span>
+      </button>
     </div>
   );
 }
