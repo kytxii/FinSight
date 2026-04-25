@@ -517,6 +517,7 @@ export default function MobileDashboard() {
 
   // ── Drawer / Recurring / Account
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [devOpen, setDevOpen] = useState(false);
   const [recurringOpen, setRecurringOpen] = useState(false);
   const [rpSave, setRpSave] = useState({
     isDirty: false,
@@ -1146,27 +1147,6 @@ export default function MobileDashboard() {
       {/* ── Main content ── */}
       <main className="flex-1 px-4 pt-4 pb-28 space-y-4">
         <style>{`@keyframes skel-shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }`}</style>
-        {/* DEV ONLY */}
-        <button
-          onClick={() => setLoading((v) => !v)}
-          style={{
-            position: "fixed",
-            top: 12,
-            right: 12,
-            zIndex: 9999,
-            padding: "4px 10px",
-            borderRadius: 6,
-            fontSize: 11,
-            fontWeight: 600,
-            border: `1px solid ${border}`,
-            backgroundColor: surface,
-            color: loading ? "var(--category-income)" : muted,
-            cursor: "pointer",
-          }}
-        >
-          {loading ? "skeleton ON" : "skeleton OFF"}
-        </button>
-
         {/* Dashboard tab */}
         {navTab === "dashboard" && (
           <>
@@ -2875,16 +2855,16 @@ export default function MobileDashboard() {
         <div
           style={{
             display: "flex",
-            width: "200%",
+            width: "300%",
             height: "100%",
-            transform: accountOpen ? "translateX(-50%)" : "translateX(0)",
+            transform: devOpen ? "translateX(-66.667%)" : accountOpen ? "translateX(-33.333%)" : "translateX(0)",
             transition: "transform 250ms ease",
           }}
         >
           {/* Menu panel */}
           <div
             style={{
-              width: "50%",
+              width: "33.333%",
               height: "100%",
               display: "flex",
               flexDirection: "column",
@@ -3104,7 +3084,7 @@ export default function MobileDashboard() {
           {/* Account panel */}
           <div
             style={{
-              width: "50%",
+              width: "33.333%",
               height: "100%",
               display: "flex",
               flexDirection: "column",
@@ -3190,6 +3170,47 @@ export default function MobileDashboard() {
             </div>
             <AccountPanel onSaveStateChange={setAcctSave} />
           </div>
+
+          {/* Dev tools panel */}
+          <div style={{ width: "33.333%", height: "100%", display: "flex", flexDirection: "column" }}>
+            <div className="px-5 py-4 flex items-center gap-2 border-b shrink-0" style={{ borderColor: border }}>
+              <button onClick={() => setDevOpen(false)} className="p-1 rounded-lg cursor-pointer" style={{ color: muted }}>
+                <IconChevronLeft />
+              </button>
+              <span className="text-sm font-semibold" style={{ color: "var(--category-expense)" }}>Dev Tools</span>
+            </div>
+            <div className="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-5">
+
+              <div>
+                <p className="text-xs font-semibold mb-2" style={{ color: muted, letterSpacing: "0.08em" }}>LOADING</p>
+                <div className="flex flex-col gap-2">
+                  <DevRow label="Skeleton" description="Toggle loading state">
+                    <DevToggle active={loading} onToggle={() => setLoading(v => !v)} />
+                  </DevRow>
+                  <DevRow label="Re-fetch" description="Reset and reload data">
+                    <button
+                      onClick={() => { setLoading(true); getTransactions().then(res => { setTransactions(res.data); setLoading(false); }); }}
+                      className="px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer border"
+                      style={{ color: text, borderColor: border, backgroundColor: `color-mix(in srgb, ${text} 6%, transparent)` }}
+                    >Run</button>
+                  </DevRow>
+                </div>
+              </div>
+
+              <div>
+                <p className="text-xs font-semibold mb-2" style={{ color: muted, letterSpacing: "0.08em" }}>DATA</p>
+                <div className="flex flex-col gap-2">
+                  <DevRow label="Transactions" description="Currently loaded">
+                    <span className="text-xs font-bold" style={{ color: text }}>{transactions.length}</span>
+                  </DevRow>
+                  <DevRow label="Nav tab" description="Active tab">
+                    <span className="text-xs font-mono" style={{ color: "var(--category-income)" }}>{navTab}</span>
+                  </DevRow>
+                </div>
+              </div>
+
+            </div>
+          </div>
         </div>
       </div>
 
@@ -3207,6 +3228,37 @@ export default function MobileDashboard() {
       {transactions.length === 0 && <Footer />}
       <RenderWakeButton />
     </div>
+  );
+}
+
+function DevRow({ label, description, children }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+      <div>
+        <p style={{ fontSize: 13, fontWeight: 500 }}>{label}</p>
+        <p style={{ fontSize: 11, opacity: 0.45, marginTop: 1 }}>{description}</p>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function DevToggle({ active, onToggle }) {
+  return (
+    <button
+      onClick={onToggle}
+      style={{
+        width: 42, height: 24, borderRadius: 999, border: "none", cursor: "pointer", flexShrink: 0,
+        backgroundColor: active ? "var(--category-income)" : "rgba(128,128,128,0.25)",
+        position: "relative", transition: "background-color 200ms ease",
+      }}
+    >
+      <div style={{
+        position: "absolute", top: 3, left: active ? "calc(100% - 21px)" : 3,
+        width: 18, height: 18, borderRadius: "50%", backgroundColor: "#fff",
+        transition: "left 200ms ease", boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+      }} />
+    </button>
   );
 }
 

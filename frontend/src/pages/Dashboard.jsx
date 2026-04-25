@@ -38,6 +38,7 @@ export default function Dashboard() {
   const { isDemo } = useAuth();
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [devMenuOpen, setDevMenuOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("ALL");
   const [addMode, setAddMode] = useState(null); // null | "menu" | "single" | "batch"
   const addOpen = addMode !== null;
@@ -476,6 +477,7 @@ export default function Dashboard() {
         onSelectTransaction={handleSelectTransaction}
         onDeleteRecurringPayment={refreshTransactions}
         onSaveRecurringPayment={refreshTransactions}
+        onCommand={(cmd, val) => { if (cmd === "devtools") setDevMenuOpen(val); }}
       />
 
         {/* ── Filter sidebar ── */}
@@ -694,10 +696,6 @@ export default function Dashboard() {
         <div style={{ marginLeft: addMode === "batch" ? 460 : 210, transition: "margin-left 250ms ease" }}>
         <main className="px-6 py-6 space-y-5">
         <style>{`@keyframes skel-shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }`}</style>
-        {/* DEV ONLY */}
-        <button onClick={() => setLoading(v => !v)} style={{ position: "fixed", top: 12, right: 12, zIndex: 9999, padding: "4px 10px", borderRadius: 6, fontSize: 11, fontWeight: 600, border: `1px solid ${border}`, backgroundColor: surface, color: loading ? "var(--category-income)" : muted, cursor: "pointer" }}>
-          {loading ? "skeleton ON" : "skeleton OFF"}
-        </button>
         {loading ? (
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             {[...Array(4)].map((_, i) => (
@@ -1140,6 +1138,26 @@ export default function Dashboard() {
 
 
 
+      {devMenuOpen && !isDemo() && (
+        <div style={{
+          position: "fixed", bottom: 24, right: 24, zIndex: 9999,
+          width: 260, borderRadius: 14,
+          backgroundColor: surface, border: `1px solid ${border}`,
+          boxShadow: dark ? "0 8px 32px rgba(0,0,0,0.5)" : "0 8px 32px rgba(0,0,0,0.12)",
+          overflow: "hidden",
+        }}>
+          <div style={{ padding: "10px 14px 9px", borderBottom: `1px solid ${border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", color: "var(--category-expense)" }}>DEV TOOLS</span>
+            <button onClick={() => setDevMenuOpen(false)} style={{ background: "none", border: "none", cursor: "pointer", color: muted, display: "flex", padding: 2 }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+            </button>
+          </div>
+          <div style={{ padding: "8px 0" }}>
+            <DevMenuRow label="Skeletons" active={loading} onToggle={() => setLoading(v => !v)} muted={muted} text={text} border={border} />
+          </div>
+        </div>
+      )}
+
       <RenderWakeButton />
 
       {isDemo() && (
@@ -1199,6 +1217,25 @@ export default function Dashboard() {
         />
       )}
 
+    </div>
+  );
+}
+
+function DevMenuRow({ label, active, onToggle, muted, text, border }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 14px", gap: 12 }}>
+      <span style={{ fontSize: 12, fontWeight: 500, color: text }}>{label}</span>
+      <button onClick={onToggle} style={{
+        width: 38, height: 22, borderRadius: 999, border: "none", cursor: "pointer", flexShrink: 0,
+        backgroundColor: active ? "var(--category-income)" : `color-mix(in srgb, ${text} 18%, transparent)`,
+        position: "relative", transition: "background-color 180ms ease",
+      }}>
+        <div style={{
+          position: "absolute", top: 3, left: active ? "calc(100% - 19px)" : 3,
+          width: 16, height: 16, borderRadius: "50%", backgroundColor: "#fff",
+          transition: "left 180ms ease", boxShadow: "0 1px 3px rgba(0,0,0,0.25)",
+        }} />
+      </button>
     </div>
   );
 }

@@ -6,7 +6,7 @@ import { CATEGORY_CONFIG, fmt } from "../utils/finance";
 import RecurringPaymentsModal from "./RecurringPaymentsModal";
 import AccountPanel from "./AccountPanel";
 
-export default function Navbar({ transactions = [], onSelectTransaction, onDeleteRecurringPayment, onSaveRecurringPayment }) {
+export default function Navbar({ transactions = [], onSelectTransaction, onDeleteRecurringPayment, onSaveRecurringPayment, onCommand }) {
   const dark = useTheme();
   const { logout, user, isDemo } = useAuth();
   const navigate = useNavigate();
@@ -44,6 +44,16 @@ export default function Navbar({ transactions = [], onSelectTransaction, onDelet
       setOpen(false);
       setQuery("");
       setDebouncedQuery("");
+    }
+    if (e.key === "Enter") {
+      const cmd = query.trim().toLowerCase();
+      if ((cmd === "/dev true" || cmd === "/dev false") && !isDemo()) {
+        onCommand?.("devtools", cmd === "/dev true");
+        setQuery("✓");
+        setDebouncedQuery("");
+        setOpen(false);
+        setTimeout(() => setQuery(""), 800);
+      }
     }
   };
 
