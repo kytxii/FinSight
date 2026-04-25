@@ -24,6 +24,7 @@ import {
   fmt,
 } from "../utils/finance";
 import Navbar from "../components/Navbar";
+import BatchAddPanel from "../components/BatchAddPanel";
 import { PRESETS, getPresetRange } from "../components/DateRangeFilter";
 import SummaryCard from "../components/SummaryCard";
 import ChartCard from "../components/ChartCard";
@@ -37,11 +38,13 @@ export default function Dashboard() {
   const { isDemo } = useAuth();
   const [transactions, setTransactions] = useState([]);
   const [activeTab, setActiveTab] = useState("ALL");
-  const [addOpen, setAddOpen] = useState(false);
+  const [addMode, setAddMode] = useState(null); // null | "menu" | "single" | "batch"
+  const addOpen = addMode !== null;
   const addToday = new Date().toLocaleDateString("en-CA");
   const [addForm, setAddForm] = useState({ name: "", amount: "", category: "EXPENSE", transaction_date: addToday });
   const [addLoading, setAddLoading] = useState(false);
   const [addError, setAddError] = useState("");
+  const [batchSaveState, setBatchSaveState] = useState({ isDirty: false, isSaving: false, saveStatus: "idle", onSave: null });
   const [editingTransaction, setEditingTransaction] = useState(null);
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState(10);
@@ -92,7 +95,7 @@ export default function Dashboard() {
     try {
       await createTransaction({ ...addForm, amount: parseFloat(addForm.amount) });
       setAddForm({ name: "", amount: "", category: "EXPENSE", transaction_date: addToday });
-      setAddOpen(false);
+      setAddMode(null);
       refreshTransactions();
     } catch (err) {
       setAddError(err.response?.data?.detail ?? "Something went wrong");
@@ -428,16 +431,16 @@ export default function Dashboard() {
   }, [filtered, perPage, typeFilter, sortColumn, sortDir]);
 
   useEffect(() => {
-    if (!addOpen) return;
+    if (!addOpen || addMode === "batch") return;
     function handleOutsideClick(e) {
       if (addFormRef.current && !addFormRef.current.contains(e.target)) {
-        setAddOpen(false);
+        setAddMode(null);
         setAddError("");
       }
     }
     document.addEventListener("mousedown", handleOutsideClick);
     return () => document.removeEventListener("mousedown", handleOutsideClick);
-  }, [addOpen]);
+  }, [addOpen, addMode]);
 
   const activeColor = `var(--category-${activeTab.toLowerCase()})`;
   const catColor = `var(--category-${addForm.category.toLowerCase()})`;
@@ -476,30 +479,28 @@ export default function Dashboard() {
           position: "fixed",
           top: 0,
           left: 0,
-          width: 210,
+          width: addMode === "batch" ? 460 : 210,
           height: "100vh",
           zIndex: 9,
-          overflowY: "auto",
           borderRight: `1px solid ${border}`,
           backgroundColor: surface,
-          padding: "20px 10px",
-          paddingTop: 84,
-          display: "flex",
-          flexDirection: "column",
-          gap: 28,
+          overflow: "hidden",
+          transition: "width 250ms ease",
         }}>
+          <div style={{ position: "absolute", inset: 0, overflowY: "auto", padding: "20px 10px", paddingTop: 84, display: "flex", flexDirection: "column", gap: 28, opacity: addMode === "batch" ? 0 : 1, pointerEvents: addMode === "batch" ? "none" : "auto", transition: "opacity 200ms ease" }}>
 
           {/* Add / inline form */}
           <div ref={addFormRef}>
+            {/* 1. "Add Transaction" button — visible when no mode active */}
             <div style={{
-              maxHeight: addOpen ? 0 : "42px",
-              opacity: addOpen ? 0 : 1,
+              maxHeight: addMode ? 0 : "42px",
+              opacity: addMode ? 0 : 1,
               overflow: "hidden",
               transition: "max-height 220ms ease, opacity 150ms ease",
-              pointerEvents: addOpen ? "none" : "auto",
+              pointerEvents: addMode ? "none" : "auto",
             }}>
               <button
-                onClick={() => setAddOpen(true)}
+                onClick={() => setAddMode("single")}
                 onMouseEnter={e => {
                   e.currentTarget.style.backgroundColor = "color-mix(in srgb, var(--category-income) 80%, black)";
                   e.currentTarget.style.boxShadow = "0 2px 6px rgba(0,0,0,0.35)";
@@ -525,13 +526,32 @@ export default function Dashboard() {
               </button>
             </div>
 
+            {/* Single form */}
             <div style={{
-              maxHeight: addOpen ? "460px" : 0,
-              opacity: addOpen ? 1 : 0,
+              maxHeight: addMode === "single" ? "460px" : 0,
+              opacity: addMode === "single" ? 1 : 0,
               overflow: "hidden",
               transition: "max-height 250ms cubic-bezier(0.4,0,0.2,1), opacity 200ms ease",
             }}>
               <form onSubmit={handleAddSubmit} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <button type="button" onClick={() => setAddMode("batch")}
+                    onMouseEnter={e => { e.currentTarget.style.borderColor = `color-mix(in srgb, ${text} 35%, transparent)`; e.currentTarget.style.backgroundColor = `color-mix(in srgb, ${text} 8%, transparent)`; }}
+                    onMouseLeave={e => { e.currentTarget.style.borderColor = `color-mix(in srgb, ${text} 15%, transparent)`; e.currentTarget.style.backgroundColor = "transparent"; }}
+                    style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "6px 0", borderRadius: 8, border: `1px solid color-mix(in srgb, ${text} 15%, transparent)`, backgroundColor: "transparent", color: muted, fontSize: 11, fontWeight: 600, cursor: "pointer", transition: "border-color 150ms ease, background-color 150ms ease" }}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /><rect x="14" y="14" width="7" height="7" />
+                    </svg>
+                    Batch
+                  </button>
+                  <button type="button" disabled
+                    style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "6px 0", borderRadius: 8, border: `1px solid color-mix(in srgb, ${text} 10%, transparent)`, backgroundColor: "transparent", color: `color-mix(in srgb, ${muted} 50%, transparent)`, fontSize: 11, fontWeight: 600, cursor: "not-allowed" }}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" />
+                    </svg>
+                    Import
+                  </button>
+                </div>
                 {[
                   { label: "Name", name: "name", type: "text", placeholder: "e.g. Netflix", required: addForm.category !== "TIPS", disabled: addForm.category === "TIPS" },
                   { label: "Amount", name: "amount", type: "number", placeholder: "$0.00", required: true },
@@ -539,7 +559,7 @@ export default function Dashboard() {
                   <div key={props.name}>
                     <p style={{ fontSize: 10, color: muted, marginBottom: 3, paddingLeft: 2 }}>{label}</p>
                     <input {...props} value={addForm[props.name]} onChange={handleAddChange} min={props.type === "number" ? "0.01" : undefined} step={props.type === "number" ? "0.01" : undefined}
-                      style={{ width: "100%", borderRadius: 7, padding: "6px 8px", fontSize: 12, border: `1px solid ${border}`, backgroundColor: bg, color: text, boxSizing: "border-box", outline: "none" }}
+                      style={{ width: "100%", borderRadius: 7, padding: "6px 8px", fontSize: 12, border: `1px solid ${border}`, backgroundColor: bg, backgroundImage: props.name === "name" && addForm.category === "TIPS" ? `repeating-linear-gradient(-45deg, transparent, transparent 4px, color-mix(in srgb, ${text} 6%, transparent) 4px, color-mix(in srgb, ${text} 6%, transparent) 6px)` : undefined, color: text, boxSizing: "border-box", outline: "none", opacity: props.name === "name" && addForm.category === "TIPS" ? 0.45 : 1, cursor: props.name === "name" && addForm.category === "TIPS" ? "not-allowed" : undefined }}
                     />
                   </div>
                 ))}
@@ -561,7 +581,7 @@ export default function Dashboard() {
                 </div>
                 {addError && <p style={{ fontSize: 11, color: "var(--category-expense)" }}>{addError}</p>}
                 <div style={{ display: "flex", gap: 6 }}>
-                  <button type="button" onClick={() => { setAddOpen(false); setAddError(""); }}
+                  <button type="button" onClick={() => { setAddMode(null); setAddError(""); }}
                     onMouseEnter={e => { e.currentTarget.style.backgroundColor = `color-mix(in srgb, ${text} 10%, transparent)`; }}
                     onMouseLeave={e => { e.currentTarget.style.backgroundColor = "transparent"; }}
                     style={{ flex: 1, padding: "7px 0", borderRadius: 8, border: `1px solid ${border}`, background: "transparent", color: muted, fontSize: 12, fontWeight: 600, cursor: "pointer", transition: "background-color 150ms ease" }}
@@ -639,10 +659,35 @@ export default function Dashboard() {
             </div>
           </div>
 
+          </div>
+
+          {/* Batch panel */}
+          <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", paddingTop: 84, opacity: addMode === "batch" ? 1 : 0, pointerEvents: addMode === "batch" ? "auto" : "none", transition: "opacity 200ms ease" }}>
+            <div style={{ padding: "12px 16px", borderBottom: `1px solid ${border}`, display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
+              <p style={{ fontSize: 13, fontWeight: 600, color: text, margin: 0 }}>Batch Add</p>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                {batchSaveState.saveStatus === "saved" && (
+                  <span style={{ fontSize: 11, color: "var(--category-income)" }}>Saved</span>
+                )}
+                <button
+                  onClick={batchSaveState.onSave}
+                  disabled={!batchSaveState.isDirty || batchSaveState.isSaving}
+                  style={{ padding: "5px 12px", borderRadius: 8, border: "1px solid var(--category-income)", color: "var(--category-income)", backgroundColor: "color-mix(in srgb, var(--category-income) 12%, transparent)", fontSize: 12, fontWeight: 600, cursor: batchSaveState.isDirty && !batchSaveState.isSaving ? "pointer" : "default", opacity: !batchSaveState.isDirty || batchSaveState.isSaving ? 0.4 : 1, transition: "opacity 150ms ease" }}
+                >
+                  {batchSaveState.isSaving ? "Adding…" : batchSaveState.validCount ? `Add ${batchSaveState.validCount} transaction${batchSaveState.validCount !== 1 ? "s" : ""}` : "Add transactions"}
+                </button>
+                <button onClick={() => setAddMode(null)} style={{ padding: 4, border: "none", background: "transparent", cursor: "pointer", color: muted, display: "flex" }}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                </button>
+              </div>
+            </div>
+            <BatchAddPanel active={addMode === "batch"} onSaveStateChange={setBatchSaveState} onSaved={refreshTransactions} />
+          </div>
+
         </aside>
 
         {/* ── Main content ── */}
-        <div style={{ marginLeft: 210 }}>
+        <div style={{ marginLeft: addMode === "batch" ? 460 : 210, transition: "margin-left 250ms ease" }}>
         <main className="px-6 py-6 space-y-5">
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {activeTab === "ALL" ? (
@@ -1075,6 +1120,7 @@ export default function Dashboard() {
           }}
         />
       )}
+
     </div>
   );
 }

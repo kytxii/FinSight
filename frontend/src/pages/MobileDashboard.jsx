@@ -258,6 +258,14 @@ function TransactionList({ items, total, page, setPage, perPage, setPerPage, acc
 
 // ── Main component ────────────────────────────────────────────────────────────
 
+const newBatchRow = () => ({
+  _key: Math.random(),
+  name: "",
+  amount: "",
+  category: "EXPENSE",
+  transaction_date: new Date().toLocaleDateString("en-CA"),
+});
+
 export default function MobileDashboard() {
   const dark = useTheme();
   const { logout, user } = useAuth();
@@ -311,6 +319,22 @@ export default function MobileDashboard() {
   const quickColor = `var(--category-${quickCat.toLowerCase()})`;
   const inputStyle = { backgroundColor: bg, borderColor: border, color: text };
 
+  const [batchSheetOpen, setBatchSheetOpen] = useState(false);
+  const [batchItems, setBatchItems] = useState(() => [newBatchRow()]);
+  const [batchLoading, setBatchLoading] = useState(false);
+  const [batchError, setBatchError] = useState("");
+  const [deletingKeys, setDeletingKeys] = useState([]);
+  const [enteringKey, setEnteringKey] = useState(null);
+  const batchListRef = useRef(null);
+
+  useEffect(() => {
+    if (!batchSheetOpen) {
+      setBatchItems([newBatchRow()]);
+      setBatchError("");
+      setDeletingKeys([]);
+    }
+  }, [batchSheetOpen]);
+
   const handleQuickSubmit = async (e) => {
     e.preventDefault();
     setQuickError("");
@@ -325,6 +349,32 @@ export default function MobileDashboard() {
       setQuickError(err.response?.data?.detail ?? "Something went wrong");
     } finally {
       setQuickLoading(false);
+    }
+  };
+
+  const handleBatchSubmit = async () => {
+    setBatchError("");
+    const invalid = batchItems.find(item =>
+      !item.amount || parseFloat(item.amount) <= 0 ||
+      (item.category !== "TIPS" && !item.name.trim())
+    );
+    if (invalid) { setBatchError("All rows need a name and amount"); return; }
+    setBatchLoading(true);
+    try {
+      await Promise.all(batchItems.map(item =>
+        createTransaction({
+          name: item.category === "TIPS" ? "Cash" : item.name.trim(),
+          amount: parseFloat(item.amount),
+          category: item.category,
+          transaction_date: item.transaction_date,
+        })
+      ));
+      setBatchSheetOpen(false);
+      refresh();
+    } catch (err) {
+      setBatchError(err.response?.data?.detail ?? "Something went wrong");
+    } finally {
+      setBatchLoading(false);
     }
   };
 
@@ -376,6 +426,7 @@ export default function MobileDashboard() {
     if (dragYRef.current > 80) {
       setAddSheetOpen(false);
       setEntrySheetOpen(false);
+      setBatchSheetOpen(false);
     }
     dragYRef.current = 0;
     setDragY(0);
@@ -499,9 +550,9 @@ export default function MobileDashboard() {
   useEffect(() => { setAnalyticsPage(1); }, [analyticsFiltered, analyticsPerPage]);
 
   useEffect(() => {
-    document.body.style.overflow = (addSheetOpen || entrySheetOpen) ? "hidden" : "";
+    document.body.style.overflow = (addSheetOpen || entrySheetOpen || batchSheetOpen) ? "hidden" : "";
     return () => { document.body.style.overflow = ""; };
-  }, [addSheetOpen, entrySheetOpen]);
+  }, [addSheetOpen, entrySheetOpen, batchSheetOpen]);
 
   const [keyboardOpen, setKeyboardOpen] = useState(false);
   useEffect(() => {
@@ -1051,18 +1102,33 @@ export default function MobileDashboard() {
           </div>
         </button>
         <button
-          className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl border text-left cursor-not-allowed opacity-50"
+          onClick={() => { setAddSheetOpen(false); setBatchSheetOpen(true); }}
+          className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl border text-left cursor-pointer active:scale-[0.97] transition-transform duration-150"
           style={{ backgroundColor: bg, borderColor: border, color: text }}
-          disabled
         >
-          <span style={{ color: muted }}>
+          <span style={{ color: "var(--category-income)" }}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <rect x="3" y="3" width="18" height="18" rx="2" /><line x1="3" y1="9" x2="21" y2="9" /><line x1="3" y1="15" x2="21" y2="15" /><line x1="9" y1="3" x2="9" y2="21" />
             </svg>
           </span>
           <div>
             <p className="text-sm font-semibold">Batch Add</p>
-            <p className="text-xs" style={{ color: muted }}>Coming soon</p>
+            <p className="text-xs" style={{ color: muted }}>Add multiple at once</p>
+          </div>
+        </button>
+        <button
+          className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl border text-left cursor-not-allowed opacity-50"
+          style={{ backgroundColor: bg, borderColor: border, color: text }}
+          disabled
+        >
+          <span style={{ color: muted }}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" />
+            </svg>
+          </span>
+          <div>
+            <p className="text-sm font-semibold">Import</p>
+            <p className="text-xs" style={{ color: muted }}>PDF, CSV — coming soon</p>
           </div>
         </button>
 
@@ -1144,7 +1210,7 @@ export default function MobileDashboard() {
                 required={quickCat !== "TIPS"}
                 disabled={quickCat === "TIPS"}
                 className="w-full rounded-xl px-4 py-2.5 text-sm border"
-                style={quickCat === "TIPS" ? { ...inputStyle, cursor: "not-allowed", opacity: 0.5 } : inputStyle}
+                style={quickCat === "TIPS" ? { ...inputStyle, cursor: "not-allowed", opacity: 0.45, backgroundImage: `repeating-linear-gradient(-45deg, transparent, transparent 4px, color-mix(in srgb, ${dark ? "var(--dark-text)" : "var(--light-text)"} 6%, transparent) 4px, color-mix(in srgb, ${dark ? "var(--dark-text)" : "var(--light-text)"} 6%, transparent) 6px)` } : inputStyle}
               />
               <div className="grid grid-cols-2 gap-3">
                 <input type="number" placeholder="0.00" value={quickForm.amount} onChange={(e) => setQuickForm((f) => ({ ...f, amount: e.target.value }))} required min="0.01" step="0.01" className="rounded-xl px-4 py-2.5 text-sm border" style={inputStyle} />
@@ -1162,6 +1228,142 @@ export default function MobileDashboard() {
             </form>
           </div>
         </div>
+
+      {/* ── Batch add overlay ── */}
+      <div
+        className="fixed inset-0 z-40"
+        style={{ backgroundColor: "rgba(0,0,0,0.5)", opacity: batchSheetOpen ? 1 : 0, pointerEvents: batchSheetOpen ? "auto" : "none", transition: "opacity 250ms ease" }}
+        onClick={() => setBatchSheetOpen(false)}
+      />
+
+      {/* ── Batch add sheet ── */}
+      <div
+        className="fixed bottom-0 left-0 right-0 z-50 rounded-t-2xl border-t border-x flex flex-col"
+        style={{
+          backgroundColor: surface, borderColor: border,
+          maxHeight: "85dvh",
+          paddingBottom: "env(safe-area-inset-bottom)",
+          transform: `translateY(${batchSheetOpen ? dragY : 100}${batchSheetOpen && dragY > 0 ? "" : "%"})`,
+          transition: dragY > 0 ? "none" : "transform 300ms cubic-bezier(0.32, 0.72, 0, 1)",
+        }}
+      >
+        <div
+          className="flex justify-center py-3 shrink-0"
+          onTouchStart={onSheetTouchStart}
+          onTouchMove={onSheetTouchMove}
+          onTouchEnd={onSheetTouchEnd}
+        >
+          <div className="w-10 h-1 rounded-full" style={{ backgroundColor: border }} />
+        </div>
+        <div className="px-5 pb-3 flex items-center justify-between border-b shrink-0" style={{ borderColor: border }}>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setBatchSheetOpen(false)} className="p-1 rounded-lg cursor-pointer active:scale-90 transition-transform duration-150" style={{ color: muted }}>
+              <IconChevronLeft />
+            </button>
+            <p className="text-sm font-semibold" style={{ color: text }}>
+              Batch Add <span style={{ color: muted, fontWeight: 400 }}>· {batchItems.length} rows</span>
+            </p>
+          </div>
+          <button
+            onClick={handleBatchSubmit}
+            disabled={batchLoading}
+            className="px-4 py-1.5 rounded-xl text-xs font-bold border cursor-pointer disabled:opacity-50 active:scale-95 transition-transform duration-150"
+            style={{ color: "var(--category-income)", borderColor: "var(--category-income)", backgroundColor: "color-mix(in srgb, var(--category-income) 12%, transparent)" }}
+          >
+            {batchLoading ? "Adding…" : (() => { const n = batchItems.filter(r => parseFloat(r.amount) > 0 && (r.category === "TIPS" || r.name.trim())).length; return n ? `Add ${n} transaction${n === 1 ? "" : "s"}` : "Add transactions"; })()}
+          </button>
+        </div>
+        <div ref={batchListRef} className="flex-1 overflow-y-auto px-4 py-3">
+          {batchItems.map((item, idx) => {
+            const catColor = `var(--category-${item.category.toLowerCase()})`;
+            return (
+              <div key={item._key} style={{ maxHeight: deletingKeys.includes(item._key) || enteringKey === item._key ? 0 : 130, overflow: "hidden", marginBottom: deletingKeys.includes(item._key) || enteringKey === item._key ? 0 : 8, transition: deletingKeys.includes(item._key) ? "max-height 350ms ease, margin-bottom 350ms ease" : "max-height 220ms ease, margin-bottom 220ms ease" }}>
+              <div className="rounded-xl border p-3 flex flex-col gap-2" style={{ borderColor: border, backgroundColor: bg, transform: deletingKeys.includes(item._key) ? "translateX(60px)" : "translateX(0)", opacity: deletingKeys.includes(item._key) ? 0 : 1, transition: "transform 350ms ease, opacity 250ms ease" }}>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold shrink-0 w-5 text-center" style={{ color: muted }}>{idx + 1}</span>
+                  <select
+                    value={item.category}
+                    onChange={(e) => setBatchItems(prev => prev.map((r, i) => i === idx ? { ...r, category: e.target.value, name: e.target.value === "TIPS" ? "Cash" : r.name } : r))}
+                    className="flex-1 rounded-lg px-2 py-1.5 text-xs font-semibold border cursor-pointer"
+                    style={{ color: catColor, borderColor: catColor, backgroundColor: `color-mix(in srgb, ${catColor} 10%, transparent)`, colorScheme: dark ? "dark" : "light" }}
+                  >
+                    {Object.entries(CATEGORY_CONFIG).map(([key, cfg]) => (
+                      <option key={key} value={key} style={{ backgroundColor: bg, color: text }}>{cfg.label}</option>
+                    ))}
+                  </select>
+                  <button
+                    onClick={() => {
+                      setDeletingKeys(prev => [...prev, item._key]);
+                      setTimeout(() => {
+                        setBatchItems(prev => prev.filter(r => r._key !== item._key));
+                        setDeletingKeys(prev => prev.filter(k => k !== item._key));
+                      }, 350);
+                    }}
+                    className="p-1 rounded-lg cursor-pointer shrink-0"
+                    style={{ color: muted }}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M18 6 6 18M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="Name"
+                    value={item.category === "TIPS" ? "Cash" : item.name}
+                    onChange={(e) => item.category !== "TIPS" && setBatchItems(prev => prev.map((r, i) => i === idx ? { ...r, name: e.target.value } : r))}
+                    disabled={item.category === "TIPS"}
+                    className="flex-1 rounded-lg px-2 py-1.5 text-xs border min-w-0"
+                    style={{ backgroundColor: surface, borderColor: border, color: text, opacity: item.category === "TIPS" ? 0.45 : 1, cursor: item.category === "TIPS" ? "not-allowed" : undefined, backgroundImage: item.category === "TIPS" ? `repeating-linear-gradient(-45deg, transparent, transparent 4px, color-mix(in srgb, ${text} 6%, transparent) 4px, color-mix(in srgb, ${text} 6%, transparent) 6px)` : undefined }}
+                  />
+                  <input
+                    type="number"
+                    placeholder="0.00"
+                    value={item.amount}
+                    onChange={(e) => setBatchItems(prev => prev.map((r, i) => i === idx ? { ...r, amount: e.target.value } : r))}
+                    min="0.01"
+                    step="0.01"
+                    className="rounded-lg px-2 py-1.5 text-xs border"
+                    style={{ width: 72, backgroundColor: surface, borderColor: border, color: text }}
+                  />
+                  <input
+                    type="date"
+                    value={item.transaction_date}
+                    onChange={(e) => setBatchItems(prev => prev.map((r, i) => i === idx ? { ...r, transaction_date: e.target.value } : r))}
+                    className="rounded-lg px-2 py-1.5 text-xs border"
+                    style={{ width: 112, backgroundColor: surface, borderColor: border, color: text, colorScheme: dark ? "dark" : "light" }}
+                  />
+                </div>
+              </div>
+              </div>
+            );
+          })}
+        </div>
+        <div className="px-4 py-3 border-t shrink-0" style={{ borderColor: border }}>
+          {batchError && <p className="text-xs mb-2" style={{ color: "var(--category-expense)" }}>{batchError}</p>}
+          <button
+            onClick={() => {
+              const row = newBatchRow();
+              setBatchItems(prev => [...prev, row]);
+              setEnteringKey(row._key);
+              requestAnimationFrame(() => requestAnimationFrame(() => {
+                setEnteringKey(null);
+                const start = performance.now();
+                const track = () => {
+                  if (batchListRef.current) batchListRef.current.scrollTop = batchListRef.current.scrollHeight;
+                  if (performance.now() - start < 260) requestAnimationFrame(track);
+                };
+                requestAnimationFrame(track);
+              }));
+            }}
+            className="w-full py-2.5 rounded-xl text-sm font-semibold border cursor-pointer active:scale-95 transition-transform duration-150"
+            style={{ color: muted, borderColor: border, backgroundColor: `color-mix(in srgb, ${text} 5%, transparent)` }}
+          >
+            + Add row
+          </button>
+        </div>
+      </div>
 
       {/* ── Drawer overlay ── */}
       {(drawerOpen || accountOpen) && <div className="fixed inset-0 z-40" style={{ backgroundColor: "rgba(0,0,0,0.4)" }} onClick={() => { setDrawerOpen(false); setAccountOpen(false); }} />}
