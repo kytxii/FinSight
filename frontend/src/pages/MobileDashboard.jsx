@@ -775,17 +775,12 @@ export default function MobileDashboard() {
                   {!analyticsPreset && <option value="custom" disabled style={{ backgroundColor: bg, color: text }}>Custom</option>}
                 </select>
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                {[
-                  { label: "From", val: analyticsFromVal, onChange: (v) => { setAnalyticsFromVal(v); setAnalyticsPreset(null); setAnalyticsDateRange((r) => ({ ...r, from: v ? new Date(v + "T00:00:00") : null })); } },
-                  { label: "To", val: analyticsToVal, onChange: (v) => { setAnalyticsToVal(v); setAnalyticsPreset(null); setAnalyticsDateRange((r) => ({ ...r, to: v ? new Date(v + "T23:59:59") : null })); } },
-                ].map(({ label, val, onChange }) => (
-                  <div key={label} className="flex items-center gap-2 min-w-0">
-                    <span className="text-[10px] uppercase font-bold shrink-0" style={{ color: muted }}>{label}</span>
-                    <input type="date" value={val} onChange={(e) => onChange(e.target.value)} className="flex-1 rounded-xl px-2 py-2 text-[10px] font-semibold border min-w-0"
-                      style={{ backgroundColor: dark ? "var(--dark-bg)" : "var(--light-surface)", borderColor: border, color: text, colorScheme: dark ? "dark" : "light" }} />
-                  </div>
-                ))}
+              <div className="flex items-center gap-2">
+                <input type="date" value={analyticsFromVal} onChange={(e) => { setAnalyticsFromVal(e.target.value); setAnalyticsPreset(null); setAnalyticsDateRange((r) => ({ ...r, from: e.target.value ? new Date(e.target.value + "T00:00:00") : null })); }} className="flex-1 rounded-xl px-2 py-2 text-[10px] font-semibold border min-w-0"
+                  style={{ backgroundColor: dark ? "var(--dark-bg)" : "var(--light-surface)", borderColor: border, color: text, colorScheme: dark ? "dark" : "light" }} />
+                <span className="text-[10px] uppercase font-bold shrink-0" style={{ color: muted }}>to</span>
+                <input type="date" value={analyticsToVal} onChange={(e) => { setAnalyticsToVal(e.target.value); setAnalyticsPreset(null); setAnalyticsDateRange((r) => ({ ...r, to: e.target.value ? new Date(e.target.value + "T23:59:59") : null })); }} className="flex-1 rounded-xl px-2 py-2 text-[10px] font-semibold border min-w-0"
+                  style={{ backgroundColor: dark ? "var(--dark-bg)" : "var(--light-surface)", borderColor: border, color: text, colorScheme: dark ? "dark" : "light" }} />
               </div>
             </div>
 
