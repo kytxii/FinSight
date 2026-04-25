@@ -14,7 +14,7 @@ function isDraftValid(d) {
     !!d.transaction_date;
 }
 
-export default function BatchAddPanel({ active, onSaveStateChange, onSaved }) {
+export default function BatchAddPanel({ active, onSaveStateChange, onSaved, onCancel }) {
   const dark   = useTheme();
   const bg     = dark ? "var(--dark-surface)" : "var(--light-surface)";
   const border = dark ? "var(--dark-border)"  : "var(--light-border)";
@@ -25,25 +25,31 @@ export default function BatchAddPanel({ active, onSaveStateChange, onSaved }) {
   const [drafts, setDrafts]         = useState(() => [newDraft()]);
   const [isSaving, setIsSaving]     = useState(false);
   const [saveStatus, setSaveStatus] = useState("idle");
+  const [sendingLids, setSendingLids] = useState([]);
 
   const isDirty = drafts.some(isDraftValid);
 
   const handleSave = async () => {
     if (isSaving || !isDirty) return;
     setIsSaving(true);
+    const valid = drafts.filter(isDraftValid);
+    setSendingLids(valid.map(d => d._lid));
     try {
-      const valid = drafts.filter(isDraftValid);
-      await Promise.all(valid.map(d => createTransaction({
-        name: d.category === "TIPS" ? "Cash" : d.name.trim(),
-        amount: parseFloat(d.amount),
-        category: d.category,
-        transaction_date: d.transaction_date,
-      })));
-      setDrafts(prev => prev.filter(d => !isDraftValid(d)));
+      await Promise.all([
+        Promise.all(valid.map(d => createTransaction({
+          name: d.category === "TIPS" ? "Cash" : d.name.trim(),
+          amount: parseFloat(d.amount),
+          category: d.category,
+          transaction_date: d.transaction_date,
+        }))),
+        new Promise(r => setTimeout(r, 420 + (valid.length - 1) * 80)),
+      ]);
+      setSendingLids([]);
+      setDrafts(prev => { const remaining = prev.filter(d => !isDraftValid(d)); return remaining.length > 0 ? remaining : [newDraft()]; });
       setSaveStatus("saved");
       setTimeout(() => setSaveStatus("idle"), 2500);
       onSaved?.();
-    } catch {}
+    } catch { setSendingLids([]); }
     finally { setIsSaving(false); }
   };
 
@@ -54,7 +60,8 @@ export default function BatchAddPanel({ active, onSaveStateChange, onSaved }) {
     onSaveStateChange?.({ isDirty, isSaving, saveStatus, validCount, onSave: handleSave });
   }, [active, isDirty, isSaving, saveStatus, drafts]);
 
-  const showAddRow = drafts.length === 0 || isDraftValid(drafts[drafts.length - 1]);
+  const MAX_ROWS = 20;
+  const showAddRow = drafts.length < MAX_ROWS && (drafts.length === 0 || isDraftValid(drafts[drafts.length - 1]));
 
   const COLS = [
     { field: "name",             label: "Name",     width: "27%" },
@@ -80,6 +87,10 @@ export default function BatchAddPanel({ active, onSaveStateChange, onSaved }) {
         @keyframes bp-pill-pop {
           0%   { transform: scale(0.88); opacity: 0.6; }
           100% { transform: scale(1);    opacity: 1;   }
+        }
+        @keyframes bp-row-send {
+          from { opacity: 1; transform: translateX(0); }
+          to   { opacity: 0; transform: translateX(22px); }
         }
       `}</style>
 
@@ -113,7 +124,7 @@ export default function BatchAddPanel({ active, onSaveStateChange, onSaved }) {
               const isLast    = idx === drafts.length - 1;
               const catColor  = `var(--category-${d.category.toLowerCase()})`;
               return (
-                <tr key={d._lid} style={{ borderBottom: `1px solid ${border}`, backgroundColor: faint, animation: "bp-row-in 0.2s ease-out" }}>
+                <tr key={d._lid} style={{ borderBottom: `1px solid ${border}`, backgroundColor: faint, animation: sendingLids.includes(d._lid) ? `bp-row-send 0.38s ease-in-out ${sendingLids.indexOf(d._lid) * 80}ms both` : "bp-row-in 0.2s ease-out" }}>
                   <td style={{ ...tdStyle(false, true), ...(d.category === "TIPS" ? { backgroundImage: `repeating-linear-gradient(-45deg, transparent, transparent 4px, color-mix(in srgb, ${text} 6%, transparent) 4px, color-mix(in srgb, ${text} 6%, transparent) 6px)`, cursor: "not-allowed" } : {}) }}>
                     <input
                       autoFocus={isLast && d.category !== "TIPS"}
@@ -210,8 +221,18 @@ export default function BatchAddPanel({ active, onSaveStateChange, onSaved }) {
         </table>
       </div>
 
-      <div style={{ padding: "8px 16px", borderTop: `1px solid ${border}`, display: "flex", alignItems: "center", justifyContent: "flex-end", flexShrink: 0 }}>
-        <span style={{ fontSize: "11px", color: muted }}>{drafts.length} {drafts.length === 1 ? "row" : "rows"}</span>
+      <div style={{ padding: "8px 16px", borderTop: `1px solid ${border}`, display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
+        {onCancel && (
+          <button
+            onClick={onCancel}
+            onMouseEnter={e => { e.currentTarget.style.backgroundColor = `color-mix(in srgb, ${text} 8%, transparent)`; e.currentTarget.style.borderColor = `color-mix(in srgb, ${text} 30%, transparent)`; e.currentTarget.style.color = text; }}
+            onMouseLeave={e => { e.currentTarget.style.backgroundColor = "transparent"; e.currentTarget.style.borderColor = `color-mix(in srgb, ${text} 15%, transparent)`; e.currentTarget.style.color = muted; }}
+            style={{ padding: "4px 12px", borderRadius: 7, border: `1px solid color-mix(in srgb, ${text} 15%, transparent)`, background: "transparent", cursor: "pointer", fontSize: "12px", fontWeight: 600, color: muted, transition: "background-color 150ms ease, border-color 150ms ease, color 150ms ease" }}
+          >
+            Cancel
+          </button>
+        )}
+        <span style={{ fontSize: "11px", color: muted, marginLeft: "auto" }}>{drafts.length} / {MAX_ROWS} rows</span>
       </div>
     </div>
   );

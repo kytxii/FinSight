@@ -493,7 +493,7 @@ export default function Dashboard() {
           overflow: "hidden",
           transition: "width 250ms ease",
         }}>
-          <div style={{ position: "absolute", inset: 0, overflowY: "auto", padding: "20px 10px", paddingTop: 84, display: "flex", flexDirection: "column", gap: 28, opacity: addMode === "batch" ? 0 : 1, pointerEvents: addMode === "batch" ? "none" : "auto", transition: "opacity 200ms ease" }}>
+          <div style={{ position: "absolute", inset: 0, overflowY: "auto", padding: "20px 10px", paddingTop: 96, display: "flex", flexDirection: "column", gap: 28, opacity: addMode === "batch" ? 0 : 1, pointerEvents: addMode === "batch" ? "none" : "auto", transition: "opacity 200ms ease" }}>
 
           {/* Add / inline form */}
           <div ref={addFormRef}>
@@ -670,7 +670,7 @@ export default function Dashboard() {
           {/* Batch panel */}
           <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", paddingTop: 84, opacity: addMode === "batch" ? 1 : 0, pointerEvents: addMode === "batch" ? "auto" : "none", transition: "opacity 200ms ease" }}>
             <div style={{ padding: "12px 16px", borderBottom: `1px solid ${border}`, display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
-              <p style={{ fontSize: 13, fontWeight: 600, color: text, margin: 0 }}>Batch Add</p>
+              <p style={{ fontSize: 16, fontWeight: 700, color: text, margin: 0 }}>Batch Transactions</p>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                 {batchSaveState.saveStatus === "saved" && (
                   <span style={{ fontSize: 11, color: "var(--category-income)" }}>Saved</span>
@@ -682,12 +682,9 @@ export default function Dashboard() {
                 >
                   {batchSaveState.isSaving ? "Adding…" : batchSaveState.validCount ? `Add ${batchSaveState.validCount} transaction${batchSaveState.validCount !== 1 ? "s" : ""}` : "Add transactions"}
                 </button>
-                <button onClick={() => setAddMode(null)} style={{ padding: 4, border: "none", background: "transparent", cursor: "pointer", color: muted, display: "flex" }}>
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
-                </button>
               </div>
             </div>
-            <BatchAddPanel active={addMode === "batch"} onSaveStateChange={setBatchSaveState} onSaved={refreshTransactions} />
+            <BatchAddPanel active={addMode === "batch"} onSaveStateChange={setBatchSaveState} onSaved={() => { refreshTransactions(); setAddMode(null); }} onCancel={() => setAddMode(null)} />
           </div>
 
         </aside>
