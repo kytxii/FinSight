@@ -1,13 +1,38 @@
-import { useState, useEffect, useMemo, useCallback, useRef, useTransition } from "react";
+import {
+  useState,
+  useEffect,
+  useMemo,
+  useCallback,
+  useRef,
+  useTransition,
+} from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  PieChart, Pie, Cell, Tooltip, ResponsiveContainer,
-  BarChart, Bar, XAxis, YAxis, CartesianGrid,
-  AreaChart, Area,
+  PieChart,
+  Pie,
+  Cell,
+  Tooltip,
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  AreaChart,
+  Area,
 } from "recharts";
-import { getTransactions, createTransaction, deleteTransaction } from "../api/transactions";
+import {
+  getTransactions,
+  createTransaction,
+  deleteTransaction,
+} from "../api/transactions";
 import EditTransactionModal from "../components/EditTransactionModal";
-import { CATEGORIES, CATEGORY_CONFIG, INCOME_TYPES, fmt } from "../utils/finance";
+import {
+  CATEGORIES,
+  CATEGORY_CONFIG,
+  INCOME_TYPES,
+  fmt,
+} from "../utils/finance";
 import { useTheme } from "../hooks/useTheme";
 import { useAuth } from "../context/AuthContext";
 import { PRESETS, getPresetRange } from "../components/DateRangeFilter";
@@ -20,7 +45,16 @@ import AccountPanel from "../components/AccountPanel";
 
 function IconDashboard({ size = 20 }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <rect x="3" y="3" width="7" height="7" rx="1" />
       <rect x="14" y="3" width="7" height="7" rx="1" />
       <rect x="3" y="14" width="7" height="7" rx="1" />
@@ -31,7 +65,16 @@ function IconDashboard({ size = 20 }) {
 
 function IconAnalytics({ size = 20 }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <line x1="18" y1="20" x2="18" y2="10" />
       <line x1="12" y1="20" x2="12" y2="4" />
       <line x1="6" y1="20" x2="6" y2="14" />
@@ -41,7 +84,16 @@ function IconAnalytics({ size = 20 }) {
 
 function IconPlus({ size = 24 }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <line x1="12" y1="5" x2="12" y2="19" />
       <line x1="5" y1="12" x2="19" y2="12" />
     </svg>
@@ -50,7 +102,16 @@ function IconPlus({ size = 24 }) {
 
 function IconAI({ size = 20 }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" />
     </svg>
   );
@@ -58,7 +119,16 @@ function IconAI({ size = 20 }) {
 
 function IconMore({ size = 20 }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <line x1="3" y1="6" x2="21" y2="6" />
       <line x1="3" y1="12" x2="21" y2="12" />
       <line x1="3" y1="18" x2="21" y2="18" />
@@ -68,7 +138,16 @@ function IconMore({ size = 20 }) {
 
 function IconChevronLeft({ size = 16 }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
       <path d="M15 18l-6-6 6-6" />
     </svg>
   );
@@ -78,7 +157,17 @@ function IconChevronLeft({ size = 16 }) {
 
 const REVEAL_W = 130;
 
-function SwipeableRow({ id, openId, setOpenId, onEdit, onDelete, border, surface, text, children }) {
+function SwipeableRow({
+  id,
+  openId,
+  setOpenId,
+  onEdit,
+  onDelete,
+  border,
+  surface,
+  text,
+  children,
+}) {
   const contentRef = useRef(null);
   const startXRef = useRef(0);
   const startYRef = useRef(0);
@@ -89,19 +178,24 @@ function SwipeableRow({ id, openId, setOpenId, onEdit, onDelete, border, surface
 
   const setTransform = (x) => {
     currentOffsetRef.current = x;
-    if (contentRef.current) contentRef.current.style.transform = `translateX(${x}px)`;
+    if (contentRef.current)
+      contentRef.current.style.transform = `translateX(${x}px)`;
   };
 
   const animateTo = (x) => {
     if (!contentRef.current) return;
     contentRef.current.style.transition = "transform 0.22s ease";
     setTransform(x);
-    setTimeout(() => { if (contentRef.current) contentRef.current.style.transition = "none"; }, 220);
+    setTimeout(() => {
+      if (contentRef.current) contentRef.current.style.transition = "none";
+    }, 220);
   };
 
   const snapTo = (target) => {
     animateTo(target);
-    setOpenId(target === -REVEAL_W ? id : (prev) => (prev === id ? null : prev));
+    setOpenId(
+      target === -REVEAL_W ? id : (prev) => (prev === id ? null : prev),
+    );
   };
 
   // Close when another row opens
@@ -122,7 +216,9 @@ function SwipeableRow({ id, openId, setOpenId, onEdit, onDelete, border, surface
         movedRef.current = true;
       }
       e.preventDefault();
-      setTransform(Math.max(-REVEAL_W, Math.min(0, startOffsetRef.current + dx)));
+      setTransform(
+        Math.max(-REVEAL_W, Math.min(0, startOffsetRef.current + dx)),
+      );
     };
     el.addEventListener("touchmove", onMove, { passive: false });
     return () => el.removeEventListener("touchmove", onMove);
@@ -142,26 +238,98 @@ function SwipeableRow({ id, openId, setOpenId, onEdit, onDelete, border, surface
   };
 
   return (
-    <div style={{ position: "relative", overflow: "hidden", borderTop: `1px solid ${border}`, zIndex: isOpen ? 10 : "auto" }}>
-      <div style={{ position: "absolute", right: 0, top: 0, bottom: 0, width: REVEAL_W, display: "flex", backgroundColor: `color-mix(in srgb, ${surface} 80%, #888)` }}>
+    <div
+      style={{
+        position: "relative",
+        overflow: "hidden",
+        borderTop: `1px solid ${border}`,
+        zIndex: isOpen ? 10 : "auto",
+      }}
+    >
+      <div
+        style={{
+          position: "absolute",
+          right: 0,
+          top: 0,
+          bottom: 0,
+          width: REVEAL_W,
+          display: "flex",
+          backgroundColor: `color-mix(in srgb, ${surface} 80%, #888)`,
+        }}
+      >
         <button
-          onClick={() => { snapTo(0); onEdit(); }}
-          style={{ flex: 1, background: "transparent", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: text }}
+          onClick={() => {
+            snapTo(0);
+            onEdit();
+          }}
+          style={{
+            flex: 1,
+            background: "transparent",
+            border: "none",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            color: text,
+          }}
         >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          <svg
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+          </svg>
         </button>
         <button
-          onClick={() => { snapTo(0); onDelete(); }}
-          style={{ flex: 1, background: "transparent", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--category-expense)" }}
+          onClick={() => {
+            snapTo(0);
+            onDelete();
+          }}
+          style={{
+            flex: 1,
+            background: "transparent",
+            border: "none",
+            cursor: "pointer",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            color: "var(--category-expense)",
+          }}
         >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+          <svg
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          >
+            <polyline points="3 6 5 6 21 6" />
+            <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+            <path d="M10 11v6M14 11v6" />
+            <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+          </svg>
         </button>
       </div>
       <div
         ref={contentRef}
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
-        style={{ transform: "translateX(0)", position: "relative", zIndex: 1, willChange: "transform" }}
+        style={{
+          transform: "translateX(0)",
+          position: "relative",
+          zIndex: 1,
+          willChange: "transform",
+        }}
       >
         {children}
       </div>
@@ -171,12 +339,29 @@ function SwipeableRow({ id, openId, setOpenId, onEdit, onDelete, border, surface
 
 // ── Transaction list shared component ────────────────────────────────────────
 
-function TransactionList({ items, total, page, setPage, perPage, setPerPage, accentColor, highlightId, text, muted, border, surface, onEdit, onDelete }) {
+function TransactionList({
+  items,
+  total,
+  page,
+  setPage,
+  perPage,
+  setPerPage,
+  accentColor,
+  highlightId,
+  text,
+  muted,
+  border,
+  surface,
+  onEdit,
+  onDelete,
+}) {
   const [openId, setOpenId] = useState(null);
 
   if (total === 0) {
     return (
-      <p className="px-4 py-8 text-center text-sm" style={{ color: muted }}>No transactions</p>
+      <p className="px-4 py-8 text-center text-sm" style={{ color: muted }}>
+        No transactions
+      </p>
     );
   }
   return (
@@ -205,30 +390,58 @@ function TransactionList({ items, total, page, setPage, perPage, setPerPage, acc
             <div
               className="px-4 py-3 flex items-center gap-3"
               style={{
-                backgroundColor: t.id === highlightId
-                  ? `color-mix(in srgb, var(--category-${t.category.toLowerCase()}) 12%, transparent)`
-                  : surface,
+                backgroundColor:
+                  t.id === highlightId
+                    ? `color-mix(in srgb, var(--category-${t.category.toLowerCase()}) 12%, transparent)`
+                    : surface,
                 transition: "background-color 0.6s ease",
               }}
             >
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium truncate" style={{ color: text }}>{t.name}</p>
+                <p
+                  className="text-sm font-medium truncate"
+                  style={{ color: text }}
+                >
+                  {t.name}
+                </p>
                 <p className="text-xs" style={{ color: muted }}>
-                  <span className="font-medium" style={{ color: `var(--category-${t.category.toLowerCase()})` }}>
+                  <span
+                    className="font-medium"
+                    style={{
+                      color: `var(--category-${t.category.toLowerCase()})`,
+                    }}
+                  >
                     {CATEGORY_CONFIG[t.category]?.label}
                   </span>
                   {" · "}
-                  {new Date(t.transaction_date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                  {new Date(
+                    t.transaction_date + "T00:00:00",
+                  ).toLocaleDateString("en-US", {
+                    month: "short",
+                    day: "numeric",
+                    year: "numeric",
+                  })}
                 </p>
               </div>
-              <p className="text-sm font-bold shrink-0" style={{ color: isIncome ? "var(--category-income)" : "var(--category-expense)" }}>
-                {isIncome ? "+" : "-"}{fmt(t.amount)}
+              <p
+                className="text-sm font-bold shrink-0"
+                style={{
+                  color: isIncome
+                    ? "var(--category-income)"
+                    : "var(--category-expense)",
+                }}
+              >
+                {isIncome ? "+" : "-"}
+                {fmt(t.amount)}
               </p>
             </div>
           </SwipeableRow>
         );
       })}
-      <div className="px-4 py-3 border-t flex items-center justify-between text-xs" style={{ borderColor: border, color: muted }}>
+      <div
+        className="px-4 py-3 border-t flex items-center justify-between text-xs"
+        style={{ borderColor: border, color: muted }}
+      >
         <div className="flex items-center gap-2">
           <span>Rows:</span>
           {[10, 20, 50].map((n) => (
@@ -239,7 +452,10 @@ function TransactionList({ items, total, page, setPage, perPage, setPerPage, acc
               style={{
                 color: perPage === n ? accentColor : muted,
                 borderColor: perPage === n ? accentColor : border,
-                backgroundColor: perPage === n ? `color-mix(in srgb, ${accentColor} 12%, transparent)` : "transparent",
+                backgroundColor:
+                  perPage === n
+                    ? `color-mix(in srgb, ${accentColor} 12%, transparent)`
+                    : "transparent",
               }}
             >
               {n}
@@ -247,9 +463,26 @@ function TransactionList({ items, total, page, setPage, perPage, setPerPage, acc
           ))}
         </div>
         <div className="flex items-center gap-2">
-          <span>{`${(page - 1) * perPage + 1}–${Math.min(page * perPage, total)}`} of {total}</span>
-          <button onClick={() => setPage(page - 1)} disabled={page === 1} className="px-3 py-2 rounded-lg border font-semibold cursor-pointer disabled:opacity-30" style={{ color: muted, borderColor: border }}>←</button>
-          <button onClick={() => setPage(page + 1)} disabled={page * perPage >= total} className="px-3 py-2 rounded-lg border font-semibold cursor-pointer disabled:opacity-30" style={{ color: muted, borderColor: border }}>→</button>
+          <span>
+            {`${(page - 1) * perPage + 1}–${Math.min(page * perPage, total)}`}{" "}
+            of {total}
+          </span>
+          <button
+            onClick={() => setPage(page - 1)}
+            disabled={page === 1}
+            className="px-3 py-2 rounded-lg border font-semibold cursor-pointer disabled:opacity-30"
+            style={{ color: muted, borderColor: border }}
+          >
+            ←
+          </button>
+          <button
+            onClick={() => setPage(page + 1)}
+            disabled={page * perPage >= total}
+            className="px-3 py-2 rounded-lg border font-semibold cursor-pointer disabled:opacity-30"
+            style={{ color: muted, borderColor: border }}
+          >
+            →
+          </button>
         </div>
       </div>
     </>
@@ -285,15 +518,28 @@ export default function MobileDashboard() {
   // ── Drawer / Recurring / Account
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [recurringOpen, setRecurringOpen] = useState(false);
-  const [rpSave, setRpSave] = useState({ isDirty: false, isSaving: false, onSave: null });
+  const [rpSave, setRpSave] = useState({
+    isDirty: false,
+    isSaving: false,
+    onSave: null,
+  });
   const [accountOpen, setAccountOpen] = useState(false);
-  const [acctSave, setAcctSave] = useState({ isDirty: false, isSaving: false, saveStatus: null, onSave: null });
+  const [acctSave, setAcctSave] = useState({
+    isDirty: false,
+    isSaving: false,
+    saveStatus: null,
+    onSave: null,
+  });
 
   // ── Data
   const [transactions, setTransactions] = useState([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    getTransactions().then((res) => setTransactions(res.data));
+    getTransactions().then((res) => {
+      setTransactions(res.data);
+      setLoading(false);
+    });
   }, []);
 
   function refresh() {
@@ -340,7 +586,11 @@ export default function MobileDashboard() {
     setQuickError("");
     setQuickLoading(true);
     try {
-      await createTransaction({ ...quickForm, category: quickCat, amount: parseFloat(quickForm.amount) });
+      await createTransaction({
+        ...quickForm,
+        category: quickCat,
+        amount: parseFloat(quickForm.amount),
+      });
       setQuickForm((f) => ({ ...f, name: "", amount: "" }));
       setEntrySheetOpen(false);
       setAddSheetOpen(false);
@@ -354,21 +604,28 @@ export default function MobileDashboard() {
 
   const handleBatchSubmit = async () => {
     setBatchError("");
-    const invalid = batchItems.find(item =>
-      !item.amount || parseFloat(item.amount) <= 0 ||
-      (item.category !== "TIPS" && !item.name.trim())
+    const invalid = batchItems.find(
+      (item) =>
+        !item.amount ||
+        parseFloat(item.amount) <= 0 ||
+        (item.category !== "TIPS" && !item.name.trim()),
     );
-    if (invalid) { setBatchError("All rows need a name and amount"); return; }
+    if (invalid) {
+      setBatchError("All rows need a name and amount");
+      return;
+    }
     setBatchLoading(true);
     try {
-      await Promise.all(batchItems.map(item =>
-        createTransaction({
-          name: item.category === "TIPS" ? "Cash" : item.name.trim(),
-          amount: parseFloat(item.amount),
-          category: item.category,
-          transaction_date: item.transaction_date,
-        })
-      ));
+      await Promise.all(
+        batchItems.map((item) =>
+          createTransaction({
+            name: item.category === "TIPS" ? "Cash" : item.name.trim(),
+            amount: parseFloat(item.amount),
+            category: item.category,
+            transaction_date: item.transaction_date,
+          }),
+        ),
+      );
       setBatchSheetOpen(false);
       refresh();
     } catch (err) {
@@ -380,7 +637,9 @@ export default function MobileDashboard() {
 
   // ── Dashboard state (always ALL)
   const [dashPreset, setDashPreset] = useState("Current Month");
-  const [dashDateRange, setDashDateRange] = useState(() => getPresetRange("Current Month"));
+  const [dashDateRange, setDashDateRange] = useState(() =>
+    getPresetRange("Current Month"),
+  );
   const [isDashPending, startDashTransition] = useTransition();
   const [dashPage, setDashPage] = useState(1);
   const [dashPerPage, setDashPerPage] = useState(10);
@@ -390,7 +649,9 @@ export default function MobileDashboard() {
   const [analyticsPreset, setAnalyticsPreset] = useState("Current Month");
   const [analyticsFromVal, setAnalyticsFromVal] = useState("");
   const [analyticsToVal, setAnalyticsToVal] = useState("");
-  const [analyticsDateRange, setAnalyticsDateRange] = useState(() => getPresetRange("Current Month"));
+  const [analyticsDateRange, setAnalyticsDateRange] = useState(() =>
+    getPresetRange("Current Month"),
+  );
   const [analyticsPage, setAnalyticsPage] = useState(1);
   const [analyticsPerPage, setAnalyticsPerPage] = useState(10);
   const [analyticsAmountSort, setAnalyticsAmountSort] = useState(null);
@@ -441,12 +702,20 @@ export default function MobileDashboard() {
   };
 
   const handleSearchKeyDown = (e) => {
-    if (e.key === "Escape") { setSearchOpen(false); setQuery(""); setDebouncedQuery(""); }
+    if (e.key === "Escape") {
+      setSearchOpen(false);
+      setQuery("");
+      setDebouncedQuery("");
+    }
   };
 
   useEffect(() => {
     function onMouseDown(e) {
-      if (searchContainerRef.current && !searchContainerRef.current.contains(e.target)) setSearchOpen(false);
+      if (
+        searchContainerRef.current &&
+        !searchContainerRef.current.contains(e.target)
+      )
+        setSearchOpen(false);
     }
     document.addEventListener("mousedown", onMouseDown);
     return () => document.removeEventListener("mousedown", onMouseDown);
@@ -456,25 +725,42 @@ export default function MobileDashboard() {
     const q = debouncedQuery.trim().toLowerCase();
     if (!q) return [];
     return transactions
-      .filter((t) =>
-        t.name?.toLowerCase().includes(q) ||
-        t.category?.toLowerCase().includes(q) ||
-        (CATEGORY_CONFIG[t.category]?.label ?? "").toLowerCase().includes(q) ||
-        String(t.amount).includes(q)
+      .filter(
+        (t) =>
+          t.name?.toLowerCase().includes(q) ||
+          t.category?.toLowerCase().includes(q) ||
+          (CATEGORY_CONFIG[t.category]?.label ?? "")
+            .toLowerCase()
+            .includes(q) ||
+          String(t.amount).includes(q),
       )
       .slice(0, 5);
   }, [debouncedQuery, transactions]);
 
-  const handleSelectTransaction = useCallback((t) => {
-    setQuery(""); setDebouncedQuery(""); setSearchOpen(false);
-    setNavTab("dashboard");
-    const allSorted = [...transactions].sort((a, b) => new Date(b.transaction_date) - new Date(a.transaction_date));
-    const idx = allSorted.findIndex((tx) => tx.id === t.id);
-    if (idx !== -1) setDashPage(Math.ceil((idx + 1) / dashPerPage));
-    setHighlightId(t.id);
-    setTimeout(() => setHighlightId(null), 2500);
-    setTimeout(() => tableRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 50);
-  }, [transactions, dashPerPage]);
+  const handleSelectTransaction = useCallback(
+    (t) => {
+      setQuery("");
+      setDebouncedQuery("");
+      setSearchOpen(false);
+      setNavTab("dashboard");
+      const allSorted = [...transactions].sort(
+        (a, b) => new Date(b.transaction_date) - new Date(a.transaction_date),
+      );
+      const idx = allSorted.findIndex((tx) => tx.id === t.id);
+      if (idx !== -1) setDashPage(Math.ceil((idx + 1) / dashPerPage));
+      setHighlightId(t.id);
+      setTimeout(() => setHighlightId(null), 2500);
+      setTimeout(
+        () =>
+          tableRef.current?.scrollIntoView({
+            behavior: "smooth",
+            block: "start",
+          }),
+        50,
+      );
+    },
+    [transactions, dashPerPage],
+  );
 
   // ── Dashboard computed
   const dashFiltered = useMemo(() => {
@@ -488,32 +774,63 @@ export default function MobileDashboard() {
   }, [transactions, dashDateRange]);
 
   const dashSorted = useMemo(
-    () => [...dashFiltered].sort((a, b) => new Date(b.transaction_date) - new Date(a.transaction_date)),
-    [dashFiltered]
+    () =>
+      [...dashFiltered].sort(
+        (a, b) => new Date(b.transaction_date) - new Date(a.transaction_date),
+      ),
+    [dashFiltered],
   );
-  const dashPaginated = dashSorted.slice((dashPage - 1) * dashPerPage, dashPage * dashPerPage);
-  useEffect(() => { setDashPage(1); }, [dashFiltered, dashPerPage]);
+  const dashPaginated = dashSorted.slice(
+    (dashPage - 1) * dashPerPage,
+    dashPage * dashPerPage,
+  );
+  useEffect(() => {
+    setDashPage(1);
+  }, [dashFiltered, dashPerPage]);
 
   const dashSummary = useMemo(() => {
-    const totalIn = dashFiltered.filter((t) => INCOME_TYPES.has(t.category)).reduce((s, t) => s + parseFloat(t.amount), 0);
-    const totalOut = dashFiltered.filter((t) => !INCOME_TYPES.has(t.category)).reduce((s, t) => s + parseFloat(t.amount), 0);
+    const totalIn = dashFiltered
+      .filter((t) => INCOME_TYPES.has(t.category))
+      .reduce((s, t) => s + parseFloat(t.amount), 0);
+    const totalOut = dashFiltered
+      .filter((t) => !INCOME_TYPES.has(t.category))
+      .reduce((s, t) => s + parseFloat(t.amount), 0);
     const net = totalIn - totalOut;
     let days = 1;
     if (dashDateRange.from && dashDateRange.to) {
-      days = Math.max(1, Math.round((dashDateRange.to - dashDateRange.from) / (1000 * 60 * 60 * 24)));
+      days = Math.max(
+        1,
+        Math.round(
+          (dashDateRange.to - dashDateRange.from) / (1000 * 60 * 60 * 24),
+        ),
+      );
     } else if (dashFiltered.length > 0) {
-      const timestamps = dashFiltered.map((t) => new Date(t.transaction_date).getTime());
-      days = Math.max(1, Math.round((Math.max(...timestamps) - Math.min(...timestamps)) / (1000 * 60 * 60 * 24)) + 1);
+      const timestamps = dashFiltered.map((t) =>
+        new Date(t.transaction_date).getTime(),
+      );
+      days = Math.max(
+        1,
+        Math.round(
+          (Math.max(...timestamps) - Math.min(...timestamps)) /
+            (1000 * 60 * 60 * 24),
+        ) + 1,
+      );
     }
     const refDate = dashDateRange.from ?? new Date();
-    const daysInMonth = new Date(refDate.getFullYear(), refDate.getMonth() + 1, 0).getDate();
+    const daysInMonth = new Date(
+      refDate.getFullYear(),
+      refDate.getMonth() + 1,
+      0,
+    ).getDate();
     const projectedMonthlySpend = (totalOut / days) * daysInMonth;
     return { totalIn, totalOut, net, projectedMonthlySpend };
   }, [dashFiltered, dashDateRange]);
 
   const dashPieData = useMemo(() => {
     const grouped = {};
-    dashFiltered.forEach((t) => { grouped[t.category] = (grouped[t.category] ?? 0) + parseFloat(t.amount); });
+    dashFiltered.forEach((t) => {
+      grouped[t.category] = (grouped[t.category] ?? 0) + parseFloat(t.amount);
+    });
     return Object.entries(grouped).map(([cat, value]) => ({
       name: CATEGORY_CONFIG[cat]?.label ?? cat,
       value: parseFloat(value.toFixed(2)),
@@ -521,16 +838,19 @@ export default function MobileDashboard() {
     }));
   }, [dashFiltered]);
 
-
   // ── Analytics computed
   const analyticsColor = `var(--category-${analyticsTab.toLowerCase()})`;
 
   const analyticsFiltered = useMemo(() => {
-    let result = analyticsTab === "ALL" ? transactions : transactions.filter((t) => t.category === analyticsTab);
+    let result =
+      analyticsTab === "ALL"
+        ? transactions
+        : transactions.filter((t) => t.category === analyticsTab);
     if (analyticsDateRange.from || analyticsDateRange.to) {
       result = result.filter((t) => {
         const d = new Date(t.transaction_date + "T00:00:00");
-        if (analyticsDateRange.from && d < analyticsDateRange.from) return false;
+        if (analyticsDateRange.from && d < analyticsDateRange.from)
+          return false;
         if (analyticsDateRange.to && d > analyticsDateRange.to) return false;
         return true;
       });
@@ -540,37 +860,56 @@ export default function MobileDashboard() {
 
   const analyticsSorted = useMemo(() => {
     let arr = [...analyticsFiltered];
-    if (analyticsTypeFilter === "income") arr = arr.filter(t => INCOME_TYPES.has(t.category));
-    else if (analyticsTypeFilter === "expense") arr = arr.filter(t => !INCOME_TYPES.has(t.category));
-    if (analyticsAmountSort === "asc") return arr.sort((a, b) => parseFloat(a.amount) - parseFloat(b.amount));
-    if (analyticsAmountSort === "desc") return arr.sort((a, b) => parseFloat(b.amount) - parseFloat(a.amount));
-    return arr.sort((a, b) => new Date(b.transaction_date) - new Date(a.transaction_date));
+    if (analyticsTypeFilter === "income")
+      arr = arr.filter((t) => INCOME_TYPES.has(t.category));
+    else if (analyticsTypeFilter === "expense")
+      arr = arr.filter((t) => !INCOME_TYPES.has(t.category));
+    if (analyticsAmountSort === "asc")
+      return arr.sort((a, b) => parseFloat(a.amount) - parseFloat(b.amount));
+    if (analyticsAmountSort === "desc")
+      return arr.sort((a, b) => parseFloat(b.amount) - parseFloat(a.amount));
+    return arr.sort(
+      (a, b) => new Date(b.transaction_date) - new Date(a.transaction_date),
+    );
   }, [analyticsFiltered, analyticsAmountSort, analyticsTypeFilter]);
-  const analyticsPaginated = analyticsSorted.slice((analyticsPage - 1) * analyticsPerPage, analyticsPage * analyticsPerPage);
-  useEffect(() => { setAnalyticsPage(1); }, [analyticsFiltered, analyticsPerPage]);
+  const analyticsPaginated = analyticsSorted.slice(
+    (analyticsPage - 1) * analyticsPerPage,
+    analyticsPage * analyticsPerPage,
+  );
+  useEffect(() => {
+    setAnalyticsPage(1);
+  }, [analyticsFiltered, analyticsPerPage]);
 
   useEffect(() => {
-    document.body.style.overflow = (addSheetOpen || entrySheetOpen || batchSheetOpen) ? "hidden" : "";
-    return () => { document.body.style.overflow = ""; };
+    document.body.style.overflow =
+      addSheetOpen || entrySheetOpen || batchSheetOpen ? "hidden" : "";
+    return () => {
+      document.body.style.overflow = "";
+    };
   }, [addSheetOpen, entrySheetOpen, batchSheetOpen]);
 
   const [keyboardOpen, setKeyboardOpen] = useState(false);
   useEffect(() => {
     const vv = window.visualViewport;
     if (!vv) return;
-    const handler = () => setKeyboardOpen(vv.height < window.screen.height * 0.8);
+    const handler = () =>
+      setKeyboardOpen(vv.height < window.screen.height * 0.8);
     vv.addEventListener("resize", handler);
     return () => vv.removeEventListener("resize", handler);
   }, []);
 
-
   const analyticsSummary = useMemo(() => {
-    const totalIn = analyticsFiltered.filter((t) => INCOME_TYPES.has(t.category)).reduce((s, t) => s + parseFloat(t.amount), 0);
-    const totalOut = analyticsFiltered.filter((t) => !INCOME_TYPES.has(t.category)).reduce((s, t) => s + parseFloat(t.amount), 0);
+    const totalIn = analyticsFiltered
+      .filter((t) => INCOME_TYPES.has(t.category))
+      .reduce((s, t) => s + parseFloat(t.amount), 0);
+    const totalOut = analyticsFiltered
+      .filter((t) => !INCOME_TYPES.has(t.category))
+      .reduce((s, t) => s + parseFloat(t.amount), 0);
     const categoryTotal = totalIn + totalOut;
     const txCount = analyticsFiltered.length;
     const avgTx = txCount > 0 ? categoryTotal / txCount : 0;
-    const savingsRate = totalIn > 0 ? ((totalIn - totalOut) / totalIn) * 100 : null;
+    const savingsRate =
+      totalIn > 0 ? ((totalIn - totalOut) / totalIn) * 100 : null;
 
     let pctOfTotal = null;
     if (analyticsTab !== "ALL") {
@@ -579,35 +918,59 @@ export default function MobileDashboard() {
         .filter((t) => {
           if (!analyticsDateRange.from && !analyticsDateRange.to) return true;
           const d = new Date(t.transaction_date + "T00:00:00");
-          if (analyticsDateRange.from && d < analyticsDateRange.from) return false;
+          if (analyticsDateRange.from && d < analyticsDateRange.from)
+            return false;
           if (analyticsDateRange.to && d > analyticsDateRange.to) return false;
           return true;
         })
-        .filter((t) => isIncome ? INCOME_TYPES.has(t.category) : !INCOME_TYPES.has(t.category))
+        .filter((t) =>
+          isIncome
+            ? INCOME_TYPES.has(t.category)
+            : !INCOME_TYPES.has(t.category),
+        )
         .reduce((s, t) => s + parseFloat(t.amount), 0);
       if (periodTotal > 0) pctOfTotal = (categoryTotal / periodTotal) * 100;
     }
 
-    return { totalIn, totalOut, categoryTotal, txCount, avgTx, savingsRate, pctOfTotal };
+    return {
+      totalIn,
+      totalOut,
+      categoryTotal,
+      txCount,
+      avgTx,
+      savingsRate,
+      pctOfTotal,
+    };
   }, [analyticsFiltered, transactions, analyticsTab, analyticsDateRange]);
 
   const analyticsAreaData = useMemo(() => {
     if (analyticsTab === "ALL") return [];
     const grouped = {};
-    analyticsFiltered.forEach((t) => { grouped[t.transaction_date] = (grouped[t.transaction_date] ?? 0) + parseFloat(t.amount); });
+    analyticsFiltered.forEach((t) => {
+      grouped[t.transaction_date] =
+        (grouped[t.transaction_date] ?? 0) + parseFloat(t.amount);
+    });
     return Object.entries(grouped)
       .sort(([a], [b]) => a.localeCompare(b))
-      .map(([date, total]) => ({ date: new Date(date + "T00:00:00").getTime(), total: parseFloat(total.toFixed(2)) }));
+      .map(([date, total]) => ({
+        date: new Date(date + "T00:00:00").getTime(),
+        total: parseFloat(total.toFixed(2)),
+      }));
   }, [analyticsFiltered, analyticsTab]);
-
 
   const analyticsBarData = useMemo(() => {
     if (analyticsTab !== "ALL") {
       const grouped = {};
-      analyticsFiltered.forEach((t) => { grouped[t.name] = (grouped[t.name] ?? 0) + parseFloat(t.amount); });
-      const entries = Object.entries(grouped).sort((a, b) => b[1] - a[1]).slice(0, 10);
-      const START = 100, END = 30;
-      const step = entries.length > 1 ? (START - END) / (entries.length - 1) : 0;
+      analyticsFiltered.forEach((t) => {
+        grouped[t.name] = (grouped[t.name] ?? 0) + parseFloat(t.amount);
+      });
+      const entries = Object.entries(grouped)
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 10);
+      const START = 100,
+        END = 30;
+      const step =
+        entries.length > 1 ? (START - END) / (entries.length - 1) : 0;
       return entries.map(([name, total], i) => ({
         month: name,
         total: parseFloat(total.toFixed(2)),
@@ -616,22 +979,29 @@ export default function MobileDashboard() {
     }
     const grouped = {};
     analyticsFiltered.forEach((t) => {
-      const month = new Date(t.transaction_date + "T00:00:00").toLocaleDateString("en-US", { month: "short", year: "2-digit" });
+      const month = new Date(
+        t.transaction_date + "T00:00:00",
+      ).toLocaleDateString("en-US", { month: "short", year: "2-digit" });
       if (!grouped[month]) grouped[month] = { income: 0, expense: 0 };
-      if (INCOME_TYPES.has(t.category)) grouped[month].income += parseFloat(t.amount);
+      if (INCOME_TYPES.has(t.category))
+        grouped[month].income += parseFloat(t.amount);
       else grouped[month].expense += parseFloat(t.amount);
     });
     return Object.entries(grouped)
       .sort((a, b) => new Date("1 " + a[0]) - new Date("1 " + b[0]))
-      .map(([month, { income, expense }]) => ({ month, income: parseFloat(income.toFixed(2)), expense: parseFloat(expense.toFixed(2)) }));
+      .map(([month, { income, expense }]) => ({
+        month,
+        income: parseFloat(income.toFixed(2)),
+        expense: parseFloat(expense.toFixed(2)),
+      }));
   }, [analyticsFiltered, analyticsTab, analyticsColor]);
-
 
   const analyticsSmallMultiples = useMemo(() => {
     if (analyticsTab !== "ALL") return [];
     const byCategory = {};
     analyticsFiltered.forEach((t) => {
-      byCategory[t.category] = (byCategory[t.category] ?? 0) + parseFloat(t.amount);
+      byCategory[t.category] =
+        (byCategory[t.category] ?? 0) + parseFloat(t.amount);
     });
     return Object.entries(byCategory)
       .map(([cat, total]) => ({ cat, total: parseFloat(total.toFixed(2)) }))
@@ -639,7 +1009,12 @@ export default function MobileDashboard() {
   }, [analyticsFiltered, analyticsTab]);
 
   const tooltipProps = {
-    contentStyle: { backgroundColor: surface, borderColor: border, borderRadius: "12px", color: text },
+    contentStyle: {
+      backgroundColor: surface,
+      borderColor: border,
+      borderRadius: "12px",
+      color: text,
+    },
     labelStyle: { color: text },
     itemStyle: { color: text },
   };
@@ -647,13 +1022,22 @@ export default function MobileDashboard() {
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-dvh flex flex-col" style={{ backgroundColor: bg, color: text }}>
-
+    <div
+      className="min-h-dvh flex flex-col"
+      style={{ backgroundColor: bg, color: text }}
+    >
       {/* ── Header ── */}
-      <header className="border-b sticky top-0 z-20 px-4 py-3 flex items-center gap-3" style={{ backgroundColor: surface, borderColor: border }}>
+      <header
+        className="border-b sticky top-0 z-20 px-4 py-3 flex items-center gap-3"
+        style={{ backgroundColor: surface, borderColor: border }}
+      >
         <span
           className="font-mono text-2xl font-bold bg-clip-text text-transparent shrink-0"
-          style={{ backgroundImage: dark ? "linear-gradient(to right, #ffffff, #d1d5db, #9ca3af)" : "linear-gradient(to right, #000000, #374151, #6b7280)" }}
+          style={{
+            backgroundImage: dark
+              ? "linear-gradient(to right, #ffffff, #d1d5db, #9ca3af)"
+              : "linear-gradient(to right, #000000, #374151, #6b7280)",
+          }}
         >
           FinSight
         </span>
@@ -665,63 +1049,150 @@ export default function MobileDashboard() {
             onFocus={() => query && setSearchOpen(true)}
             placeholder="Search transactions..."
             className="w-full rounded-xl px-3 py-1.5 text-sm border"
-            style={{ backgroundColor: bg, borderColor: border, color: text, outline: "none" }}
+            style={{
+              backgroundColor: bg,
+              borderColor: border,
+              color: text,
+              outline: "none",
+            }}
           />
           {searchOpen && suggestions.length > 0 && (
-            <div className="absolute top-full mt-1.5 left-0 right-0 rounded-xl border shadow-lg overflow-hidden z-50" style={{ backgroundColor: surface, borderColor: border }}>
+            <div
+              className="absolute top-full mt-1.5 left-0 right-0 rounded-xl border shadow-lg overflow-hidden z-50"
+              style={{ backgroundColor: surface, borderColor: border }}
+            >
               {suggestions.map((t) => {
                 const catColor = `var(--category-${t.category.toLowerCase()})`;
-                const date = new Date(t.transaction_date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
+                const date = new Date(
+                  t.transaction_date + "T00:00:00",
+                ).toLocaleDateString("en-US", {
+                  month: "short",
+                  day: "numeric",
+                });
                 return (
-                  <button key={t.id} onMouseDown={() => handleSelectTransaction(t)} className="w-full flex items-center gap-2 px-3 py-2.5 text-left" style={{ backgroundColor: surface, color: text }}>
-                    <span style={{ width: 7, height: 7, borderRadius: "50%", backgroundColor: catColor, flexShrink: 0 }} />
+                  <button
+                    key={t.id}
+                    onMouseDown={() => handleSelectTransaction(t)}
+                    className="w-full flex items-center gap-2 px-3 py-2.5 text-left"
+                    style={{ backgroundColor: surface, color: text }}
+                  >
+                    <span
+                      style={{
+                        width: 7,
+                        height: 7,
+                        borderRadius: "50%",
+                        backgroundColor: catColor,
+                        flexShrink: 0,
+                      }}
+                    />
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-semibold truncate">{t.name}</p>
-                      <p className="text-xs truncate" style={{ color: catColor }}>{CATEGORY_CONFIG[t.category]?.label ?? t.category} · {date}</p>
+                      <p
+                        className="text-xs truncate"
+                        style={{ color: catColor }}
+                      >
+                        {CATEGORY_CONFIG[t.category]?.label ?? t.category} ·{" "}
+                        {date}
+                      </p>
                     </div>
-                    <span className="text-sm font-bold shrink-0" style={{ color: catColor }}>{fmt(t.amount)}</span>
+                    <span
+                      className="text-sm font-bold shrink-0"
+                      style={{ color: catColor }}
+                    >
+                      {fmt(t.amount)}
+                    </span>
                   </button>
                 );
               })}
             </div>
           )}
           {searchOpen && debouncedQuery.trim() && suggestions.length === 0 && (
-            <div className="absolute top-full mt-1.5 left-0 right-0 rounded-xl border shadow-lg px-3 py-2.5 text-sm z-50" style={{ backgroundColor: surface, borderColor: border, color: muted }}>
+            <div
+              className="absolute top-full mt-1.5 left-0 right-0 rounded-xl border shadow-lg px-3 py-2.5 text-sm z-50"
+              style={{
+                backgroundColor: surface,
+                borderColor: border,
+                color: muted,
+              }}
+            >
               No transactions found
             </div>
           )}
         </div>
         <button
-          onClick={() => { setDrawerOpen(true); setAccountOpen(true); }}
+          onClick={() => {
+            setDrawerOpen(true);
+            setAccountOpen(true);
+          }}
           className="w-8 h-8 rounded-full shrink-0 cursor-pointer overflow-hidden flex items-center justify-center text-xs font-bold"
-          style={{ backgroundColor: `color-mix(in srgb, ${text} 12%, transparent)`, color: text }}
+          style={{
+            backgroundColor: `color-mix(in srgb, ${text} 12%, transparent)`,
+            color: text,
+          }}
           aria-label="Open account"
         >
-          {user?.avatar
-            ? <img src={user.avatar} alt="avatar" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-            : (user?.first_name?.[0]?.toUpperCase() ?? "?")}
+          {user?.avatar ? (
+            <img
+              src={user.avatar}
+              alt="avatar"
+              style={{ width: "100%", height: "100%", objectFit: "cover" }}
+            />
+          ) : (
+            (user?.first_name?.[0]?.toUpperCase() ?? "?")
+          )}
         </button>
       </header>
 
       {/* ── Main content ── */}
       <main className="flex-1 px-4 pt-4 pb-28 space-y-4">
+        <style>{`@keyframes skel-shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }`}</style>
+        {/* DEV ONLY */}
+        <button
+          onClick={() => setLoading((v) => !v)}
+          style={{
+            position: "fixed",
+            top: 12,
+            right: 12,
+            zIndex: 9999,
+            padding: "4px 10px",
+            borderRadius: 6,
+            fontSize: 11,
+            fontWeight: 600,
+            border: `1px solid ${border}`,
+            backgroundColor: surface,
+            color: loading ? "var(--category-income)" : muted,
+            cursor: "pointer",
+          }}
+        >
+          {loading ? "skeleton ON" : "skeleton OFF"}
+        </button>
 
         {/* Dashboard tab */}
         {navTab === "dashboard" && (
           <>
             {/* Date preset */}
-            <div className="flex gap-2 overflow-x-auto -mr-4 pr-4" style={{ scrollbarWidth: "none" }}>
+            <div
+              className="flex gap-2 overflow-x-auto -mr-4 pr-4"
+              style={{ scrollbarWidth: "none" }}
+            >
               {PRESETS.map((label) => {
                 const active = dashPreset === label;
                 return (
                   <button
                     key={label}
-                    onClick={() => { setDashPreset(label); startDashTransition(() => setDashDateRange(getPresetRange(label))); }}
+                    onClick={() => {
+                      setDashPreset(label);
+                      startDashTransition(() =>
+                        setDashDateRange(getPresetRange(label)),
+                      );
+                    }}
                     className="px-3 py-1.5 text-xs font-semibold rounded-xl border cursor-pointer transition-all duration-150 active:scale-95 shrink-0"
                     style={{
                       color: active ? "var(--category-all)" : muted,
                       borderColor: active ? "var(--category-all)" : border,
-                      backgroundColor: active ? `color-mix(in srgb, var(--category-all) 12%, transparent)` : "transparent",
+                      backgroundColor: active
+                        ? `color-mix(in srgb, var(--category-all) 12%, transparent)`
+                        : "transparent",
                       touchAction: "manipulation",
                     }}
                   >
@@ -732,69 +1203,280 @@ export default function MobileDashboard() {
             </div>
 
             {/* Summary cards */}
-            <div className="grid grid-cols-2 gap-3">
-              {[
-                { label: "INCOME", value: fmt(dashSummary.totalIn), color: "var(--category-income)" },
-                { label: "EXPENSES", value: fmt(dashSummary.totalOut), color: "var(--category-expense)" },
-                { label: "NET", value: (dashSummary.net >= 0 ? "+" : "-") + fmt(Math.abs(dashSummary.net)), color: dashSummary.net >= 0 ? "var(--category-income)" : "var(--category-expense)" },
-                { label: "PROJ. MONTHLY", value: fmt(dashSummary.projectedMonthlySpend), color: "var(--category-all)" },
-              ].map(({ label, value, color }) => (
-                <div key={label} className="rounded-2xl px-4 py-4 border" style={{ backgroundColor: surface, borderColor: border, borderTopColor: color, borderTopWidth: "3px" }}>
-                  <p className="text-xs font-medium mb-1" style={{ color: muted }}>{label}</p>
-                  <p className="text-lg font-bold tracking-tight" style={{ color }}>{value}</p>
-                </div>
-              ))}
-            </div>
+            {loading ? (
+              <div className="grid grid-cols-2 gap-3">
+                {[...Array(4)].map((_, i) => (
+                  <div
+                    key={i}
+                    className="rounded-2xl px-4 py-4 border"
+                    style={{
+                      backgroundColor: surface,
+                      borderTopWidth: 3,
+                      borderTopColor: border,
+                      borderRightColor: border,
+                      borderBottomColor: border,
+                      borderLeftColor: border,
+                    }}
+                  >
+                    <MSkel h={15} w="55%" dark={dark} />
+                    <MSkel
+                      h={28}
+                      w="65%"
+                      dark={dark}
+                      style={{ marginTop: 4 }}
+                    />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-3">
+                {[
+                  {
+                    label: "INCOME",
+                    value: fmt(dashSummary.totalIn),
+                    color: "var(--category-income)",
+                  },
+                  {
+                    label: "EXPENSES",
+                    value: fmt(dashSummary.totalOut),
+                    color: "var(--category-expense)",
+                  },
+                  {
+                    label: "NET",
+                    value:
+                      (dashSummary.net >= 0 ? "+" : "-") +
+                      fmt(Math.abs(dashSummary.net)),
+                    color:
+                      dashSummary.net >= 0
+                        ? "var(--category-income)"
+                        : "var(--category-expense)",
+                  },
+                  {
+                    label: "PROJ. MONTHLY",
+                    value: fmt(dashSummary.projectedMonthlySpend),
+                    color: "var(--category-all)",
+                  },
+                ].map(({ label, value, color }) => (
+                  <div
+                    key={label}
+                    className="rounded-2xl px-4 py-4 border"
+                    style={{
+                      backgroundColor: surface,
+                      borderColor: border,
+                      borderTopColor: color,
+                      borderTopWidth: "3px",
+                    }}
+                  >
+                    <p
+                      className="text-xs font-medium mb-1"
+                      style={{ color: muted }}
+                    >
+                      {label}
+                    </p>
+                    <p
+                      className="text-lg font-bold tracking-tight"
+                      style={{ color }}
+                    >
+                      {value}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
 
             {/* Donut chart */}
-            {isDashPending ? (
-              <div className="rounded-2xl border p-4 animate-pulse" style={{ backgroundColor: surface, borderColor: border, height: 300 }} />
-            ) : dashPieData.length > 0 && (
-              <div className="rounded-2xl border p-4" style={{ backgroundColor: surface, borderColor: border }}>
-                <p className="text-base font-semibold mb-3" style={{ color: text }}>Breakdown by Category</p>
-                <div style={{ position: "relative" }}>
-                  <ResponsiveContainer width="100%" height={240} style={{ pointerEvents: "none" }}>
-                    <PieChart>
-                      <Pie data={dashPieData} dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={55} outerRadius={80} strokeWidth={0} animationBegin={0} animationDuration={500}>
-                        {dashPieData.map((entry) => <Cell key={entry.name} fill={entry.color} />)}
-                      </Pie>
-                      <Tooltip {...tooltipProps} formatter={(v) => fmt(v)} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                  <div style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
-                    <span style={{ fontSize: 26, fontWeight: 700, color: text, lineHeight: 1 }}>{dashFiltered.length}</span>
-                    <span style={{ fontSize: 11, color: muted, marginTop: 4 }}>transactions</span>
-                  </div>
+            {loading || isDashPending ? (
+              <div className="rounded-2xl border px-4 py-3" style={{ backgroundColor: surface, borderColor: border }}>
+                <MSkel h={24} w="55%" dark={dark} style={{ marginBottom: 8 }} />
+                <div style={{ height: 190, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <MobileDonutSkel dark={dark} surface={surface} />
                 </div>
-                <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 16px", justifyContent: "center", marginTop: 8 }}>
-                  {dashPieData.map((entry) => (
-                    <div key={entry.name} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      <span style={{ width: 9, height: 9, borderRadius: "50%", backgroundColor: entry.color, flexShrink: 0, display: "inline-block" }} />
-                      <span style={{ color: text, fontSize: 12 }}>{entry.name}</span>
+                <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: "6px 16px", justifyContent: "center" }}>
+                  {[55, 70, 48, 62, 40].map((w, i) => (
+                    <div key={i} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <MSkel h={9} w={9} dark={dark} style={{ borderRadius: "50%", flexShrink: 0 }} />
+                      <MSkel h={18} w={w} dark={dark} />
                     </div>
                   ))}
                 </div>
               </div>
+            ) : (
+              dashPieData.length > 0 && (
+                <div
+                  className="rounded-2xl border px-4 py-3"
+                  style={{ backgroundColor: surface, borderColor: border }}
+                >
+                  <p
+                    className="text-base font-semibold mb-2"
+                    style={{ color: text }}
+                  >
+                    Breakdown by Category
+                  </p>
+                  <div style={{ position: "relative" }}>
+                    <ResponsiveContainer
+                      width="100%"
+                      height={190}
+                      style={{ pointerEvents: "none" }}
+                    >
+                      <PieChart>
+                        <Pie
+                          data={dashPieData}
+                          dataKey="value"
+                          nameKey="name"
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={55}
+                          outerRadius={80}
+                          strokeWidth={0}
+                          animationBegin={0}
+                          animationDuration={500}
+                        >
+                          {dashPieData.map((entry) => (
+                            <Cell key={entry.name} fill={entry.color} />
+                          ))}
+                        </Pie>
+                        <Tooltip {...tooltipProps} formatter={(v) => fmt(v)} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                    <div
+                      style={{
+                        position: "absolute",
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        pointerEvents: "none",
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontSize: 26,
+                          fontWeight: 700,
+                          color: text,
+                          lineHeight: 1,
+                        }}
+                      >
+                        {dashFiltered.length}
+                      </span>
+                      <span
+                        style={{ fontSize: 11, color: muted, marginTop: 4 }}
+                      >
+                        transactions
+                      </span>
+                    </div>
+                  </div>
+                  <div
+                    style={{
+                      display: "flex",
+                      flexWrap: "wrap",
+                      gap: "6px 16px",
+                      justifyContent: "center",
+                      marginTop: 8,
+                    }}
+                  >
+                    {dashPieData.map((entry) => (
+                      <div
+                        key={entry.name}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 6,
+                        }}
+                      >
+                        <span
+                          style={{
+                            width: 9,
+                            height: 9,
+                            borderRadius: "50%",
+                            backgroundColor: entry.color,
+                            flexShrink: 0,
+                            display: "inline-block",
+                          }}
+                        />
+                        <span style={{ color: text, fontSize: 12 }}>
+                          {entry.name}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )
             )}
 
-            {/* Transaction table */}
-
-            <div ref={tableRef} className="rounded-2xl border" style={{ backgroundColor: surface, borderColor: border }}>
-              <p className="px-4 py-3 text-base font-semibold border-b" style={{ borderColor: border, color: text }}>Recent Transactions</p>
-              <TransactionList
-                items={dashPaginated}
-                total={dashSorted.length}
-                page={dashPage}
-                setPage={setDashPage}
-                perPage={dashPerPage}
-                setPerPage={setDashPerPage}
-                accentColor="var(--category-all)"
-                highlightId={highlightId}
-                text={text} muted={muted} border={border} surface={surface}
-                onEdit={setEditingTransaction}
-                onDelete={handleDelete}
-              />
-            </div>
+            {/* Transaction list */}
+            {loading ? (
+              <div
+                className="rounded-2xl border"
+                style={{ backgroundColor: surface, borderColor: border }}
+              >
+                <div
+                  className="px-4 py-3 border-b"
+                  style={{ borderColor: border }}
+                >
+                  <MSkel h={24} w="170px" dark={dark} />
+                </div>
+                {[...Array(10)].map((_, i) => (
+                  <div
+                    key={i}
+                    className="px-4 py-3 border-t flex items-center gap-3"
+                    style={{ borderColor: border }}
+                  >
+                    <div
+                      style={{
+                        flex: 1,
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 5,
+                      }}
+                    >
+                      <MSkel h={20} w="60%" dark={dark} />
+                      <MSkel h={16} w="45%" dark={dark} />
+                    </div>
+                    <MSkel h={20} w="60px" dark={dark} />
+                  </div>
+                ))}
+                <div
+                  className="px-4 py-3 border-t flex items-center justify-between"
+                  style={{ borderColor: border }}
+                >
+                  <MSkel h={16} w="120px" dark={dark} />
+                  <MSkel h={16} w="80px" dark={dark} />
+                </div>
+              </div>
+            ) : (
+              <div
+                ref={tableRef}
+                className="rounded-2xl border"
+                style={{ backgroundColor: surface, borderColor: border }}
+              >
+                <p
+                  className="px-4 py-3 text-base font-semibold border-b"
+                  style={{ borderColor: border, color: text }}
+                >
+                  Recent Transactions
+                </p>
+                <TransactionList
+                  items={dashPaginated}
+                  total={dashSorted.length}
+                  page={dashPage}
+                  setPage={setDashPage}
+                  perPage={dashPerPage}
+                  setPerPage={setDashPerPage}
+                  accentColor="var(--category-all)"
+                  highlightId={highlightId}
+                  text={text}
+                  muted={muted}
+                  border={border}
+                  surface={surface}
+                  onEdit={setEditingTransaction}
+                  onDelete={handleDelete}
+                />
+              </div>
+            )}
           </>
         )}
 
@@ -808,30 +1490,118 @@ export default function MobileDashboard() {
                   value={analyticsTab}
                   onChange={(e) => setAnalyticsTab(e.target.value)}
                   className="rounded-xl px-3 py-2 text-xs font-semibold border cursor-pointer w-full"
-                  style={{ color: text, borderColor: analyticsColor, backgroundColor: dark ? `color-mix(in srgb, ${analyticsColor} 12%, transparent)` : "var(--light-surface)", boxShadow: `0 0 0 2px color-mix(in srgb, ${analyticsColor} 20%, transparent)`, colorScheme: dark ? "dark" : "light" }}
+                  style={{
+                    color: text,
+                    borderColor: analyticsColor,
+                    backgroundColor: dark
+                      ? `color-mix(in srgb, ${analyticsColor} 12%, transparent)`
+                      : "var(--light-surface)",
+                    boxShadow: `0 0 0 2px color-mix(in srgb, ${analyticsColor} 20%, transparent)`,
+                    colorScheme: dark ? "dark" : "light",
+                  }}
                 >
                   {CATEGORIES.map((cat) => (
-                    <option key={cat} value={cat} style={{ backgroundColor: bg, color: text }}>
+                    <option
+                      key={cat}
+                      value={cat}
+                      style={{ backgroundColor: bg, color: text }}
+                    >
                       {cat === "ALL" ? "All" : CATEGORY_CONFIG[cat].label}
                     </option>
                   ))}
                 </select>
                 <select
                   value={analyticsPreset ?? "custom"}
-                  onChange={(e) => { setAnalyticsPreset(e.target.value); setAnalyticsFromVal(""); setAnalyticsToVal(""); setAnalyticsDateRange(getPresetRange(e.target.value)); }}
+                  onChange={(e) => {
+                    setAnalyticsPreset(e.target.value);
+                    setAnalyticsFromVal("");
+                    setAnalyticsToVal("");
+                    setAnalyticsDateRange(getPresetRange(e.target.value));
+                  }}
                   className="rounded-xl px-3 py-2 text-xs font-semibold border cursor-pointer w-full"
-                  style={{ color: text, borderColor: analyticsColor, backgroundColor: dark ? `color-mix(in srgb, ${analyticsColor} 12%, transparent)` : "var(--light-surface)", boxShadow: `0 0 0 2px color-mix(in srgb, ${analyticsColor} 20%, transparent)`, colorScheme: dark ? "dark" : "light" }}
+                  style={{
+                    color: text,
+                    borderColor: analyticsColor,
+                    backgroundColor: dark
+                      ? `color-mix(in srgb, ${analyticsColor} 12%, transparent)`
+                      : "var(--light-surface)",
+                    boxShadow: `0 0 0 2px color-mix(in srgb, ${analyticsColor} 20%, transparent)`,
+                    colorScheme: dark ? "dark" : "light",
+                  }}
                 >
-                  {PRESETS.map((label) => <option key={label} value={label} style={{ backgroundColor: bg, color: text }}>{label}</option>)}
-                  {!analyticsPreset && <option value="custom" disabled style={{ backgroundColor: bg, color: text }}>Custom</option>}
+                  {PRESETS.map((label) => (
+                    <option
+                      key={label}
+                      value={label}
+                      style={{ backgroundColor: bg, color: text }}
+                    >
+                      {label}
+                    </option>
+                  ))}
+                  {!analyticsPreset && (
+                    <option
+                      value="custom"
+                      disabled
+                      style={{ backgroundColor: bg, color: text }}
+                    >
+                      Custom
+                    </option>
+                  )}
                 </select>
               </div>
               <div className="flex items-center gap-2">
-                <input type="date" value={analyticsFromVal} onChange={(e) => { setAnalyticsFromVal(e.target.value); setAnalyticsPreset(null); setAnalyticsDateRange((r) => ({ ...r, from: e.target.value ? new Date(e.target.value + "T00:00:00") : null })); }} className="flex-1 rounded-xl px-2 py-2 text-[10px] font-semibold border min-w-0"
-                  style={{ backgroundColor: dark ? "var(--dark-bg)" : "var(--light-surface)", borderColor: border, color: text, colorScheme: dark ? "dark" : "light" }} />
-                <span className="text-[10px] uppercase font-bold shrink-0" style={{ color: muted }}>to</span>
-                <input type="date" value={analyticsToVal} onChange={(e) => { setAnalyticsToVal(e.target.value); setAnalyticsPreset(null); setAnalyticsDateRange((r) => ({ ...r, to: e.target.value ? new Date(e.target.value + "T23:59:59") : null })); }} className="flex-1 rounded-xl px-2 py-2 text-[10px] font-semibold border min-w-0"
-                  style={{ backgroundColor: dark ? "var(--dark-bg)" : "var(--light-surface)", borderColor: border, color: text, colorScheme: dark ? "dark" : "light" }} />
+                <input
+                  type="date"
+                  value={analyticsFromVal}
+                  onChange={(e) => {
+                    setAnalyticsFromVal(e.target.value);
+                    setAnalyticsPreset(null);
+                    setAnalyticsDateRange((r) => ({
+                      ...r,
+                      from: e.target.value
+                        ? new Date(e.target.value + "T00:00:00")
+                        : null,
+                    }));
+                  }}
+                  className="flex-1 rounded-xl px-2 py-2 text-[10px] font-semibold border min-w-0"
+                  style={{
+                    backgroundColor: dark
+                      ? "var(--dark-bg)"
+                      : "var(--light-surface)",
+                    borderColor: border,
+                    color: text,
+                    colorScheme: dark ? "dark" : "light",
+                  }}
+                />
+                <span
+                  className="text-[10px] uppercase font-bold shrink-0"
+                  style={{ color: muted }}
+                >
+                  to
+                </span>
+                <input
+                  type="date"
+                  value={analyticsToVal}
+                  onChange={(e) => {
+                    setAnalyticsToVal(e.target.value);
+                    setAnalyticsPreset(null);
+                    setAnalyticsDateRange((r) => ({
+                      ...r,
+                      to: e.target.value
+                        ? new Date(e.target.value + "T23:59:59")
+                        : null,
+                    }));
+                  }}
+                  className="flex-1 rounded-xl px-2 py-2 text-[10px] font-semibold border min-w-0"
+                  style={{
+                    backgroundColor: dark
+                      ? "var(--dark-bg)"
+                      : "var(--light-surface)",
+                    borderColor: border,
+                    color: text,
+                    colorScheme: dark ? "dark" : "light",
+                  }}
+                />
               </div>
             </div>
 
@@ -839,14 +1609,54 @@ export default function MobileDashboard() {
             {analyticsTab !== "ALL" && (
               <div className="grid grid-cols-2 gap-3">
                 {[
-                  { label: `${CATEGORY_CONFIG[analyticsTab]?.label.toUpperCase()} TOTAL`, value: fmt(analyticsSummary.categoryTotal), color: analyticsColor },
-                  { label: "TRANSACTIONS", value: String(analyticsSummary.txCount), color: analyticsColor },
-                  { label: "AVG TRANSACTION", value: fmt(analyticsSummary.avgTx), color: analyticsColor },
-                  { label: INCOME_TYPES.has(analyticsTab) ? "% OF TOTAL INCOME" : "% OF TOTAL EXPENSES", value: analyticsSummary.pctOfTotal != null ? `${analyticsSummary.pctOfTotal.toFixed(1)}%` : "—", color: analyticsColor },
+                  {
+                    label: `${CATEGORY_CONFIG[analyticsTab]?.label.toUpperCase()} TOTAL`,
+                    value: fmt(analyticsSummary.categoryTotal),
+                    color: analyticsColor,
+                  },
+                  {
+                    label: "TRANSACTIONS",
+                    value: String(analyticsSummary.txCount),
+                    color: analyticsColor,
+                  },
+                  {
+                    label: "AVG TRANSACTION",
+                    value: fmt(analyticsSummary.avgTx),
+                    color: analyticsColor,
+                  },
+                  {
+                    label: INCOME_TYPES.has(analyticsTab)
+                      ? "% OF TOTAL INCOME"
+                      : "% OF TOTAL EXPENSES",
+                    value:
+                      analyticsSummary.pctOfTotal != null
+                        ? `${analyticsSummary.pctOfTotal.toFixed(1)}%`
+                        : "—",
+                    color: analyticsColor,
+                  },
                 ].map(({ label, value, color }) => (
-                  <div key={label} className="rounded-2xl px-4 py-4 border" style={{ backgroundColor: surface, borderColor: border, borderTopColor: color, borderTopWidth: "3px" }}>
-                    <p className="text-xs font-medium mb-1" style={{ color: muted }}>{label}</p>
-                    <p className="text-lg font-bold tracking-tight" style={{ color }}>{value}</p>
+                  <div
+                    key={label}
+                    className="rounded-2xl px-4 py-4 border"
+                    style={{
+                      backgroundColor: surface,
+                      borderColor: border,
+                      borderTopColor: color,
+                      borderTopWidth: "3px",
+                    }}
+                  >
+                    <p
+                      className="text-xs font-medium mb-1"
+                      style={{ color: muted }}
+                    >
+                      {label}
+                    </p>
+                    <p
+                      className="text-lg font-bold tracking-tight"
+                      style={{ color }}
+                    >
+                      {value}
+                    </p>
                   </div>
                 ))}
               </div>
@@ -854,34 +1664,119 @@ export default function MobileDashboard() {
 
             {/* Area chart (single category) */}
             {analyticsTab !== "ALL" && analyticsAreaData.length > 0 && (
-              <div className="rounded-2xl border p-4" style={{ backgroundColor: surface, borderColor: analyticsColor }}>
-                <p className="text-base font-semibold mb-3" style={{ color: text }}>{CATEGORY_CONFIG[analyticsTab]?.label} Over Time</p>
-                <ResponsiveContainer width="100%" height={220} style={{ pointerEvents: "none" }}>
+              <div
+                className="rounded-2xl border p-4"
+                style={{
+                  backgroundColor: surface,
+                  borderColor: analyticsColor,
+                }}
+              >
+                <p
+                  className="text-base font-semibold mb-3"
+                  style={{ color: text }}
+                >
+                  {CATEGORY_CONFIG[analyticsTab]?.label} Over Time
+                </p>
+                <ResponsiveContainer
+                  width="100%"
+                  height={220}
+                  style={{ pointerEvents: "none" }}
+                >
                   <AreaChart data={analyticsAreaData}>
                     <defs>
-                      <linearGradient id="areaFillMobile" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor={analyticsColor} stopOpacity={0.3} />
-                        <stop offset="95%" stopColor={analyticsColor} stopOpacity={0.02} />
+                      <linearGradient
+                        id="areaFillMobile"
+                        x1="0"
+                        y1="0"
+                        x2="0"
+                        y2="1"
+                      >
+                        <stop
+                          offset="5%"
+                          stopColor={analyticsColor}
+                          stopOpacity={0.3}
+                        />
+                        <stop
+                          offset="95%"
+                          stopColor={analyticsColor}
+                          stopOpacity={0.02}
+                        />
                       </linearGradient>
                     </defs>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={dark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.06)"} />
-                    <XAxis dataKey="date" type="number" scale="time" domain={["dataMin", "dataMax"]} axisLine={false} tickLine={false} tick={{ fontSize: 11, fill: text }} tickFormatter={(v) => new Date(v).toLocaleDateString("en-US", { month: "short", day: "numeric" })} />
-                    <YAxis axisLine={false} tickLine={false} tickFormatter={(v) => `$${v}`} tick={{ fontSize: 11, fill: text }} />
-                    <Tooltip {...tooltipProps} cursor={{ stroke: analyticsColor, strokeWidth: 1, strokeDasharray: "4 4" }}
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      vertical={false}
+                      stroke={
+                        dark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.06)"
+                      }
+                    />
+                    <XAxis
+                      dataKey="date"
+                      type="number"
+                      scale="time"
+                      domain={["dataMin", "dataMax"]}
+                      axisLine={false}
+                      tickLine={false}
+                      tick={{ fontSize: 11, fill: text }}
+                      tickFormatter={(v) =>
+                        new Date(v).toLocaleDateString("en-US", {
+                          month: "short",
+                          day: "numeric",
+                        })
+                      }
+                    />
+                    <YAxis
+                      axisLine={false}
+                      tickLine={false}
+                      tickFormatter={(v) => `$${v}`}
+                      tick={{ fontSize: 11, fill: text }}
+                    />
+                    <Tooltip
+                      {...tooltipProps}
+                      cursor={{
+                        stroke: analyticsColor,
+                        strokeWidth: 1,
+                        strokeDasharray: "4 4",
+                      }}
                       content={({ payload }) => {
                         if (!payload?.length) return null;
                         const { date, total } = payload[0].payload;
                         return (
-                          <div style={{ ...tooltipProps.contentStyle, padding: "8px 12px" }}>
-                            <p style={{ margin: 0, opacity: 0.7, fontSize: 11 }}>{new Date(date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</p>
-                            <p style={{ margin: 0, fontWeight: 600 }}>{fmt(total)}</p>
+                          <div
+                            style={{
+                              ...tooltipProps.contentStyle,
+                              padding: "8px 12px",
+                            }}
+                          >
+                            <p
+                              style={{ margin: 0, opacity: 0.7, fontSize: 11 }}
+                            >
+                              {new Date(date).toLocaleDateString("en-US", {
+                                month: "short",
+                                day: "numeric",
+                                year: "numeric",
+                              })}
+                            </p>
+                            <p style={{ margin: 0, fontWeight: 600 }}>
+                              {fmt(total)}
+                            </p>
                           </div>
                         );
                       }}
                     />
-                    <Area key={analyticsTab} type="monotone" dataKey="total" stroke={analyticsColor} strokeWidth={2} fill="url(#areaFillMobile)"
-                      dot={{ fill: analyticsColor, r: 4, strokeWidth: 0 }} activeDot={{ r: 6, strokeWidth: 0 }}
-                      isAnimationActive animationBegin={0} animationDuration={1000} animationEasing="ease-out"
+                    <Area
+                      key={analyticsTab}
+                      type="monotone"
+                      dataKey="total"
+                      stroke={analyticsColor}
+                      strokeWidth={2}
+                      fill="url(#areaFillMobile)"
+                      dot={{ fill: analyticsColor, r: 4, strokeWidth: 0 }}
+                      activeDot={{ r: 6, strokeWidth: 0 }}
+                      isAnimationActive
+                      animationBegin={0}
+                      animationDuration={1000}
+                      animationEasing="ease-out"
                     />
                   </AreaChart>
                 </ResponsiveContainer>
@@ -890,10 +1785,20 @@ export default function MobileDashboard() {
 
             {/* Category overview bar — ALL only */}
             {analyticsTab === "ALL" && analyticsSmallMultiples.length > 0 && (
-              <div className="rounded-2xl border p-4" style={{ backgroundColor: surface, borderColor: border }}>
-                <p className="text-base font-semibold mb-3" style={{ color: text }}>Spending by Category</p>
+              <div
+                className="rounded-2xl border p-4"
+                style={{ backgroundColor: surface, borderColor: border }}
+              >
+                <p
+                  className="text-base font-semibold mb-3"
+                  style={{ color: text }}
+                >
+                  Spending by Category
+                </p>
                 {(() => {
-                  const max = Math.max(...analyticsSmallMultiples.map((d) => d.total));
+                  const max = Math.max(
+                    ...analyticsSmallMultiples.map((d) => d.total),
+                  );
                   return (
                     <div className="space-y-2">
                       {analyticsSmallMultiples.map(({ cat, total }) => {
@@ -901,13 +1806,47 @@ export default function MobileDashboard() {
                         const pct = max > 0 ? (total / max) * 100 : 0;
                         return (
                           <div key={cat} className="flex items-center gap-2">
-                            <span style={{ width: 100, fontSize: 11, fontWeight: 600, color: catColor, flexShrink: 0, textAlign: "right" }}>
+                            <span
+                              style={{
+                                width: 100,
+                                fontSize: 11,
+                                fontWeight: 600,
+                                color: catColor,
+                                flexShrink: 0,
+                                textAlign: "right",
+                              }}
+                            >
                               {CATEGORY_CONFIG[cat]?.label ?? cat}
                             </span>
-                            <div style={{ flex: 1, height: 10, borderRadius: 5, backgroundColor: `color-mix(in srgb, ${catColor} 15%, transparent)` }}>
-                              <div style={{ width: `${pct}%`, height: "100%", borderRadius: 5, backgroundColor: catColor, transition: "width 0.4s ease" }} />
+                            <div
+                              style={{
+                                flex: 1,
+                                height: 10,
+                                borderRadius: 5,
+                                backgroundColor: `color-mix(in srgb, ${catColor} 15%, transparent)`,
+                              }}
+                            >
+                              <div
+                                style={{
+                                  width: `${pct}%`,
+                                  height: "100%",
+                                  borderRadius: 5,
+                                  backgroundColor: catColor,
+                                  transition: "width 0.4s ease",
+                                }}
+                              />
                             </div>
-                            <span style={{ width: 68, fontSize: 11, fontWeight: 600, color: text, flexShrink: 0 }}>{fmt(total)}</span>
+                            <span
+                              style={{
+                                width: 68,
+                                fontSize: 11,
+                                fontWeight: 600,
+                                color: text,
+                                flexShrink: 0,
+                              }}
+                            >
+                              {fmt(total)}
+                            </span>
                           </div>
                         );
                       })}
@@ -917,25 +1856,74 @@ export default function MobileDashboard() {
               </div>
             )}
 
-
             {/* Top by name — single category */}
             {analyticsTab !== "ALL" && analyticsBarData.length > 0 && (
-              <div className="rounded-2xl border p-4" style={{ backgroundColor: surface, borderColor: analyticsColor }}>
-                <p className="text-base font-semibold mb-3" style={{ color: text }}>Top {CATEGORY_CONFIG[analyticsTab]?.label} by Name</p>
-                <ResponsiveContainer width="100%" height={200} style={{ pointerEvents: "none" }}>
+              <div
+                className="rounded-2xl border p-4"
+                style={{
+                  backgroundColor: surface,
+                  borderColor: analyticsColor,
+                }}
+              >
+                <p
+                  className="text-base font-semibold mb-3"
+                  style={{ color: text }}
+                >
+                  Top {CATEGORY_CONFIG[analyticsTab]?.label} by Name
+                </p>
+                <ResponsiveContainer
+                  width="100%"
+                  height={200}
+                  style={{ pointerEvents: "none" }}
+                >
                   <BarChart data={analyticsBarData} barSize={20}>
-                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke={dark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.06)"} />
-                    <XAxis dataKey="month" axisLine={false} tickLine={false} interval={0} height={50}
+                    <CartesianGrid
+                      strokeDasharray="3 3"
+                      vertical={false}
+                      stroke={
+                        dark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.06)"
+                      }
+                    />
+                    <XAxis
+                      dataKey="month"
+                      axisLine={false}
+                      tickLine={false}
+                      interval={0}
+                      height={50}
                       tick={(props) => {
                         const val = props.payload?.value ?? "";
-                        const label = val.length > 10 ? val.slice(0, 10) + "…" : val;
-                        return <text x={props.x} y={props.y} dy={6} textAnchor="end" fontSize={11} style={{ fill: text }} transform={`rotate(-35, ${props.x}, ${props.y})`}>{label}</text>;
+                        const label =
+                          val.length > 10 ? val.slice(0, 10) + "…" : val;
+                        return (
+                          <text
+                            x={props.x}
+                            y={props.y}
+                            dy={6}
+                            textAnchor="end"
+                            fontSize={11}
+                            style={{ fill: text }}
+                            transform={`rotate(-35, ${props.x}, ${props.y})`}
+                          >
+                            {label}
+                          </text>
+                        );
                       }}
                     />
-                    <YAxis axisLine={false} tickLine={false} tickFormatter={(v) => `$${v}`} tick={{ fontSize: 10, fill: text }} />
-                    <Tooltip {...tooltipProps} formatter={(v) => fmt(v)} cursor={false} />
+                    <YAxis
+                      axisLine={false}
+                      tickLine={false}
+                      tickFormatter={(v) => `$${v}`}
+                      tick={{ fontSize: 10, fill: text }}
+                    />
+                    <Tooltip
+                      {...tooltipProps}
+                      formatter={(v) => fmt(v)}
+                      cursor={false}
+                    />
                     <Bar dataKey="total" radius={[5, 5, 0, 0]} barSize={20}>
-                      {analyticsBarData.map((entry) => <Cell key={entry.month} fill={entry.color} />)}
+                      {analyticsBarData.map((entry) => (
+                        <Cell key={entry.month} fill={entry.color} />
+                      ))}
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
@@ -943,38 +1931,123 @@ export default function MobileDashboard() {
             )}
 
             {/* Transaction table */}
-            <div className="rounded-2xl border" style={{ backgroundColor: surface, borderColor: analyticsColor }}>
-              <div className="px-4 py-3 border-b flex items-center justify-between" style={{ borderColor: border }}>
-                <p className="text-base font-semibold" style={{ color: text }}>Transactions</p>
+            <div
+              className="rounded-2xl border"
+              style={{ backgroundColor: surface, borderColor: analyticsColor }}
+            >
+              <div
+                className="px-4 py-3 border-b flex items-center justify-between"
+                style={{ borderColor: border }}
+              >
+                <p className="text-base font-semibold" style={{ color: text }}>
+                  Transactions
+                </p>
                 <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
-                <button
-                  onClick={() => setAnalyticsTypeFilter(f => f === null ? "income" : f === "income" ? "expense" : null)}
-                  style={{ color: analyticsTypeFilter === "income" ? "var(--category-income)" : analyticsTypeFilter === "expense" ? "var(--category-expense)" : muted, display: "flex", alignItems: "center", gap: 3, fontSize: 12, fontWeight: 600, background: `color-mix(in srgb, ${text} 6%, transparent)`, border: "none", cursor: "pointer", borderRadius: 8, padding: "3px 8px" }}
-                >
-                  {analyticsTypeFilter === "income" ? "Income" : analyticsTypeFilter === "expense" ? "Expense" : "All"}
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  <button
+                    onClick={() =>
+                      setAnalyticsTypeFilter((f) =>
+                        f === null
+                          ? "income"
+                          : f === "income"
+                            ? "expense"
+                            : null,
+                      )
+                    }
+                    style={{
+                      color:
+                        analyticsTypeFilter === "income"
+                          ? "var(--category-income)"
+                          : analyticsTypeFilter === "expense"
+                            ? "var(--category-expense)"
+                            : muted,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 3,
+                      fontSize: 12,
+                      fontWeight: 600,
+                      background: `color-mix(in srgb, ${text} 6%, transparent)`,
+                      border: "none",
+                      cursor: "pointer",
+                      borderRadius: 8,
+                      padding: "3px 8px",
+                    }}
+                  >
                     {analyticsTypeFilter === "income"
-                      ? <><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></>
+                      ? "Income"
                       : analyticsTypeFilter === "expense"
-                      ? <><polyline points="23 18 13.5 8.5 8.5 13.5 1 6"/><polyline points="17 18 23 18 23 12"/></>
-                      : <><path d="M12 19V5M5 12l7-7 7 7" opacity="0.4"/><path d="M12 5v14M5 12l7 7 7-7" opacity="0.4"/></>
+                        ? "Expense"
+                        : "All"}
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      {analyticsTypeFilter === "income" ? (
+                        <>
+                          <polyline points="23 6 13.5 15.5 8.5 10.5 1 18" />
+                          <polyline points="17 6 23 6 23 12" />
+                        </>
+                      ) : analyticsTypeFilter === "expense" ? (
+                        <>
+                          <polyline points="23 18 13.5 8.5 8.5 13.5 1 6" />
+                          <polyline points="17 18 23 18 23 12" />
+                        </>
+                      ) : (
+                        <>
+                          <path d="M12 19V5M5 12l7-7 7 7" opacity="0.4" />
+                          <path d="M12 5v14M5 12l7 7 7-7" opacity="0.4" />
+                        </>
+                      )}
+                    </svg>
+                  </button>
+                  <button
+                    onClick={() =>
+                      setAnalyticsAmountSort((s) =>
+                        s === "desc" ? "asc" : s === "asc" ? null : "desc",
+                      )
                     }
-                  </svg>
-                </button>
-                <button
-                  onClick={() => setAnalyticsAmountSort(s => s === "desc" ? "asc" : s === "asc" ? null : "desc")}
-                  style={{ color: analyticsAmountSort ? analyticsColor : muted, display: "flex", alignItems: "center", gap: 3, fontSize: 12, fontWeight: 600, background: `color-mix(in srgb, ${text} 6%, transparent)`, border: "none", cursor: "pointer", borderRadius: 8, padding: "3px 8px" }}
-                >
-                  Amount
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                    {analyticsAmountSort === "asc"
-                      ? <path d="M12 19V5M5 12l7-7 7 7"/>
-                      : analyticsAmountSort === "desc"
-                      ? <path d="M12 5v14M5 12l7 7 7-7"/>
-                      : <><path d="M12 19V5M5 12l7-7 7 7" opacity="0.4"/><path d="M12 5v14M5 12l7 7 7-7" opacity="0.4"/></>
-                    }
-                  </svg>
-                </button>
+                    style={{
+                      color: analyticsAmountSort ? analyticsColor : muted,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 3,
+                      fontSize: 12,
+                      fontWeight: 600,
+                      background: `color-mix(in srgb, ${text} 6%, transparent)`,
+                      border: "none",
+                      cursor: "pointer",
+                      borderRadius: 8,
+                      padding: "3px 8px",
+                    }}
+                  >
+                    Amount
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      {analyticsAmountSort === "asc" ? (
+                        <path d="M12 19V5M5 12l7-7 7 7" />
+                      ) : analyticsAmountSort === "desc" ? (
+                        <path d="M12 5v14M5 12l7 7 7-7" />
+                      ) : (
+                        <>
+                          <path d="M12 19V5M5 12l7-7 7 7" opacity="0.4" />
+                          <path d="M12 5v14M5 12l7 7 7-7" opacity="0.4" />
+                        </>
+                      )}
+                    </svg>
+                  </button>
                 </div>
               </div>
               <TransactionList
@@ -986,7 +2059,10 @@ export default function MobileDashboard() {
                 setPerPage={setAnalyticsPerPage}
                 accentColor={analyticsColor}
                 highlightId={null}
-                text={text} muted={muted} border={border} surface={surface}
+                text={text}
+                muted={muted}
+                border={border}
+                surface={surface}
                 onEdit={setEditingTransaction}
                 onDelete={handleDelete}
               />
@@ -997,20 +2073,33 @@ export default function MobileDashboard() {
         {/* AI tab */}
         {navTab === "ai" && (
           <div className="flex flex-col h-[calc(100dvh-12rem)]">
-            <div className="flex-1 flex flex-col items-center justify-center gap-3 rounded-2xl border" style={{ backgroundColor: surface, borderColor: border }}>
+            <div
+              className="flex-1 flex flex-col items-center justify-center gap-3 rounded-2xl border"
+              style={{ backgroundColor: surface, borderColor: border }}
+            >
               <IconAI size={36} />
-              <p className="text-base font-semibold" style={{ color: text }}>FinSight AI</p>
-              <p className="text-sm text-center px-8" style={{ color: muted }}>AI assistant coming soon. Ask questions about your spending, get insights, and more.</p>
+              <p className="text-base font-semibold" style={{ color: text }}>
+                FinSight AI
+              </p>
+              <p className="text-sm text-center px-8" style={{ color: muted }}>
+                AI assistant coming soon. Ask questions about your spending, get
+                insights, and more.
+              </p>
             </div>
           </div>
         )}
-
       </main>
 
       {/* ── Bottom nav ── */}
       <nav
         className="fixed bottom-0 left-0 right-0 z-30 border-t flex items-center"
-        style={{ backgroundColor: surface, borderColor: border, paddingBottom: "env(safe-area-inset-bottom)", transform: "translateZ(0)", willChange: "transform" }}
+        style={{
+          backgroundColor: surface,
+          borderColor: border,
+          paddingBottom: "env(safe-area-inset-bottom)",
+          transform: "translateZ(0)",
+          willChange: "transform",
+        }}
       >
         {[
           { id: "dashboard", label: "Dashboard", Icon: IconDashboard },
@@ -1029,7 +2118,10 @@ export default function MobileDashboard() {
               >
                 <div
                   className="w-11 h-11 rounded-full flex items-center justify-center"
-                  style={{ backgroundColor: "var(--category-income)", color: "#000" }}
+                  style={{
+                    backgroundColor: "var(--category-income)",
+                    color: "#000",
+                  }}
                 >
                   <IconPlus size={22} />
                 </div>
@@ -1043,8 +2135,15 @@ export default function MobileDashboard() {
                 onClick={() => setDrawerOpen(true)}
                 className="flex-1 flex flex-col items-center justify-center gap-1 py-3 cursor-pointer"
               >
-                <span style={{ color: muted }}><IconMore size={20} /></span>
-                <span className="text-[10px] font-semibold" style={{ color: muted }}>Menu</span>
+                <span style={{ color: muted }}>
+                  <IconMore size={20} />
+                </span>
+                <span
+                  className="text-[10px] font-semibold"
+                  style={{ color: muted }}
+                >
+                  Menu
+                </span>
               </button>
             );
           }
@@ -1056,8 +2155,12 @@ export default function MobileDashboard() {
               onClick={() => setNavTab(id)}
               className="flex-1 flex flex-col items-center justify-center gap-1 py-3 cursor-pointer"
             >
-              <span style={{ color }}><Icon size={20} /></span>
-              <span className="text-[10px] font-semibold" style={{ color }}>{label}</span>
+              <span style={{ color }}>
+                <Icon size={20} />
+              </span>
+              <span className="text-[10px] font-semibold" style={{ color }}>
+                {label}
+              </span>
             </button>
           );
         })}
@@ -1066,25 +2169,42 @@ export default function MobileDashboard() {
       {/* ── Overlay ── */}
       <div
         className="fixed inset-0 z-40"
-        style={{ backgroundColor: "rgba(0,0,0,0.5)", opacity: addSheetOpen ? 1 : 0, pointerEvents: addSheetOpen ? "auto" : "none", transition: "opacity 250ms ease" }}
-        onClick={() => { setAddSheetOpen(false); setEntrySheetOpen(false); }}
+        style={{
+          backgroundColor: "rgba(0,0,0,0.5)",
+          opacity: addSheetOpen ? 1 : 0,
+          pointerEvents: addSheetOpen ? "auto" : "none",
+          transition: "opacity 250ms ease",
+        }}
+        onClick={() => {
+          setAddSheetOpen(false);
+          setEntrySheetOpen(false);
+        }}
       />
 
       {/* ── Add sheet ── */}
       <div
         className="fixed bottom-0 left-0 right-0 z-50 rounded-t-2xl border-t border-x p-5 space-y-3"
         style={{
-          backgroundColor: surface, borderColor: border,
+          backgroundColor: surface,
+          borderColor: border,
           paddingBottom: "calc(1.25rem + env(safe-area-inset-bottom))",
           transform: `translateY(${addSheetOpen && !entrySheetOpen ? dragY : 100}${addSheetOpen && !entrySheetOpen && dragY > 0 ? "" : "%"})`,
-          transition: dragY > 0 ? "none" : "transform 300ms cubic-bezier(0.32, 0.72, 0, 1)",
+          transition:
+            dragY > 0
+              ? "none"
+              : "transform 300ms cubic-bezier(0.32, 0.72, 0, 1)",
         }}
         onTouchStart={onSheetTouchStart}
         onTouchMove={onSheetTouchMove}
         onTouchEnd={onSheetTouchEnd}
       >
-        <div className="w-10 h-1 rounded-full mx-auto mb-4" style={{ backgroundColor: border }} />
-        <p className="text-sm font-semibold mb-1" style={{ color: muted }}>Add</p>
+        <div
+          className="w-10 h-1 rounded-full mx-auto mb-4"
+          style={{ backgroundColor: border }}
+        />
+        <p className="text-sm font-semibold mb-1" style={{ color: muted }}>
+          Add
+        </p>
 
         <button
           onClick={() => setEntrySheetOpen(true)}
@@ -1092,28 +2212,57 @@ export default function MobileDashboard() {
           style={{ backgroundColor: bg, borderColor: border, color: text }}
         >
           <span style={{ color: "var(--category-income)" }}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <line x1="5" y1="12" x2="19" y2="12" />
             </svg>
           </span>
           <div>
             <p className="text-sm font-semibold">Transaction</p>
-            <p className="text-xs" style={{ color: muted }}>Add a single transaction</p>
+            <p className="text-xs" style={{ color: muted }}>
+              Add a single transaction
+            </p>
           </div>
         </button>
         <button
-          onClick={() => { setAddSheetOpen(false); setBatchSheetOpen(true); }}
+          onClick={() => {
+            setAddSheetOpen(false);
+            setBatchSheetOpen(true);
+          }}
           className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl border text-left cursor-pointer active:scale-[0.97] transition-transform duration-150"
           style={{ backgroundColor: bg, borderColor: border, color: text }}
         >
           <span style={{ color: "var(--category-income)" }}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="3" y="3" width="18" height="18" rx="2" /><line x1="3" y1="9" x2="21" y2="9" /><line x1="3" y1="15" x2="21" y2="15" /><line x1="9" y1="3" x2="9" y2="21" />
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <rect x="3" y="3" width="18" height="18" rx="2" />
+              <line x1="3" y1="9" x2="21" y2="9" />
+              <line x1="3" y1="15" x2="21" y2="15" />
+              <line x1="9" y1="3" x2="9" y2="21" />
             </svg>
           </span>
           <div>
             <p className="text-sm font-semibold">Batch Add</p>
-            <p className="text-xs" style={{ color: muted }}>Add multiple at once</p>
+            <p className="text-xs" style={{ color: muted }}>
+              Add multiple at once
+            </p>
           </div>
         </button>
         <button
@@ -1122,29 +2271,45 @@ export default function MobileDashboard() {
           disabled
         >
           <span style={{ color: muted }}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" />
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+              <polyline points="17 8 12 3 7 8" />
+              <line x1="12" y1="3" x2="12" y2="15" />
             </svg>
           </span>
           <div>
             <p className="text-sm font-semibold">Import</p>
-            <p className="text-xs" style={{ color: muted }}>PDF, CSV — coming soon</p>
+            <p className="text-xs" style={{ color: muted }}>
+              PDF, CSV — coming soon
+            </p>
           </div>
         </button>
-
       </div>
 
       {/* ── Entry sheet ── */}
       <div
         className="fixed bottom-0 left-0 right-0 z-50 border-t border-x"
         style={{
-          backgroundColor: surface, borderColor: border,
+          backgroundColor: surface,
+          borderColor: border,
           borderRadius: keyboardOpen ? "16px 16px 16px 16px" : "16px 16px 0 0",
           borderBottom: keyboardOpen ? `1px solid ${border}` : "none",
           transition: "border-radius 150ms ease, border-bottom 150ms ease",
           paddingBottom: "env(safe-area-inset-bottom)",
           transform: `translateY(${entrySheetOpen ? dragY : 100}${entrySheetOpen && dragY > 0 ? "" : "%"})`,
-          transition: dragY > 0 ? "none" : "transform 300ms cubic-bezier(0.32, 0.72, 0, 1)",
+          transition:
+            dragY > 0
+              ? "none"
+              : "transform 300ms cubic-bezier(0.32, 0.72, 0, 1)",
         }}
         onTouchStart={onSheetTouchStart}
         onTouchMove={onSheetTouchMove}
@@ -1158,40 +2323,59 @@ export default function MobileDashboard() {
           onTouchEnd={onSheetTouchEnd}
         >
           <div className="flex items-center gap-2">
-            <button onClick={() => setEntrySheetOpen(false)} className="p-1 rounded-lg cursor-pointer active:scale-90 transition-transform duration-150" style={{ color: muted }}>
+            <button
+              onClick={() => setEntrySheetOpen(false)}
+              className="p-1 rounded-lg cursor-pointer active:scale-90 transition-transform duration-150"
+              style={{ color: muted }}
+            >
               <IconChevronLeft />
             </button>
-            <p className="text-sm font-semibold" style={{ color: text }}>New Transaction</p>
+            <p className="text-sm font-semibold" style={{ color: text }}>
+              New Transaction
+            </p>
           </div>
         </div>
-          <div className="p-5 space-y-3">
-            {/* Category pills — two rows, proportionally sized to label length */}
-            {[Object.entries(CATEGORY_CONFIG).slice(0, 4), Object.entries(CATEGORY_CONFIG).slice(4)].map((row, ri) => (
-              <div key={ri} className="flex gap-2">
-                {row.map(([key, cfg]) => {
-                  const active = quickCat === key;
-                  const color = `var(--category-${key.toLowerCase()})`;
-                  return (
-                    <button
-                      key={key}
-                      type="button"
-                      onClick={() => { setQuickCat(key); setQuickForm((f) => ({ ...f, name: key === "TIPS" ? "Cash" : f.name })); }}
-                      className="py-1.5 rounded-xl text-xs font-semibold border cursor-pointer active:scale-95 transition-all duration-150 text-center"
-                      style={{
-                        flex: cfg.label.length + 4,
-                        color: active ? color : muted,
-                        borderColor: active ? color : border,
-                        backgroundColor: active ? `color-mix(in srgb, ${color} 15%, transparent)` : "transparent",
-                        boxShadow: active ? `0 0 0 2px color-mix(in srgb, ${color} 20%, transparent)` : "none",
-                      }}
-                    >
-                      {cfg.label}
-                    </button>
-                  );
-                })}
-              </div>
-            ))}
-            {/* Fallback dropdown — uncomment to restore
+        <div className="p-5 space-y-3">
+          {/* Category pills — two rows, proportionally sized to label length */}
+          {[
+            Object.entries(CATEGORY_CONFIG).slice(0, 4),
+            Object.entries(CATEGORY_CONFIG).slice(4),
+          ].map((row, ri) => (
+            <div key={ri} className="flex gap-2">
+              {row.map(([key, cfg]) => {
+                const active = quickCat === key;
+                const color = `var(--category-${key.toLowerCase()})`;
+                return (
+                  <button
+                    key={key}
+                    type="button"
+                    onClick={() => {
+                      setQuickCat(key);
+                      setQuickForm((f) => ({
+                        ...f,
+                        name: key === "TIPS" ? "Cash" : f.name,
+                      }));
+                    }}
+                    className="py-1.5 rounded-xl text-xs font-semibold border cursor-pointer active:scale-95 transition-all duration-150 text-center"
+                    style={{
+                      flex: cfg.label.length + 4,
+                      color: active ? color : muted,
+                      borderColor: active ? color : border,
+                      backgroundColor: active
+                        ? `color-mix(in srgb, ${color} 15%, transparent)`
+                        : "transparent",
+                      boxShadow: active
+                        ? `0 0 0 2px color-mix(in srgb, ${color} 20%, transparent)`
+                        : "none",
+                    }}
+                  >
+                    {cfg.label}
+                  </button>
+                );
+              })}
+            </div>
+          ))}
+          {/* Fallback dropdown — uncomment to restore
             <select
               value={quickCat}
               onChange={(e) => { setQuickCat(e.target.value); setQuickForm((f) => ({ ...f, name: e.target.value === "TIPS" ? "Cash" : "" })); }}
@@ -1201,38 +2385,84 @@ export default function MobileDashboard() {
               {Object.entries(CATEGORY_CONFIG).map(([key, cfg]) => <option key={key} value={key}>{cfg.label}</option>)}
             </select>
             */}
-            <form onSubmit={handleQuickSubmit} className="space-y-3">
+          <form onSubmit={handleQuickSubmit} className="space-y-3">
+            <input
+              type="text"
+              placeholder="Name"
+              value={quickForm.name}
+              onChange={(e) =>
+                quickCat !== "TIPS" &&
+                setQuickForm((f) => ({ ...f, name: e.target.value }))
+              }
+              required={quickCat !== "TIPS"}
+              disabled={quickCat === "TIPS"}
+              className="w-full rounded-xl px-4 py-2.5 text-sm border"
+              style={
+                quickCat === "TIPS"
+                  ? {
+                      ...inputStyle,
+                      cursor: "not-allowed",
+                      opacity: 0.45,
+                      backgroundImage: `repeating-linear-gradient(-45deg, transparent, transparent 4px, color-mix(in srgb, ${dark ? "var(--dark-text)" : "var(--light-text)"} 6%, transparent) 4px, color-mix(in srgb, ${dark ? "var(--dark-text)" : "var(--light-text)"} 6%, transparent) 6px)`,
+                    }
+                  : inputStyle
+              }
+            />
+            <div className="grid grid-cols-2 gap-3">
               <input
-                type="text"
-                placeholder="Name"
-                value={quickForm.name}
-                onChange={(e) => quickCat !== "TIPS" && setQuickForm((f) => ({ ...f, name: e.target.value }))}
-                required={quickCat !== "TIPS"}
-                disabled={quickCat === "TIPS"}
-                className="w-full rounded-xl px-4 py-2.5 text-sm border"
-                style={quickCat === "TIPS" ? { ...inputStyle, cursor: "not-allowed", opacity: 0.45, backgroundImage: `repeating-linear-gradient(-45deg, transparent, transparent 4px, color-mix(in srgb, ${dark ? "var(--dark-text)" : "var(--light-text)"} 6%, transparent) 4px, color-mix(in srgb, ${dark ? "var(--dark-text)" : "var(--light-text)"} 6%, transparent) 6px)` } : inputStyle}
+                type="number"
+                placeholder="0.00"
+                value={quickForm.amount}
+                onChange={(e) =>
+                  setQuickForm((f) => ({ ...f, amount: e.target.value }))
+                }
+                required
+                min="0.01"
+                step="0.01"
+                className="rounded-xl px-4 py-2.5 text-sm border"
+                style={inputStyle}
               />
-              <div className="grid grid-cols-2 gap-3">
-                <input type="number" placeholder="0.00" value={quickForm.amount} onChange={(e) => setQuickForm((f) => ({ ...f, amount: e.target.value }))} required min="0.01" step="0.01" className="rounded-xl px-4 py-2.5 text-sm border" style={inputStyle} />
-                <input type="date" value={quickForm.transaction_date} onChange={(e) => setQuickForm((f) => ({ ...f, transaction_date: e.target.value }))} required className="rounded-xl px-3 py-2.5 text-sm border" style={inputStyle} />
-              </div>
-              {quickError && <p className="text-xs text-red-500">{quickError}</p>}
-              <button
-                type="submit"
-                disabled={quickLoading}
-                className="w-full py-2.5 rounded-xl text-sm font-bold tracking-wide disabled:opacity-50 cursor-pointer active:scale-95 border"
-                style={{ color: quickColor, borderColor: quickColor, backgroundColor: `color-mix(in srgb, ${quickColor} 12%, transparent)`, boxShadow: `0 0 0 2px color-mix(in srgb, ${quickColor} 20%, transparent)` }}
-              >
-                {quickLoading ? "Saving…" : "Add Transaction"}
-              </button>
-            </form>
-          </div>
+              <input
+                type="date"
+                value={quickForm.transaction_date}
+                onChange={(e) =>
+                  setQuickForm((f) => ({
+                    ...f,
+                    transaction_date: e.target.value,
+                  }))
+                }
+                required
+                className="rounded-xl px-3 py-2.5 text-sm border"
+                style={inputStyle}
+              />
+            </div>
+            {quickError && <p className="text-xs text-red-500">{quickError}</p>}
+            <button
+              type="submit"
+              disabled={quickLoading}
+              className="w-full py-2.5 rounded-xl text-sm font-bold tracking-wide disabled:opacity-50 cursor-pointer active:scale-95 border"
+              style={{
+                color: quickColor,
+                borderColor: quickColor,
+                backgroundColor: `color-mix(in srgb, ${quickColor} 12%, transparent)`,
+                boxShadow: `0 0 0 2px color-mix(in srgb, ${quickColor} 20%, transparent)`,
+              }}
+            >
+              {quickLoading ? "Saving…" : "Add Transaction"}
+            </button>
+          </form>
         </div>
+      </div>
 
       {/* ── Batch add overlay ── */}
       <div
         className="fixed inset-0 z-40"
-        style={{ backgroundColor: "rgba(0,0,0,0.5)", opacity: batchSheetOpen ? 1 : 0, pointerEvents: batchSheetOpen ? "auto" : "none", transition: "opacity 250ms ease" }}
+        style={{
+          backgroundColor: "rgba(0,0,0,0.5)",
+          opacity: batchSheetOpen ? 1 : 0,
+          pointerEvents: batchSheetOpen ? "auto" : "none",
+          transition: "opacity 250ms ease",
+        }}
         onClick={() => setBatchSheetOpen(false)}
       />
 
@@ -1240,11 +2470,15 @@ export default function MobileDashboard() {
       <div
         className="fixed bottom-0 left-0 right-0 z-50 rounded-t-2xl border-t border-x flex flex-col"
         style={{
-          backgroundColor: surface, borderColor: border,
+          backgroundColor: surface,
+          borderColor: border,
           maxHeight: "85dvh",
           paddingBottom: "env(safe-area-inset-bottom)",
           transform: `translateY(${batchSheetOpen ? dragY : 100}${batchSheetOpen && dragY > 0 ? "" : "%"})`,
-          transition: dragY > 0 ? "none" : "transform 300ms cubic-bezier(0.32, 0.72, 0, 1)",
+          transition:
+            dragY > 0
+              ? "none"
+              : "transform 300ms cubic-bezier(0.32, 0.72, 0, 1)",
         }}
       >
         <div
@@ -1253,112 +2487,274 @@ export default function MobileDashboard() {
           onTouchMove={onSheetTouchMove}
           onTouchEnd={onSheetTouchEnd}
         >
-          <div className="w-10 h-1 rounded-full" style={{ backgroundColor: border }} />
+          <div
+            className="w-10 h-1 rounded-full"
+            style={{ backgroundColor: border }}
+          />
         </div>
-        <div className="px-5 pb-3 flex items-center justify-between border-b shrink-0" style={{ borderColor: border }}>
+        <div
+          className="px-5 pb-3 flex items-center justify-between border-b shrink-0"
+          style={{ borderColor: border }}
+        >
           <div className="flex items-center gap-2">
-            <button onClick={() => setBatchSheetOpen(false)} className="p-1 rounded-lg cursor-pointer active:scale-90 transition-transform duration-150" style={{ color: muted }}>
+            <button
+              onClick={() => setBatchSheetOpen(false)}
+              className="p-1 rounded-lg cursor-pointer active:scale-90 transition-transform duration-150"
+              style={{ color: muted }}
+            >
               <IconChevronLeft />
             </button>
             <p className="text-sm font-semibold" style={{ color: text }}>
-              Batch Add <span style={{ color: muted, fontWeight: 400 }}>· {batchItems.length} rows</span>
+              Batch Add{" "}
+              <span style={{ color: muted, fontWeight: 400 }}>
+                · {batchItems.length} rows
+              </span>
             </p>
           </div>
           <button
             onClick={handleBatchSubmit}
             disabled={batchLoading}
             className="px-4 py-1.5 rounded-xl text-xs font-bold border cursor-pointer disabled:opacity-50 active:scale-95 transition-transform duration-150"
-            style={{ color: "var(--category-income)", borderColor: "var(--category-income)", backgroundColor: "color-mix(in srgb, var(--category-income) 12%, transparent)" }}
+            style={{
+              color: "var(--category-income)",
+              borderColor: "var(--category-income)",
+              backgroundColor:
+                "color-mix(in srgb, var(--category-income) 12%, transparent)",
+            }}
           >
-            {batchLoading ? "Adding…" : (() => { const n = batchItems.filter(r => parseFloat(r.amount) > 0 && (r.category === "TIPS" || r.name.trim())).length; return n ? `Add ${n} transaction${n === 1 ? "" : "s"}` : "Add transactions"; })()}
+            {batchLoading
+              ? "Adding…"
+              : (() => {
+                  const n = batchItems.filter(
+                    (r) =>
+                      parseFloat(r.amount) > 0 &&
+                      (r.category === "TIPS" || r.name.trim()),
+                  ).length;
+                  return n
+                    ? `Add ${n} transaction${n === 1 ? "" : "s"}`
+                    : "Add transactions";
+                })()}
           </button>
         </div>
         <div ref={batchListRef} className="flex-1 overflow-y-auto px-4 py-3">
           {batchItems.map((item, idx) => {
             const catColor = `var(--category-${item.category.toLowerCase()})`;
             return (
-              <div key={item._key} style={{ maxHeight: deletingKeys.includes(item._key) || enteringKey === item._key ? 0 : 130, overflow: "hidden", marginBottom: deletingKeys.includes(item._key) || enteringKey === item._key ? 0 : 8, transition: deletingKeys.includes(item._key) ? "max-height 350ms ease, margin-bottom 350ms ease" : "max-height 220ms ease, margin-bottom 220ms ease" }}>
-              <div className="rounded-xl border p-3 flex flex-col gap-2" style={{ borderColor: border, backgroundColor: bg, transform: deletingKeys.includes(item._key) ? "translateX(60px)" : "translateX(0)", opacity: deletingKeys.includes(item._key) ? 0 : 1, transition: "transform 350ms ease, opacity 250ms ease" }}>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold shrink-0 w-5 text-center" style={{ color: muted }}>{idx + 1}</span>
-                  <select
-                    value={item.category}
-                    onChange={(e) => setBatchItems(prev => prev.map((r, i) => i === idx ? { ...r, category: e.target.value, name: e.target.value === "TIPS" ? "Cash" : r.name } : r))}
-                    className="flex-1 rounded-lg px-2 py-1.5 text-xs font-semibold border cursor-pointer"
-                    style={{ color: catColor, borderColor: catColor, backgroundColor: `color-mix(in srgb, ${catColor} 10%, transparent)`, colorScheme: dark ? "dark" : "light" }}
-                  >
-                    {Object.entries(CATEGORY_CONFIG).map(([key, cfg]) => (
-                      <option key={key} value={key} style={{ backgroundColor: bg, color: text }}>{cfg.label}</option>
-                    ))}
-                  </select>
-                  <button
-                    onClick={() => {
-                      setDeletingKeys(prev => [...prev, item._key]);
-                      setTimeout(() => {
-                        setBatchItems(prev => prev.filter(r => r._key !== item._key));
-                        setDeletingKeys(prev => prev.filter(k => k !== item._key));
-                      }, 350);
-                    }}
-                    className="p-1 rounded-lg cursor-pointer shrink-0"
-                    style={{ color: muted }}
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M18 6 6 18M6 6l12 12" />
-                    </svg>
-                  </button>
+              <div
+                key={item._key}
+                style={{
+                  maxHeight:
+                    deletingKeys.includes(item._key) ||
+                    enteringKey === item._key
+                      ? 0
+                      : 130,
+                  overflow: "hidden",
+                  marginBottom:
+                    deletingKeys.includes(item._key) ||
+                    enteringKey === item._key
+                      ? 0
+                      : 8,
+                  transition: deletingKeys.includes(item._key)
+                    ? "max-height 350ms ease, margin-bottom 350ms ease"
+                    : "max-height 220ms ease, margin-bottom 220ms ease",
+                }}
+              >
+                <div
+                  className="rounded-xl border p-3 flex flex-col gap-2"
+                  style={{
+                    borderColor: border,
+                    backgroundColor: bg,
+                    transform: deletingKeys.includes(item._key)
+                      ? "translateX(60px)"
+                      : "translateX(0)",
+                    opacity: deletingKeys.includes(item._key) ? 0 : 1,
+                    transition: "transform 350ms ease, opacity 250ms ease",
+                  }}
+                >
+                  <div className="flex items-center gap-2">
+                    <span
+                      className="text-xs font-bold shrink-0 w-5 text-center"
+                      style={{ color: muted }}
+                    >
+                      {idx + 1}
+                    </span>
+                    <select
+                      value={item.category}
+                      onChange={(e) =>
+                        setBatchItems((prev) =>
+                          prev.map((r, i) =>
+                            i === idx
+                              ? {
+                                  ...r,
+                                  category: e.target.value,
+                                  name:
+                                    e.target.value === "TIPS" ? "Cash" : r.name,
+                                }
+                              : r,
+                          ),
+                        )
+                      }
+                      className="flex-1 rounded-lg px-2 py-1.5 text-xs font-semibold border cursor-pointer"
+                      style={{
+                        color: catColor,
+                        borderColor: catColor,
+                        backgroundColor: `color-mix(in srgb, ${catColor} 10%, transparent)`,
+                        colorScheme: dark ? "dark" : "light",
+                      }}
+                    >
+                      {Object.entries(CATEGORY_CONFIG).map(([key, cfg]) => (
+                        <option
+                          key={key}
+                          value={key}
+                          style={{ backgroundColor: bg, color: text }}
+                        >
+                          {cfg.label}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      onClick={() => {
+                        setDeletingKeys((prev) => [...prev, item._key]);
+                        setTimeout(() => {
+                          setBatchItems((prev) =>
+                            prev.filter((r) => r._key !== item._key),
+                          );
+                          setDeletingKeys((prev) =>
+                            prev.filter((k) => k !== item._key),
+                          );
+                        }, 350);
+                      }}
+                      className="p-1 rounded-lg cursor-pointer shrink-0"
+                      style={{ color: muted }}
+                    >
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M18 6 6 18M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="Name"
+                      value={item.category === "TIPS" ? "Cash" : item.name}
+                      onChange={(e) =>
+                        item.category !== "TIPS" &&
+                        setBatchItems((prev) =>
+                          prev.map((r, i) =>
+                            i === idx ? { ...r, name: e.target.value } : r,
+                          ),
+                        )
+                      }
+                      disabled={item.category === "TIPS"}
+                      className="flex-1 rounded-lg px-2 py-1.5 text-xs border min-w-0"
+                      style={{
+                        backgroundColor: surface,
+                        borderColor: border,
+                        color: text,
+                        opacity: item.category === "TIPS" ? 0.45 : 1,
+                        cursor:
+                          item.category === "TIPS" ? "not-allowed" : undefined,
+                        backgroundImage:
+                          item.category === "TIPS"
+                            ? `repeating-linear-gradient(-45deg, transparent, transparent 4px, color-mix(in srgb, ${text} 6%, transparent) 4px, color-mix(in srgb, ${text} 6%, transparent) 6px)`
+                            : undefined,
+                      }}
+                    />
+                    <input
+                      type="number"
+                      placeholder="0.00"
+                      value={item.amount}
+                      onChange={(e) =>
+                        setBatchItems((prev) =>
+                          prev.map((r, i) =>
+                            i === idx ? { ...r, amount: e.target.value } : r,
+                          ),
+                        )
+                      }
+                      min="0.01"
+                      step="0.01"
+                      className="rounded-lg px-2 py-1.5 text-xs border"
+                      style={{
+                        width: 72,
+                        backgroundColor: surface,
+                        borderColor: border,
+                        color: text,
+                      }}
+                    />
+                    <input
+                      type="date"
+                      value={item.transaction_date}
+                      onChange={(e) =>
+                        setBatchItems((prev) =>
+                          prev.map((r, i) =>
+                            i === idx
+                              ? { ...r, transaction_date: e.target.value }
+                              : r,
+                          ),
+                        )
+                      }
+                      className="rounded-lg px-2 py-1.5 text-xs border"
+                      style={{
+                        width: 112,
+                        backgroundColor: surface,
+                        borderColor: border,
+                        color: text,
+                        colorScheme: dark ? "dark" : "light",
+                      }}
+                    />
+                  </div>
                 </div>
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    placeholder="Name"
-                    value={item.category === "TIPS" ? "Cash" : item.name}
-                    onChange={(e) => item.category !== "TIPS" && setBatchItems(prev => prev.map((r, i) => i === idx ? { ...r, name: e.target.value } : r))}
-                    disabled={item.category === "TIPS"}
-                    className="flex-1 rounded-lg px-2 py-1.5 text-xs border min-w-0"
-                    style={{ backgroundColor: surface, borderColor: border, color: text, opacity: item.category === "TIPS" ? 0.45 : 1, cursor: item.category === "TIPS" ? "not-allowed" : undefined, backgroundImage: item.category === "TIPS" ? `repeating-linear-gradient(-45deg, transparent, transparent 4px, color-mix(in srgb, ${text} 6%, transparent) 4px, color-mix(in srgb, ${text} 6%, transparent) 6px)` : undefined }}
-                  />
-                  <input
-                    type="number"
-                    placeholder="0.00"
-                    value={item.amount}
-                    onChange={(e) => setBatchItems(prev => prev.map((r, i) => i === idx ? { ...r, amount: e.target.value } : r))}
-                    min="0.01"
-                    step="0.01"
-                    className="rounded-lg px-2 py-1.5 text-xs border"
-                    style={{ width: 72, backgroundColor: surface, borderColor: border, color: text }}
-                  />
-                  <input
-                    type="date"
-                    value={item.transaction_date}
-                    onChange={(e) => setBatchItems(prev => prev.map((r, i) => i === idx ? { ...r, transaction_date: e.target.value } : r))}
-                    className="rounded-lg px-2 py-1.5 text-xs border"
-                    style={{ width: 112, backgroundColor: surface, borderColor: border, color: text, colorScheme: dark ? "dark" : "light" }}
-                  />
-                </div>
-              </div>
               </div>
             );
           })}
         </div>
-        <div className="px-4 py-3 border-t shrink-0" style={{ borderColor: border }}>
-          {batchError && <p className="text-xs mb-2" style={{ color: "var(--category-expense)" }}>{batchError}</p>}
+        <div
+          className="px-4 py-3 border-t shrink-0"
+          style={{ borderColor: border }}
+        >
+          {batchError && (
+            <p
+              className="text-xs mb-2"
+              style={{ color: "var(--category-expense)" }}
+            >
+              {batchError}
+            </p>
+          )}
           <button
             onClick={() => {
               const row = newBatchRow();
-              setBatchItems(prev => [...prev, row]);
+              setBatchItems((prev) => [...prev, row]);
               setEnteringKey(row._key);
-              requestAnimationFrame(() => requestAnimationFrame(() => {
-                setEnteringKey(null);
-                const start = performance.now();
-                const track = () => {
-                  if (batchListRef.current) batchListRef.current.scrollTop = batchListRef.current.scrollHeight;
-                  if (performance.now() - start < 260) requestAnimationFrame(track);
-                };
-                requestAnimationFrame(track);
-              }));
+              requestAnimationFrame(() =>
+                requestAnimationFrame(() => {
+                  setEnteringKey(null);
+                  const start = performance.now();
+                  const track = () => {
+                    if (batchListRef.current)
+                      batchListRef.current.scrollTop =
+                        batchListRef.current.scrollHeight;
+                    if (performance.now() - start < 260)
+                      requestAnimationFrame(track);
+                  };
+                  requestAnimationFrame(track);
+                }),
+              );
             }}
             className="w-full py-2.5 rounded-xl text-sm font-semibold border cursor-pointer active:scale-95 transition-transform duration-150"
-            style={{ color: muted, borderColor: border, backgroundColor: `color-mix(in srgb, ${text} 5%, transparent)` }}
+            style={{
+              color: muted,
+              borderColor: border,
+              backgroundColor: `color-mix(in srgb, ${text} 5%, transparent)`,
+            }}
           >
             + Add row
           </button>
@@ -1366,47 +2762,157 @@ export default function MobileDashboard() {
       </div>
 
       {/* ── Drawer overlay ── */}
-      {(drawerOpen || accountOpen) && <div className="fixed inset-0 z-40" style={{ backgroundColor: "rgba(0,0,0,0.4)" }} onClick={() => { setDrawerOpen(false); setAccountOpen(false); }} />}
+      {(drawerOpen || accountOpen) && (
+        <div
+          className="fixed inset-0 z-40"
+          style={{ backgroundColor: "rgba(0,0,0,0.4)" }}
+          onClick={() => {
+            setDrawerOpen(false);
+            setAccountOpen(false);
+          }}
+        />
+      )}
 
       {/* ── Recurring payments overlay ── */}
       {recurringOpen && (
-        <div className="fixed inset-0 z-50 flex flex-col" style={{ backgroundColor: surface, color: text }}>
-          <div className="px-5 py-4 flex items-center justify-between border-b shrink-0" style={{ borderColor: border }}>
+        <div
+          className="fixed inset-0 z-50 flex flex-col"
+          style={{ backgroundColor: surface, color: text }}
+        >
+          <div
+            className="px-5 py-4 flex items-center justify-between border-b shrink-0"
+            style={{ borderColor: border }}
+          >
             <div className="flex items-center gap-2">
-              <button onClick={() => { setRecurringOpen(false); setRpSave({ isDirty: false, isSaving: false, onSave: null }); }} className="p-1 rounded-lg cursor-pointer" style={{ color: muted }}>
+              <button
+                onClick={() => {
+                  setRecurringOpen(false);
+                  setRpSave({ isDirty: false, isSaving: false, onSave: null });
+                }}
+                className="p-1 rounded-lg cursor-pointer"
+                style={{ color: muted }}
+              >
                 <IconChevronLeft />
               </button>
-              <span className="text-sm font-semibold" style={{ color: muted }}>Recurring Payments</span>
+              <span className="text-sm font-semibold" style={{ color: muted }}>
+                Recurring Payments
+              </span>
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
               {(() => {
-                const status = rpSave.isSaving ? "Saving…" : rpSave.isDirty ? "Unsaved" : rpSave.saveStatus === "saved" ? "Saved" : null;
-                const statusColor = rpSave.saveStatus === "saved" && !rpSave.isDirty ? "var(--category-income)" : `color-mix(in srgb, ${text} 40%, transparent)`;
-                return status ? <span style={{ fontSize: "11px", color: statusColor, transition: "color 0.3s" }}>{status}</span> : null;
+                const status = rpSave.isSaving
+                  ? "Saving…"
+                  : rpSave.isDirty
+                    ? "Unsaved"
+                    : rpSave.saveStatus === "saved"
+                      ? "Saved"
+                      : null;
+                const statusColor =
+                  rpSave.saveStatus === "saved" && !rpSave.isDirty
+                    ? "var(--category-income)"
+                    : `color-mix(in srgb, ${text} 40%, transparent)`;
+                return status ? (
+                  <span
+                    style={{
+                      fontSize: "11px",
+                      color: statusColor,
+                      transition: "color 0.3s",
+                    }}
+                  >
+                    {status}
+                  </span>
+                ) : null;
               })()}
-              <button onClick={() => rpSave.onSave?.()} disabled={!rpSave.isDirty || rpSave.isSaving}
-                style={{ fontSize: "12px", fontWeight: 600, padding: "4px 12px", borderRadius: "8px", border: "1px solid var(--category-income)", color: "var(--category-income)", backgroundColor: rpSave.isDirty ? "color-mix(in srgb, var(--category-income) 18%, transparent)" : "transparent", boxShadow: rpSave.isDirty ? "0 0 0 2px color-mix(in srgb, var(--category-income) 20%, transparent)" : "none", cursor: rpSave.isDirty && !rpSave.isSaving ? "pointer" : "default", opacity: rpSave.isDirty ? (rpSave.isSaving ? 0.6 : 1) : 0.25, transition: "all 0.2s ease" }}>
+              <button
+                onClick={() => rpSave.onSave?.()}
+                disabled={!rpSave.isDirty || rpSave.isSaving}
+                style={{
+                  fontSize: "12px",
+                  fontWeight: 600,
+                  padding: "4px 12px",
+                  borderRadius: "8px",
+                  border: "1px solid var(--category-income)",
+                  color: "var(--category-income)",
+                  backgroundColor: rpSave.isDirty
+                    ? "color-mix(in srgb, var(--category-income) 18%, transparent)"
+                    : "transparent",
+                  boxShadow: rpSave.isDirty
+                    ? "0 0 0 2px color-mix(in srgb, var(--category-income) 20%, transparent)"
+                    : "none",
+                  cursor:
+                    rpSave.isDirty && !rpSave.isSaving ? "pointer" : "default",
+                  opacity: rpSave.isDirty ? (rpSave.isSaving ? 0.6 : 1) : 0.25,
+                  transition: "all 0.2s ease",
+                }}
+              >
                 {rpSave.isSaving ? "Saving…" : "Save"}
               </button>
             </div>
           </div>
-          <RecurringPaymentsModal inline mobile onSaveStateChange={setRpSave} onDelete={refresh} onSaved={refresh} />
+          <RecurringPaymentsModal
+            inline
+            mobile
+            onSaveStateChange={setRpSave}
+            onDelete={refresh}
+            onSaved={refresh}
+          />
         </div>
       )}
 
       {/* ── Drawer (menu + account as sliding track) ── */}
       <div
         className="fixed top-0 right-0 h-full w-72 z-50 border-l"
-        style={{ backgroundColor: surface, borderColor: border, color: text, overflow: "hidden", transform: (drawerOpen || accountOpen) ? "translateX(0)" : "translateX(100%)", transition: "transform 250ms ease" }}
+        style={{
+          backgroundColor: surface,
+          borderColor: border,
+          color: text,
+          overflow: "hidden",
+          transform:
+            drawerOpen || accountOpen ? "translateX(0)" : "translateX(100%)",
+          transition: "transform 250ms ease",
+        }}
       >
-        <div style={{ display: "flex", width: "200%", height: "100%", transform: accountOpen ? "translateX(-50%)" : "translateX(0)", transition: "transform 250ms ease" }}>
-
+        <div
+          style={{
+            display: "flex",
+            width: "200%",
+            height: "100%",
+            transform: accountOpen ? "translateX(-50%)" : "translateX(0)",
+            transition: "transform 250ms ease",
+          }}
+        >
           {/* Menu panel */}
-          <div style={{ width: "50%", height: "100%", display: "flex", flexDirection: "column" }}>
-            <div className="px-5 py-4 flex items-center justify-between border-b shrink-0" style={{ borderColor: border }}>
-              <span className="text-sm font-semibold" style={{ color: muted }}>Menu</span>
-              <button onClick={() => setDrawerOpen(false)} className="p-1 rounded-lg cursor-pointer" aria-label="Close menu">
-                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <div
+            style={{
+              width: "50%",
+              height: "100%",
+              display: "flex",
+              flexDirection: "column",
+            }}
+          >
+            <div
+              className="px-5 py-4 flex items-center justify-between border-b shrink-0"
+              style={{ borderColor: border }}
+            >
+              <span className="text-sm font-semibold" style={{ color: muted }}>
+                Menu
+              </span>
+              <button
+                onClick={() => setDrawerOpen(false)}
+                className="p-1 rounded-lg cursor-pointer"
+                aria-label="Close menu"
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
                   <path d="M18 6 6 18M6 6l12 12" />
                 </svg>
               </button>
@@ -1416,16 +2922,47 @@ export default function MobileDashboard() {
               style={{ background: "transparent", border: "none" }}
               onClick={() => setAccountOpen(true)}
             >
-              <div className="w-10 h-10 rounded-full shrink-0 overflow-hidden flex items-center justify-center text-sm font-bold" style={{ backgroundColor: `color-mix(in srgb, ${text} 12%, transparent)`, color: text }}>
-                {user?.avatar
-                  ? <img src={user.avatar} alt="avatar" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                  : (user?.first_name?.[0]?.toUpperCase() ?? "?")}
+              <div
+                className="w-10 h-10 rounded-full shrink-0 overflow-hidden flex items-center justify-center text-sm font-bold"
+                style={{
+                  backgroundColor: `color-mix(in srgb, ${text} 12%, transparent)`,
+                  color: text,
+                }}
+              >
+                {user?.avatar ? (
+                  <img
+                    src={user.avatar}
+                    alt="avatar"
+                    style={{
+                      width: "100%",
+                      height: "100%",
+                      objectFit: "cover",
+                    }}
+                  />
+                ) : (
+                  (user?.first_name?.[0]?.toUpperCase() ?? "?")
+                )}
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold">{user ? `${user.first_name} ${user.last_name}` : "—"}</p>
-                <p className="text-xs truncate" style={{ color: muted }}>{user?.email_address ?? "—"}</p>
+                <p className="text-sm font-semibold">
+                  {user ? `${user.first_name} ${user.last_name}` : "—"}
+                </p>
+                <p className="text-xs truncate" style={{ color: muted }}>
+                  {user?.email_address ?? "—"}
+                </p>
               </div>
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: muted, flexShrink: 0 }}>
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                style={{ color: muted, flexShrink: 0 }}
+              >
                 <path d="M9 18l6-6-6-6" />
               </svg>
             </button>
@@ -1433,11 +2970,30 @@ export default function MobileDashboard() {
             <div className="px-3 py-3 flex-1">
               <button
                 className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium cursor-pointer text-left border"
-                style={{ color: text, borderColor: `color-mix(in srgb, ${text} 18%, transparent)`, backgroundColor: `color-mix(in srgb, ${text} 5%, transparent)` }}
-                onClick={() => { setDrawerOpen(false); setRecurringOpen(true); }}
+                style={{
+                  color: text,
+                  borderColor: `color-mix(in srgb, ${text} 18%, transparent)`,
+                  backgroundColor: `color-mix(in srgb, ${text} 5%, transparent)`,
+                }}
+                onClick={() => {
+                  setDrawerOpen(false);
+                  setRecurringOpen(true);
+                }}
               >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" /><path d="M12 7v5l4 2" />
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                  <path d="M3 3v5h5" />
+                  <path d="M12 7v5l4 2" />
                 </svg>
                 Recurring Payments
               </button>
@@ -1446,15 +3002,42 @@ export default function MobileDashboard() {
             <div className="px-3 py-3 flex-shrink-0 flex flex-col gap-3">
               <button
                 className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium cursor-pointer text-left border"
-                style={{ color: text, borderColor: `color-mix(in srgb, ${text} 18%, transparent)`, backgroundColor: `color-mix(in srgb, ${text} 5%, transparent)` }}
-                onClick={() => document.documentElement.classList.toggle("dark")}
+                style={{
+                  color: text,
+                  borderColor: `color-mix(in srgb, ${text} 18%, transparent)`,
+                  backgroundColor: `color-mix(in srgb, ${text} 5%, transparent)`,
+                }}
+                onClick={() =>
+                  document.documentElement.classList.toggle("dark")
+                }
               >
                 {dark ? (
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <circle cx="12" cy="12" r="4" />
+                    <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
                   </svg>
                 ) : (
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
                     <path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z" />
                   </svg>
                 )}
@@ -1465,9 +3048,24 @@ export default function MobileDashboard() {
                 target="_blank"
                 rel="noopener noreferrer"
                 className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-left border"
-                style={{ color: text, textDecoration: "none", borderColor: `color-mix(in srgb, ${text} 18%, transparent)`, backgroundColor: `color-mix(in srgb, ${text} 5%, transparent)` }}
+                style={{
+                  color: text,
+                  textDecoration: "none",
+                  borderColor: `color-mix(in srgb, ${text} 18%, transparent)`,
+                  backgroundColor: `color-mix(in srgb, ${text} 5%, transparent)`,
+                }}
               >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
                   <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
                 </svg>
                 Feedback
@@ -1478,10 +3076,25 @@ export default function MobileDashboard() {
               <button
                 className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium cursor-pointer text-left"
                 style={{ color: "var(--category-expense)" }}
-                onClick={() => { logout(); navigate("/login"); }}
+                onClick={() => {
+                  logout();
+                  navigate("/login");
+                }}
               >
-                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" />
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                  <polyline points="16 17 21 12 16 7" />
+                  <line x1="21" y1="12" x2="9" y2="12" />
                 </svg>
                 Log out
               </button>
@@ -1489,24 +3102,87 @@ export default function MobileDashboard() {
           </div>
 
           {/* Account panel */}
-          <div style={{ width: "50%", height: "100%", display: "flex", flexDirection: "column" }}>
-            <div className="px-5 py-4 flex items-center justify-between border-b shrink-0" style={{ borderColor: border }}>
+          <div
+            style={{
+              width: "50%",
+              height: "100%",
+              display: "flex",
+              flexDirection: "column",
+            }}
+          >
+            <div
+              className="px-5 py-4 flex items-center justify-between border-b shrink-0"
+              style={{ borderColor: border }}
+            >
               <div className="flex items-center gap-2">
-                <button onClick={() => setAccountOpen(false)} className="p-1 rounded-lg cursor-pointer" style={{ color: muted }}>
+                <button
+                  onClick={() => setAccountOpen(false)}
+                  className="p-1 rounded-lg cursor-pointer"
+                  style={{ color: muted }}
+                >
                   <IconChevronLeft />
                 </button>
-                <span className="text-sm font-semibold" style={{ color: muted }}>Account</span>
+                <span
+                  className="text-sm font-semibold"
+                  style={{ color: muted }}
+                >
+                  Account
+                </span>
               </div>
-              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+              <div
+                style={{ display: "flex", alignItems: "center", gap: "8px" }}
+              >
                 {(() => {
-                  const status = acctSave.isSaving ? "Saving…" : acctSave.isDirty ? "Unsaved" : acctSave.saveStatus === "saved" ? "Saved" : null;
-                  const statusColor = acctSave.saveStatus === "saved" && !acctSave.isDirty ? "var(--category-income)" : `color-mix(in srgb, ${text} 40%, transparent)`;
-                  return status ? <span style={{ fontSize: "11px", color: statusColor, transition: "color 0.3s" }}>{status}</span> : null;
+                  const status = acctSave.isSaving
+                    ? "Saving…"
+                    : acctSave.isDirty
+                      ? "Unsaved"
+                      : acctSave.saveStatus === "saved"
+                        ? "Saved"
+                        : null;
+                  const statusColor =
+                    acctSave.saveStatus === "saved" && !acctSave.isDirty
+                      ? "var(--category-income)"
+                      : `color-mix(in srgb, ${text} 40%, transparent)`;
+                  return status ? (
+                    <span
+                      style={{
+                        fontSize: "11px",
+                        color: statusColor,
+                        transition: "color 0.3s",
+                      }}
+                    >
+                      {status}
+                    </span>
+                  ) : null;
                 })()}
                 <button
                   onClick={() => acctSave.onSave?.()}
                   disabled={!acctSave.isDirty || acctSave.isSaving}
-                  style={{ fontSize: "12px", fontWeight: 600, padding: "4px 12px", borderRadius: "8px", border: "1px solid var(--category-income)", color: "var(--category-income)", backgroundColor: acctSave.isDirty ? "color-mix(in srgb, var(--category-income) 18%, transparent)" : "transparent", boxShadow: acctSave.isDirty ? "0 0 0 2px color-mix(in srgb, var(--category-income) 20%, transparent)" : "none", cursor: acctSave.isDirty && !acctSave.isSaving ? "pointer" : "default", opacity: acctSave.isDirty ? (acctSave.isSaving ? 0.6 : 1) : 0.25, transition: "all 0.2s ease" }}
+                  style={{
+                    fontSize: "12px",
+                    fontWeight: 600,
+                    padding: "4px 12px",
+                    borderRadius: "8px",
+                    border: "1px solid var(--category-income)",
+                    color: "var(--category-income)",
+                    backgroundColor: acctSave.isDirty
+                      ? "color-mix(in srgb, var(--category-income) 18%, transparent)"
+                      : "transparent",
+                    boxShadow: acctSave.isDirty
+                      ? "0 0 0 2px color-mix(in srgb, var(--category-income) 20%, transparent)"
+                      : "none",
+                    cursor:
+                      acctSave.isDirty && !acctSave.isSaving
+                        ? "pointer"
+                        : "default",
+                    opacity: acctSave.isDirty
+                      ? acctSave.isSaving
+                        ? 0.6
+                        : 1
+                      : 0.25,
+                    transition: "all 0.2s ease",
+                  }}
                 >
                   {acctSave.isSaving ? "Saving…" : "Save"}
                 </button>
@@ -1514,7 +3190,6 @@ export default function MobileDashboard() {
             </div>
             <AccountPanel onSaveStateChange={setAcctSave} />
           </div>
-
         </div>
       </div>
 
@@ -1522,12 +3197,66 @@ export default function MobileDashboard() {
         <EditTransactionModal
           transaction={editingTransaction}
           onClose={() => setEditingTransaction(null)}
-          onSaved={() => { setEditingTransaction(null); refresh(); }}
+          onSaved={() => {
+            setEditingTransaction(null);
+            refresh();
+          }}
         />
       )}
 
       {transactions.length === 0 && <Footer />}
       <RenderWakeButton />
+    </div>
+  );
+}
+
+function MSkel({ w = "100%", h = 16, dark = false, style: extra = {} }) {
+  const base = dark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.05)";
+  const hi = dark ? "rgba(255,255,255,0.11)" : "rgba(0,0,0,0.11)";
+  return (
+    <div
+      style={{
+        width: w,
+        height: h,
+        borderRadius: 6,
+        flexShrink: 0,
+        background: `linear-gradient(90deg, ${base} 25%, ${hi} 50%, ${base} 75%)`,
+        backgroundSize: "200% 100%",
+        animation: "skel-shimmer 1.4s ease-in-out infinite",
+        ...extra,
+      }}
+    />
+  );
+}
+
+function MobileDonutSkel({ dark, surface }) {
+  const base = dark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.05)";
+  const hi = dark ? "rgba(255,255,255,0.11)" : "rgba(0,0,0,0.11)";
+  return (
+    <div
+      style={{
+        position: "relative",
+        width: 160,
+        height: 160,
+        borderRadius: "50%",
+        flexShrink: 0,
+        background: `linear-gradient(90deg, ${base} 25%, ${hi} 50%, ${base} 75%)`,
+        backgroundSize: "200% 100%",
+        animation: "skel-shimmer 1.4s ease-in-out infinite",
+      }}
+    >
+      <div
+        style={{
+          position: "absolute",
+          top: "50%",
+          left: "50%",
+          transform: "translate(-50%, -50%)",
+          width: 110,
+          height: 110,
+          borderRadius: "50%",
+          backgroundColor: surface,
+        }}
+      />
     </div>
   );
 }

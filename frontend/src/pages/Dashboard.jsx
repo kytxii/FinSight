@@ -37,6 +37,7 @@ export default function Dashboard() {
   const dark = useTheme();
   const { isDemo } = useAuth();
   const [transactions, setTransactions] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("ALL");
   const [addMode, setAddMode] = useState(null); // null | "menu" | "single" | "batch"
   const addOpen = addMode !== null;
@@ -118,7 +119,10 @@ export default function Dashboard() {
   });
 
   useEffect(() => {
-    getTransactions().then((res) => setTransactions(res.data));
+    getTransactions().then((res) => {
+      setTransactions(res.data);
+      setLoading(false);
+    });
   }, []);
 
   function refreshTransactions() {
@@ -689,6 +693,22 @@ export default function Dashboard() {
         {/* ── Main content ── */}
         <div style={{ marginLeft: addMode === "batch" ? 460 : 210, transition: "margin-left 250ms ease" }}>
         <main className="px-6 py-6 space-y-5">
+        <style>{`@keyframes skel-shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }`}</style>
+        {/* DEV ONLY */}
+        <button onClick={() => setLoading(v => !v)} style={{ position: "fixed", top: 12, right: 12, zIndex: 9999, padding: "4px 10px", borderRadius: 6, fontSize: 11, fontWeight: 600, border: `1px solid ${border}`, backgroundColor: surface, color: loading ? "var(--category-income)" : muted, cursor: "pointer" }}>
+          {loading ? "skeleton ON" : "skeleton OFF"}
+        </button>
+        {loading ? (
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            {[...Array(4)].map((_, i) => (
+              <div key={i} className="rounded-2xl px-5 py-5 border" style={{ backgroundColor: surface, borderTopWidth: 3, borderTopColor: border, borderRightColor: border, borderBottomColor: border, borderLeftColor: border }}>
+                <Skel h={24} w="52%" dark={dark} />
+                <Skel h={36} w="62%" dark={dark} style={{ marginTop: 4 }} />
+                <Skel h={16} w="38%" dark={dark} style={{ marginTop: 6 }} />
+              </div>
+            ))}
+          </div>
+        ) : (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {activeTab === "ALL" ? (
             <>
@@ -794,7 +814,32 @@ export default function Dashboard() {
             </>
           )}
         </div>
+        )}
 
+        {loading ? (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {/* donut chart skeleton */}
+            <div className="rounded-2xl p-6 border" style={{ backgroundColor: surface, borderColor: border }}>
+              <Skel h={28} w="42%" dark={dark} />
+              <div style={{ height: 275, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 16, marginTop: 20 }}>
+                <DonutSkel dark={dark} surface={surface} />
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 16px", justifyContent: "center" }}>
+                  {[55, 70, 48, 62, 40].map((w, i) => (
+                    <div key={i} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <Skel h={9} w={9} dark={dark} style={{ borderRadius: "50%", flexShrink: 0 }} />
+                      <Skel h={12} w={w} dark={dark} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+            {/* bar chart skeleton */}
+            <div className="rounded-2xl p-6 border" style={{ backgroundColor: surface, borderColor: border }}>
+              <Skel h={28} w="42%" dark={dark} />
+              <Skel h={275} dark={dark} style={{ marginTop: 20, borderRadius: 12 }} />
+            </div>
+          </div>
+        ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <ChartCard
             title={
@@ -1038,7 +1083,39 @@ export default function Dashboard() {
             ) : <Empty />}
           </ChartCard>
         </div>
+        )}
 
+        {loading ? (
+          <div className="rounded-2xl border" style={{ backgroundColor: surface, borderColor: border }}>
+            {/* card header — matches px-6 py-4 */}
+            <div className="px-6 py-4 border-b" style={{ borderColor: border }}>
+              <Skel h={28} w="160px" dark={dark} />
+            </div>
+            {/* thead — text-base = 24px line-height, py-3 */}
+            <div className="px-6 py-3 border-b flex items-center gap-6" style={{ borderColor: border }}>
+              <Skel h={24} w="110px" dark={dark} />
+              <Skel h={24} dark={dark} style={{ flex: 1 }} />
+              <Skel h={24} w="90px" dark={dark} />
+              <Skel h={24} w="80px" dark={dark} />
+              <Skel h={24} w="40px" dark={dark} />
+            </div>
+            {/* rows — text-lg name = 28px line-height, py-4 */}
+            {[...Array(10)].map((_, i) => (
+              <div key={i} className="px-6 py-4 border-t flex items-center gap-6" style={{ borderColor: border }}>
+                <Skel h={20} w="110px" dark={dark} />
+                <Skel h={28} dark={dark} style={{ flex: 1 }} />
+                <Skel h={26} w="90px" dark={dark} style={{ borderRadius: 999 }} />
+                <Skel h={24} w="80px" dark={dark} />
+                <Skel h={20} w="40px" dark={dark} />
+              </div>
+            ))}
+            {/* footer — text-xs = 16px line-height, py-3 */}
+            <div className="px-6 py-3 border-t flex items-center justify-between" style={{ borderColor: border }}>
+              <Skel h={16} w="160px" dark={dark} />
+              <Skel h={16} w="100px" dark={dark} />
+            </div>
+          </div>
+        ) : (
         <div ref={tableRef}>
           <TransactionTable
             rows={paginated}
@@ -1056,6 +1133,7 @@ export default function Dashboard() {
             onSort={handleSort}
           />
         </div>
+        )}
       </main>
         <Footer />
         </div>
@@ -1129,6 +1207,40 @@ function Empty() {
   return (
     <div className="h-70 flex items-center justify-center text-base dark:text-(--dark-text) text-(--light-text)">
       No data yet
+    </div>
+  );
+}
+
+function Skel({ w = "100%", h = 16, dark = false, style: extra = {} }) {
+  const base = dark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.05)";
+  const hi   = dark ? "rgba(255,255,255,0.11)" : "rgba(0,0,0,0.11)";
+  return (
+    <div style={{
+      width: w, height: h, borderRadius: 6, flexShrink: 0,
+      background: `linear-gradient(90deg, ${base} 25%, ${hi} 50%, ${base} 75%)`,
+      backgroundSize: "200% 100%",
+      animation: "skel-shimmer 1.4s ease-in-out infinite",
+      ...extra,
+    }} />
+  );
+}
+
+function DonutSkel({ dark, surface }) {
+  const base = dark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.05)";
+  const hi   = dark ? "rgba(255,255,255,0.11)" : "rgba(0,0,0,0.11)";
+  return (
+    <div style={{
+      position: "relative", width: 200, height: 200, borderRadius: "50%", flexShrink: 0,
+      background: `linear-gradient(90deg, ${base} 25%, ${hi} 50%, ${base} 75%)`,
+      backgroundSize: "200% 100%",
+      animation: "skel-shimmer 1.4s ease-in-out infinite",
+    }}>
+      <div style={{
+        position: "absolute", top: "50%", left: "50%",
+        transform: "translate(-50%, -50%)",
+        width: 116, height: 116, borderRadius: "50%",
+        backgroundColor: surface,
+      }} />
     </div>
   );
 }
