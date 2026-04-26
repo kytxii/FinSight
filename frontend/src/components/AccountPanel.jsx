@@ -4,7 +4,7 @@ import { useTheme } from "../hooks/useTheme";
 import { useAuth } from "../context/AuthContext";
 import { updateUser, deleteUser } from "../api/users";
 
-const CONFIRM_PHRASE = "delete my account";
+const CONFIRM_PHRASE = "DELETE MY ACCOUNT";
 
 function resizeImage(file, size = 400) {
   return new Promise((resolve) => {
@@ -85,6 +85,14 @@ export default function AccountPanel({ onSaveStateChange }) {
     setForm((f) => ({ ...f, avatar: dataUrl }));
     e.target.value = "";
     setError("");
+    if (isDemo()) {
+      const updated = { ...(user ?? {}), avatar: dataUrl };
+      setUser(updated);
+      localStorage.setItem("user", JSON.stringify(updated));
+      setSaveStatus("saved");
+      setTimeout(() => setSaveStatus(null), 3000);
+      return;
+    }
     setSaving(true);
     try {
       const res = await updateUser({
@@ -130,6 +138,7 @@ export default function AccountPanel({ onSaveStateChange }) {
 
   async function handleDelete() {
     if (deletePhrase !== CONFIRM_PHRASE || deleting) return;
+    if (isDemo()) { setDeleteError("Account deletion is not available in demo mode."); return; }
     setDeleteError("");
     setDeleting(true);
     try {
@@ -187,7 +196,7 @@ export default function AccountPanel({ onSaveStateChange }) {
         />
         <div style={{ position: "relative", width: 80, height: 80, flexShrink: 0 }}>
         <button
-          onClick={() => !isDemo() && fileInputRef.current?.click()}
+          onClick={() => fileInputRef.current?.click()}
           onMouseEnter={() => setAvatarHovered(true)}
           onMouseLeave={() => setAvatarHovered(false)}
           style={{
@@ -197,7 +206,7 @@ export default function AccountPanel({ onSaveStateChange }) {
             overflow: "hidden",
             border: "none",
             padding: 0,
-            cursor: isDemo() ? "default" : "pointer",
+            cursor: "pointer",
             flexShrink: 0,
           }}
         >
@@ -221,41 +230,37 @@ export default function AccountPanel({ onSaveStateChange }) {
             </div>
           )}
           {/* Hover overlay */}
-          {!isDemo() && (
-            <div
-              style={{
-                position: "absolute", inset: 0,
-                display: "flex", alignItems: "center", justifyContent: "center",
-                backgroundColor: "rgba(0,0,0,0.45)",
-                opacity: avatarHovered ? 1 : 0,
-                transition: "opacity 150ms ease",
-              }}
-            >
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
-                <circle cx="12" cy="13" r="4"/>
-              </svg>
-            </div>
-          )}
-        </button>
-        {/* Camera badge */}
-        {!isDemo() && (
           <div
             style={{
-              position: "absolute", bottom: 2, right: 2,
-              width: 22, height: 22, borderRadius: "50%",
-              backgroundColor: dark ? "var(--dark-surface)" : "var(--light-surface)",
-              border: `1.5px solid ${border}`,
+              position: "absolute", inset: 0,
               display: "flex", alignItems: "center", justifyContent: "center",
-              pointerEvents: "none",
+              backgroundColor: "rgba(0,0,0,0.45)",
+              opacity: avatarHovered ? 1 : 0,
+              transition: "opacity 150ms ease",
             }}
           >
-            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={muted} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
               <circle cx="12" cy="13" r="4"/>
             </svg>
           </div>
-        )}
+        </button>
+        {/* Camera badge */}
+        <div
+          style={{
+            position: "absolute", bottom: 2, right: 2,
+            width: 22, height: 22, borderRadius: "50%",
+            backgroundColor: dark ? "var(--dark-surface)" : "var(--light-surface)",
+            border: `1.5px solid ${border}`,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            pointerEvents: "none",
+          }}
+        >
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke={muted} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+            <circle cx="12" cy="13" r="4"/>
+          </svg>
+        </div>
         </div>
 
         <p style={{ fontSize: "14px", fontWeight: 600, color: text }}>
@@ -306,14 +311,13 @@ export default function AccountPanel({ onSaveStateChange }) {
 
       {/* Bottom: danger zone pushed to end */}
       <div style={{ marginTop: "auto" }}>
-        {!isDemo() && (
-          <div
-            style={{
-              borderRadius: "14px",
-              border: `1px solid color-mix(in srgb, ${danger} 35%, transparent)`,
-              overflow: "hidden",
-            }}
-          >
+        <div
+          style={{
+            borderRadius: "14px",
+            border: `1px solid color-mix(in srgb, ${danger} 35%, transparent)`,
+            overflow: "hidden",
+          }}
+        >
             <div style={{ padding: "14px 16px", borderBottom: deleteOpen ? `1px solid color-mix(in srgb, ${danger} 20%, transparent)` : "none" }}>
               <p style={{ fontSize: "13px", fontWeight: 600, color: danger, marginBottom: "4px" }}>Delete Account</p>
               <p style={{ fontSize: "12px", color: muted, marginBottom: "12px" }}>
@@ -322,13 +326,15 @@ export default function AccountPanel({ onSaveStateChange }) {
               {!deleteOpen && (
                 <button
                   onClick={() => setDeleteOpen(true)}
+                  onMouseEnter={e => e.currentTarget.style.backgroundColor = `color-mix(in srgb, ${danger} 16%, transparent)`}
+                  onMouseLeave={e => e.currentTarget.style.backgroundColor = `color-mix(in srgb, ${danger} 8%, transparent)`}
                   style={{
                     fontSize: "12px", fontWeight: 600,
                     padding: "6px 14px", borderRadius: "8px",
                     border: `1px solid color-mix(in srgb, ${danger} 50%, transparent)`,
                     color: danger,
                     backgroundColor: `color-mix(in srgb, ${danger} 8%, transparent)`,
-                    cursor: "pointer",
+                    cursor: "pointer", transition: "background-color 150ms ease",
                   }}
                 >
                   Delete account
@@ -366,11 +372,14 @@ export default function AccountPanel({ onSaveStateChange }) {
                 <div style={{ display: "flex", gap: "8px" }}>
                   <button
                     onClick={() => setDeleteOpen(false)}
+                    onMouseEnter={e => e.currentTarget.style.backgroundColor = `color-mix(in srgb, ${text} 8%, transparent)`}
+                    onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}
                     style={{
                       flex: 1, fontSize: "13px", fontWeight: 500,
                       padding: "8px", borderRadius: "10px",
                       border: `1px solid ${border}`,
                       color: muted, backgroundColor: "transparent", cursor: "pointer",
+                      transition: "background-color 150ms ease",
                     }}
                   >
                     Cancel
@@ -378,6 +387,8 @@ export default function AccountPanel({ onSaveStateChange }) {
                   <button
                     onClick={handleDelete}
                     disabled={!confirmReady || deleting}
+                    onMouseEnter={e => { if (confirmReady && !deleting) e.currentTarget.style.backgroundColor = `color-mix(in srgb, ${danger} 22%, transparent)`; }}
+                    onMouseLeave={e => { e.currentTarget.style.backgroundColor = confirmReady ? `color-mix(in srgb, ${danger} 12%, transparent)` : "transparent"; }}
                     style={{
                       flex: 1, fontSize: "13px", fontWeight: 600,
                       padding: "8px", borderRadius: "10px",
@@ -397,7 +408,6 @@ export default function AccountPanel({ onSaveStateChange }) {
               </div>
             )}
           </div>
-        )}
       </div>
     </div>
   );

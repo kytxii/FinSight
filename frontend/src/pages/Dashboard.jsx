@@ -24,6 +24,7 @@ import {
   fmt,
 } from "../utils/finance";
 import Navbar from "../components/Navbar";
+import BatchAddPanel from "../components/BatchAddPanel";
 import { PRESETS, getPresetRange } from "../components/DateRangeFilter";
 import SummaryCard from "../components/SummaryCard";
 import ChartCard from "../components/ChartCard";
@@ -36,12 +37,22 @@ export default function Dashboard() {
   const dark = useTheme();
   const { isDemo } = useAuth();
   const [transactions, setTransactions] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [backendSleeping, setBackendSleeping] = useState(false);
+  const [devMenuOpen, setDevMenuOpen] = useState(false);
+  const [devForceEmpty, setDevForceEmpty] = useState(false);
+  const [devDelay, setDevDelay] = useState(0);
+  const [devForceError, setDevForceError] = useState(false);
+  const [devLastFetch, setDevLastFetch] = useState(null);
+  const devForceErrorRef = useRef(false);
   const [activeTab, setActiveTab] = useState("ALL");
-  const [addOpen, setAddOpen] = useState(false);
+  const [addMode, setAddMode] = useState(null); // null | "menu" | "single" | "batch"
+  const addOpen = addMode !== null;
   const addToday = new Date().toLocaleDateString("en-CA");
   const [addForm, setAddForm] = useState({ name: "", amount: "", category: "EXPENSE", transaction_date: addToday });
   const [addLoading, setAddLoading] = useState(false);
   const [addError, setAddError] = useState("");
+  const [batchSaveState, setBatchSaveState] = useState({ isDirty: false, isSaving: false, saveStatus: "idle", onSave: null });
   const [editingTransaction, setEditingTransaction] = useState(null);
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState(10);
@@ -92,7 +103,7 @@ export default function Dashboard() {
     try {
       await createTransaction({ ...addForm, amount: parseFloat(addForm.amount) });
       setAddForm({ name: "", amount: "", category: "EXPENSE", transaction_date: addToday });
-      setAddOpen(false);
+      setAddMode(null);
       refreshTransactions();
     } catch (err) {
       setAddError(err.response?.data?.detail ?? "Something went wrong");
@@ -114,12 +125,33 @@ export default function Dashboard() {
     return { from, to };
   });
 
+  async function devFetch() {
+    if (devForceErrorRef.current) {
+      devForceErrorRef.current = false;
+      setDevForceError(false);
+      throw new Error("Forced error");
+    }
+    if (devDelay > 0) await new Promise(r => setTimeout(r, devDelay));
+    return getTransactions();
+  }
+
   useEffect(() => {
-    getTransactions().then((res) => setTransactions(res.data));
+    const sleepTimer = setTimeout(() => setBackendSleeping(true), 4000);
+    devFetch().then((res) => {
+      clearTimeout(sleepTimer);
+      setTransactions(res.data);
+      setLoading(false);
+      setBackendSleeping(false);
+      setDevLastFetch(new Date());
+    }).catch(() => { clearTimeout(sleepTimer); setLoading(false); });
+    return () => clearTimeout(sleepTimer);
   }, []);
 
   function refreshTransactions() {
-    getTransactions().then((res) => setTransactions(res.data));
+    devFetch().then((res) => {
+      setTransactions(res.data);
+      setDevLastFetch(new Date());
+    }).catch(() => {});
   }
 
   async function handleDelete(t) {
@@ -158,6 +190,7 @@ export default function Dashboard() {
   );
 
   const filtered = useMemo(() => {
+    if (devForceEmpty) return [];
     let result =
       activeTab === "ALL"
         ? transactions
@@ -173,7 +206,7 @@ export default function Dashboard() {
     }
 
     return result;
-  }, [transactions, activeTab, dateRange]);
+  }, [transactions, activeTab, dateRange, devForceEmpty]);
 
   const summary = useMemo(() => {
     const totalIn = filtered
@@ -428,16 +461,16 @@ export default function Dashboard() {
   }, [filtered, perPage, typeFilter, sortColumn, sortDir]);
 
   useEffect(() => {
-    if (!addOpen) return;
+    if (!addOpen || addMode === "batch") return;
     function handleOutsideClick(e) {
       if (addFormRef.current && !addFormRef.current.contains(e.target)) {
-        setAddOpen(false);
+        setAddMode(null);
         setAddError("");
       }
     }
     document.addEventListener("mousedown", handleOutsideClick);
     return () => document.removeEventListener("mousedown", handleOutsideClick);
-  }, [addOpen]);
+  }, [addOpen, addMode]);
 
   const activeColor = `var(--category-${activeTab.toLowerCase()})`;
   const catColor = `var(--category-${addForm.category.toLowerCase()})`;
@@ -469,6 +502,7 @@ export default function Dashboard() {
         onSelectTransaction={handleSelectTransaction}
         onDeleteRecurringPayment={refreshTransactions}
         onSaveRecurringPayment={refreshTransactions}
+        onCommand={(cmd, val) => { if (cmd === "devtools") setDevMenuOpen(val); }}
       />
 
         {/* ── Filter sidebar ── */}
@@ -476,30 +510,28 @@ export default function Dashboard() {
           position: "fixed",
           top: 0,
           left: 0,
-          width: 210,
+          width: addMode === "batch" ? 460 : 210,
           height: "100vh",
           zIndex: 9,
-          overflowY: "auto",
           borderRight: `1px solid ${border}`,
           backgroundColor: surface,
-          padding: "20px 10px",
-          paddingTop: 84,
-          display: "flex",
-          flexDirection: "column",
-          gap: 28,
+          overflow: "hidden",
+          transition: "width 250ms ease",
         }}>
+          <div style={{ position: "absolute", inset: 0, overflowY: "auto", padding: "20px 10px", paddingTop: 96, display: "flex", flexDirection: "column", gap: 28, opacity: addMode === "batch" ? 0 : 1, pointerEvents: addMode === "batch" ? "none" : "auto", transition: "opacity 200ms ease" }}>
 
           {/* Add / inline form */}
           <div ref={addFormRef}>
+            {/* 1. "Add Transaction" button — visible when no mode active */}
             <div style={{
-              maxHeight: addOpen ? 0 : "42px",
-              opacity: addOpen ? 0 : 1,
+              maxHeight: addMode ? 0 : "42px",
+              opacity: addMode ? 0 : 1,
               overflow: "hidden",
               transition: "max-height 220ms ease, opacity 150ms ease",
-              pointerEvents: addOpen ? "none" : "auto",
+              pointerEvents: addMode ? "none" : "auto",
             }}>
               <button
-                onClick={() => setAddOpen(true)}
+                onClick={() => setAddMode("single")}
                 onMouseEnter={e => {
                   e.currentTarget.style.backgroundColor = "color-mix(in srgb, var(--category-income) 80%, black)";
                   e.currentTarget.style.boxShadow = "0 2px 6px rgba(0,0,0,0.35)";
@@ -525,13 +557,32 @@ export default function Dashboard() {
               </button>
             </div>
 
+            {/* Single form */}
             <div style={{
-              maxHeight: addOpen ? "460px" : 0,
-              opacity: addOpen ? 1 : 0,
+              maxHeight: addMode === "single" ? "460px" : 0,
+              opacity: addMode === "single" ? 1 : 0,
               overflow: "hidden",
               transition: "max-height 250ms cubic-bezier(0.4,0,0.2,1), opacity 200ms ease",
             }}>
               <form onSubmit={handleAddSubmit} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                <div style={{ display: "flex", gap: 6 }}>
+                  <button type="button" onClick={() => setAddMode("batch")}
+                    onMouseEnter={e => { e.currentTarget.style.borderColor = `color-mix(in srgb, ${text} 35%, transparent)`; e.currentTarget.style.backgroundColor = `color-mix(in srgb, ${text} 8%, transparent)`; }}
+                    onMouseLeave={e => { e.currentTarget.style.borderColor = `color-mix(in srgb, ${text} 15%, transparent)`; e.currentTarget.style.backgroundColor = "transparent"; }}
+                    style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "6px 0", borderRadius: 8, border: `1px solid color-mix(in srgb, ${text} 15%, transparent)`, backgroundColor: "transparent", color: muted, fontSize: 11, fontWeight: 600, cursor: "pointer", transition: "border-color 150ms ease, background-color 150ms ease" }}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /><rect x="14" y="14" width="7" height="7" />
+                    </svg>
+                    Batch
+                  </button>
+                  <button type="button" disabled
+                    style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "6px 0", borderRadius: 8, border: `1px solid color-mix(in srgb, ${text} 10%, transparent)`, backgroundColor: "transparent", color: `color-mix(in srgb, ${muted} 50%, transparent)`, fontSize: 11, fontWeight: 600, cursor: "not-allowed" }}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" />
+                    </svg>
+                    Import
+                  </button>
+                </div>
                 {[
                   { label: "Name", name: "name", type: "text", placeholder: "e.g. Netflix", required: addForm.category !== "TIPS", disabled: addForm.category === "TIPS" },
                   { label: "Amount", name: "amount", type: "number", placeholder: "$0.00", required: true },
@@ -539,7 +590,7 @@ export default function Dashboard() {
                   <div key={props.name}>
                     <p style={{ fontSize: 10, color: muted, marginBottom: 3, paddingLeft: 2 }}>{label}</p>
                     <input {...props} value={addForm[props.name]} onChange={handleAddChange} min={props.type === "number" ? "0.01" : undefined} step={props.type === "number" ? "0.01" : undefined}
-                      style={{ width: "100%", borderRadius: 7, padding: "6px 8px", fontSize: 12, border: `1px solid ${border}`, backgroundColor: bg, color: text, boxSizing: "border-box", outline: "none" }}
+                      style={{ width: "100%", borderRadius: 7, padding: "6px 8px", fontSize: 12, border: `1px solid ${border}`, backgroundColor: bg, backgroundImage: props.name === "name" && addForm.category === "TIPS" ? `repeating-linear-gradient(-45deg, transparent, transparent 4px, color-mix(in srgb, ${text} 6%, transparent) 4px, color-mix(in srgb, ${text} 6%, transparent) 6px)` : undefined, color: text, boxSizing: "border-box", outline: "none", opacity: props.name === "name" && addForm.category === "TIPS" ? 0.45 : 1, cursor: props.name === "name" && addForm.category === "TIPS" ? "not-allowed" : undefined }}
                     />
                   </div>
                 ))}
@@ -561,7 +612,7 @@ export default function Dashboard() {
                 </div>
                 {addError && <p style={{ fontSize: 11, color: "var(--category-expense)" }}>{addError}</p>}
                 <div style={{ display: "flex", gap: 6 }}>
-                  <button type="button" onClick={() => { setAddOpen(false); setAddError(""); }}
+                  <button type="button" onClick={() => { setAddMode(null); setAddError(""); }}
                     onMouseEnter={e => { e.currentTarget.style.backgroundColor = `color-mix(in srgb, ${text} 10%, transparent)`; }}
                     onMouseLeave={e => { e.currentTarget.style.backgroundColor = "transparent"; }}
                     style={{ flex: 1, padding: "7px 0", borderRadius: 8, border: `1px solid ${border}`, background: "transparent", color: muted, fontSize: 12, fontWeight: 600, cursor: "pointer", transition: "background-color 150ms ease" }}
@@ -639,11 +690,46 @@ export default function Dashboard() {
             </div>
           </div>
 
+          </div>
+
+          {/* Batch panel */}
+          <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", paddingTop: 84, opacity: addMode === "batch" ? 1 : 0, pointerEvents: addMode === "batch" ? "auto" : "none", transition: "opacity 200ms ease" }}>
+            <div style={{ padding: "12px 16px", borderBottom: `1px solid ${border}`, display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
+              <p style={{ fontSize: 16, fontWeight: 700, color: text, margin: 0 }}>Batch Transactions</p>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                {batchSaveState.saveStatus === "saved" && (
+                  <span style={{ fontSize: 11, color: "var(--category-income)" }}>Saved</span>
+                )}
+                <button
+                  onClick={batchSaveState.onSave}
+                  disabled={!batchSaveState.isDirty || batchSaveState.isSaving}
+                  style={{ padding: "5px 12px", borderRadius: 8, border: "1px solid var(--category-income)", color: "var(--category-income)", backgroundColor: "color-mix(in srgb, var(--category-income) 12%, transparent)", fontSize: 12, fontWeight: 600, cursor: batchSaveState.isDirty && !batchSaveState.isSaving ? "pointer" : "default", opacity: !batchSaveState.isDirty || batchSaveState.isSaving ? 0.4 : 1, transition: "opacity 150ms ease" }}
+                >
+                  {batchSaveState.isSaving ? "Adding…" : batchSaveState.validCount ? `Add ${batchSaveState.validCount} transaction${batchSaveState.validCount !== 1 ? "s" : ""}` : "Add transactions"}
+                </button>
+              </div>
+            </div>
+            <BatchAddPanel active={addMode === "batch"} onSaveStateChange={setBatchSaveState} onSaved={() => { refreshTransactions(); setAddMode(null); }} onCancel={() => setAddMode(null)} />
+          </div>
+
         </aside>
 
         {/* ── Main content ── */}
-        <div style={{ marginLeft: 210 }}>
+        <div style={{ marginLeft: addMode === "batch" ? 460 : 210, transition: "margin-left 250ms ease" }}>
         <main className="px-6 py-6 space-y-5">
+        <style>{`@keyframes skel-shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }`}</style>
+        {backendSleeping && <BackendWaking dark={dark} text={text} muted={muted} />}
+        {!backendSleeping && loading ? (
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            {[...Array(4)].map((_, i) => (
+              <div key={i} className="rounded-2xl px-5 py-5 border" style={{ backgroundColor: surface, borderTopWidth: 3, borderTopColor: border, borderRightColor: border, borderBottomColor: border, borderLeftColor: border }}>
+                <Skel h={24} w="52%" dark={dark} />
+                <Skel h={36} w="62%" dark={dark} style={{ marginTop: 4 }} />
+                <Skel h={16} w="38%" dark={dark} style={{ marginTop: 6 }} />
+              </div>
+            ))}
+          </div>
+        ) : (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {activeTab === "ALL" ? (
             <>
@@ -749,7 +835,32 @@ export default function Dashboard() {
             </>
           )}
         </div>
+        )}
 
+        {!backendSleeping && loading ? (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {/* donut chart skeleton */}
+            <div className="rounded-2xl p-6 border" style={{ backgroundColor: surface, borderColor: border }}>
+              <Skel h={28} w="42%" dark={dark} />
+              <div style={{ height: 275, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 16, marginTop: 20 }}>
+                <DonutSkel dark={dark} surface={surface} />
+                <div style={{ display: "flex", flexWrap: "wrap", gap: "6px 16px", justifyContent: "center" }}>
+                  {[55, 70, 48, 62, 40].map((w, i) => (
+                    <div key={i} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                      <Skel h={9} w={9} dark={dark} style={{ borderRadius: "50%", flexShrink: 0 }} />
+                      <Skel h={12} w={w} dark={dark} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+            {/* bar chart skeleton */}
+            <div className="rounded-2xl p-6 border" style={{ backgroundColor: surface, borderColor: border }}>
+              <Skel h={28} w="42%" dark={dark} />
+              <Skel h={275} dark={dark} style={{ marginTop: 20, borderRadius: 12 }} />
+            </div>
+          </div>
+        ) : (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <ChartCard
             title={
@@ -993,7 +1104,39 @@ export default function Dashboard() {
             ) : <Empty />}
           </ChartCard>
         </div>
+        )}
 
+        {!backendSleeping && loading ? (
+          <div className="rounded-2xl border" style={{ backgroundColor: surface, borderColor: border }}>
+            {/* card header — matches px-6 py-4 */}
+            <div className="px-6 py-4 border-b" style={{ borderColor: border }}>
+              <Skel h={28} w="160px" dark={dark} />
+            </div>
+            {/* thead — text-base = 24px line-height, py-3 */}
+            <div className="px-6 py-3 border-b flex items-center gap-6" style={{ borderColor: border }}>
+              <Skel h={24} w="110px" dark={dark} />
+              <Skel h={24} dark={dark} style={{ flex: 1 }} />
+              <Skel h={24} w="90px" dark={dark} />
+              <Skel h={24} w="80px" dark={dark} />
+              <Skel h={24} w="40px" dark={dark} />
+            </div>
+            {/* rows — text-lg name = 28px line-height, py-4 */}
+            {[...Array(10)].map((_, i) => (
+              <div key={i} className="px-6 py-4 border-t flex items-center gap-6" style={{ borderColor: border }}>
+                <Skel h={20} w="110px" dark={dark} />
+                <Skel h={28} dark={dark} style={{ flex: 1 }} />
+                <Skel h={26} w="90px" dark={dark} style={{ borderRadius: 999 }} />
+                <Skel h={24} w="80px" dark={dark} />
+                <Skel h={20} w="40px" dark={dark} />
+              </div>
+            ))}
+            {/* footer — text-xs = 16px line-height, py-3 */}
+            <div className="px-6 py-3 border-t flex items-center justify-between" style={{ borderColor: border }}>
+              <Skel h={16} w="160px" dark={dark} />
+              <Skel h={16} w="100px" dark={dark} />
+            </div>
+          </div>
+        ) : (
         <div ref={tableRef}>
           <TransactionTable
             rows={paginated}
@@ -1011,11 +1154,64 @@ export default function Dashboard() {
             onSort={handleSort}
           />
         </div>
+        )}
       </main>
         <Footer />
         </div>
 
 
+
+      {devMenuOpen && !isDemo() && (
+        <div style={{
+          position: "fixed", bottom: 24, right: 24, zIndex: 9999,
+          width: 280, borderRadius: 14,
+          backgroundColor: surface, border: `1px solid ${border}`,
+          boxShadow: dark ? "0 8px 32px rgba(0,0,0,0.5)" : "0 8px 32px rgba(0,0,0,0.12)",
+          overflow: "hidden", display: "flex", flexDirection: "column", maxHeight: "80vh",
+        }}>
+          <div style={{ padding: "10px 14px 9px", borderBottom: `1px solid ${border}`, display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
+            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", color: "var(--category-expense)" }}>DEV TOOLS</span>
+            <button onClick={() => setDevMenuOpen(false)} style={{ background: "none", border: "none", cursor: "pointer", color: muted, display: "flex", padding: 2 }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+            </button>
+          </div>
+          <div style={{ overflowY: "auto", padding: "6px 0 10px" }}>
+
+            <DevMenuSection label="LOADING & STATE" border={border} muted={muted} />
+            <DevMenuRow label="Skeletons" active={loading} onToggle={() => setLoading(v => !v)} muted={muted} text={text} border={border} />
+            <DevMenuRow label="Force empty" active={devForceEmpty} onToggle={() => setDevForceEmpty(v => !v)} muted={muted} text={text} border={border} />
+            <DevMenuRow label="Force next error" active={devForceError} onToggle={() => { const next = !devForceError; setDevForceError(next); devForceErrorRef.current = next; }} muted={muted} text={text} border={border} />
+            <DevMenuButton label="Re-fetch" description="Reload transactions" onClick={() => { setLoading(true); refreshTransactions(); setTimeout(() => setLoading(false), devDelay + 200); }} muted={muted} text={text} border={border} />
+
+            <DevMenuSection label="NETWORK" border={border} muted={muted} />
+            <div style={{ padding: "4px 14px 6px", display: "flex", flexDirection: "column", gap: 4 }}>
+              <span style={{ fontSize: 11, color: muted }}>Slow network</span>
+              <div style={{ display: "flex", gap: 4 }}>
+                {[0, 500, 2000, 5000].map(ms => (
+                  <button key={ms} onClick={() => setDevDelay(ms)} style={{ flex: 1, padding: "3px 0", borderRadius: 6, border: `1px solid ${devDelay === ms ? "var(--category-expense)" : border}`, backgroundColor: devDelay === ms ? "color-mix(in srgb, var(--category-expense) 12%, transparent)" : "transparent", color: devDelay === ms ? "var(--category-expense)" : muted, fontSize: 10, fontWeight: 600, cursor: "pointer" }}>
+                    {ms === 0 ? "Off" : ms < 1000 ? `${ms}ms` : `${ms/1000}s`}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <DevMenuSection label="DATA" border={border} muted={muted} />
+            <DevMenuInfo label="Transactions" value={transactions.length} muted={muted} text={text} />
+            <DevMenuInfo label="Last fetch" value={devLastFetch ? devLastFetch.toLocaleTimeString() : "—"} muted={muted} text={text} />
+            <DevMenuInfo label="Date range" value={dateRange.from ? `${dateRange.from.toLocaleDateString("en-US",{month:"short",day:"numeric"})} → ${dateRange.to?.toLocaleDateString("en-US",{month:"short",day:"numeric"}) ?? "…"}` : "All time"} muted={muted} text={text} />
+            <DevMenuInfo label="Active tab" value={activeTab} muted={muted} text={text} />
+            <DevMenuInfo label="Sort" value={`${sortColumn} ${sortDir}`} muted={muted} text={text} />
+
+            <DevMenuSection label="UI" border={border} muted={muted} />
+            <DevMenuButton label="Toggle theme" description="Flip dark / light" onClick={() => document.documentElement.classList.toggle("dark")} muted={muted} text={text} border={border} />
+
+            <DevMenuSection label="SESSION" border={border} muted={muted} />
+            <DevMenuInfo label="Token expiry" value={(() => { try { const t = localStorage.getItem("token"); if (!t) return "None"; const p = JSON.parse(atob(t.split(".")[1])); return p.exp ? new Date(p.exp * 1000).toLocaleString() : "No exp"; } catch { return "Invalid"; } })()} muted={muted} text={text} />
+            <DevMenuButton label="Clear localStorage" description="Wipes all local data + reloads" onClick={() => { localStorage.clear(); window.location.reload(); }} muted={muted} text={"var(--category-expense)"} border={border} danger />
+
+          </div>
+        </div>
+      )}
 
       <RenderWakeButton />
 
@@ -1075,6 +1271,73 @@ export default function Dashboard() {
           }}
         />
       )}
+
+    </div>
+  );
+}
+
+function DevMenuSection({ label, border, muted }) {
+  return (
+    <div style={{ padding: "8px 14px 4px", borderTop: `1px solid ${border}`, marginTop: 4 }}>
+      <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.1em", color: muted }}>{label}</span>
+    </div>
+  );
+}
+
+function DevMenuInfo({ label, value, muted, text }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "4px 14px", gap: 12 }}>
+      <span style={{ fontSize: 12, color: muted }}>{label}</span>
+      <span style={{ fontSize: 11, fontWeight: 600, color: text, fontFamily: "monospace", textAlign: "right", maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{value}</span>
+    </div>
+  );
+}
+
+function DevMenuButton({ label, description, onClick, muted, text, border, danger }) {
+  return (
+    <div style={{ padding: "3px 14px" }}>
+      <button onClick={onClick} style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "5px 8px", borderRadius: 8, border: `1px solid ${border}`, background: "transparent", cursor: "pointer", transition: "background-color 150ms ease" }}
+        onMouseEnter={e => e.currentTarget.style.backgroundColor = danger ? "color-mix(in srgb, var(--category-expense) 8%, transparent)" : `color-mix(in srgb, ${text} 6%, transparent)`}
+        onMouseLeave={e => e.currentTarget.style.backgroundColor = "transparent"}
+      >
+        <span style={{ fontSize: 12, fontWeight: 500, color: danger ? "var(--category-expense)" : text }}>{label}</span>
+        <span style={{ fontSize: 10, color: muted }}>{description}</span>
+      </button>
+    </div>
+  );
+}
+
+function DevMenuRow({ label, active, onToggle, muted, text, border }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "6px 14px", gap: 12 }}>
+      <span style={{ fontSize: 12, fontWeight: 500, color: text }}>{label}</span>
+      <button onClick={onToggle} style={{
+        width: 38, height: 22, borderRadius: 999, border: "none", cursor: "pointer", flexShrink: 0,
+        backgroundColor: active ? "var(--category-income)" : `color-mix(in srgb, ${text} 18%, transparent)`,
+        position: "relative", transition: "background-color 180ms ease",
+      }}>
+        <div style={{
+          position: "absolute", top: 3, left: active ? "calc(100% - 19px)" : 3,
+          width: 16, height: 16, borderRadius: "50%", backgroundColor: "#fff",
+          transition: "left 180ms ease", boxShadow: "0 1px 3px rgba(0,0,0,0.25)",
+        }} />
+      </button>
+    </div>
+  );
+}
+
+function BackendWaking({ dark, text, muted }) {
+  const accentColor = dark ? "#81c784" : "#43a047";
+  return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "60vh", gap: 16 }}>
+      <div style={{ display: "flex", gap: 6 }}>
+        {[0, 1, 2].map(i => (
+          <div key={i} style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: accentColor, animation: `pulse-dot 1.2s ease-in-out ${i * 0.2}s infinite` }} />
+        ))}
+      </div>
+      <p style={{ fontSize: 16, fontWeight: 600, color: text, margin: 0 }}>Starting up…</p>
+      <p style={{ fontSize: 13, color: muted, margin: 0 }}>Backend is waking up, this usually takes ~50 seconds.</p>
+      <style>{`@keyframes pulse-dot { 0%,80%,100%{transform:scale(0.55);opacity:0.35} 40%{transform:scale(1);opacity:1} }`}</style>
     </div>
   );
 }
@@ -1083,6 +1346,40 @@ function Empty() {
   return (
     <div className="h-70 flex items-center justify-center text-base dark:text-(--dark-text) text-(--light-text)">
       No data yet
+    </div>
+  );
+}
+
+function Skel({ w = "100%", h = 16, dark = false, style: extra = {} }) {
+  const base = dark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.05)";
+  const hi   = dark ? "rgba(255,255,255,0.11)" : "rgba(0,0,0,0.11)";
+  return (
+    <div style={{
+      width: w, height: h, borderRadius: 6, flexShrink: 0,
+      background: `linear-gradient(90deg, ${base} 25%, ${hi} 50%, ${base} 75%)`,
+      backgroundSize: "200% 100%",
+      animation: "skel-shimmer 1.4s ease-in-out infinite",
+      ...extra,
+    }} />
+  );
+}
+
+function DonutSkel({ dark, surface }) {
+  const base = dark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.05)";
+  const hi   = dark ? "rgba(255,255,255,0.11)" : "rgba(0,0,0,0.11)";
+  return (
+    <div style={{
+      position: "relative", width: 200, height: 200, borderRadius: "50%", flexShrink: 0,
+      background: `linear-gradient(90deg, ${base} 25%, ${hi} 50%, ${base} 75%)`,
+      backgroundSize: "200% 100%",
+      animation: "skel-shimmer 1.4s ease-in-out infinite",
+    }}>
+      <div style={{
+        position: "absolute", top: "50%", left: "50%",
+        transform: "translate(-50%, -50%)",
+        width: 116, height: 116, borderRadius: "50%",
+        backgroundColor: surface,
+      }} />
     </div>
   );
 }
