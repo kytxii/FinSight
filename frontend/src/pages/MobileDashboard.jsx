@@ -518,6 +518,11 @@ export default function MobileDashboard() {
   // ── Drawer / Recurring / Account
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [devOpen, setDevOpen] = useState(false);
+  const [devForceEmpty, setDevForceEmpty] = useState(false);
+  const [devDelay, setDevDelay] = useState(0);
+  const [devForceError, setDevForceError] = useState(false);
+  const [devLastFetch, setDevLastFetch] = useState(null);
+  const devForceErrorRef = useRef(false);
   const [recurringOpen, setRecurringOpen] = useState(false);
   const [rpSave, setRpSave] = useState({
     isDirty: false,
@@ -536,15 +541,29 @@ export default function MobileDashboard() {
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  async function devFetch() {
+    if (devForceErrorRef.current) {
+      devForceErrorRef.current = false;
+      setDevForceError(false);
+      throw new Error("Forced error");
+    }
+    if (devDelay > 0) await new Promise(r => setTimeout(r, devDelay));
+    return getTransactions();
+  }
+
   useEffect(() => {
-    getTransactions().then((res) => {
+    devFetch().then((res) => {
       setTransactions(res.data);
       setLoading(false);
-    });
+      setDevLastFetch(new Date());
+    }).catch(() => setLoading(false));
   }, []);
 
   function refresh() {
-    getTransactions().then((res) => setTransactions(res.data));
+    devFetch().then((res) => {
+      setTransactions(res.data);
+      setDevLastFetch(new Date());
+    }).catch(() => {});
   }
 
   const [editingTransaction, setEditingTransaction] = useState(null);
@@ -708,6 +727,18 @@ export default function MobileDashboard() {
       setQuery("");
       setDebouncedQuery("");
     }
+    if (e.key === "Enter") {
+      const cmd = query.trim().toLowerCase();
+      if (cmd === "/dev true" || cmd === "/dev false") {
+        e.target.blur();
+        if (cmd === "/dev true") { setDrawerOpen(true); setDevOpen(true); }
+        else setDevOpen(false);
+        setQuery("✓");
+        setDebouncedQuery("");
+        setSearchOpen(false);
+        setTimeout(() => setQuery(""), 800);
+      }
+    }
   };
 
   useEffect(() => {
@@ -765,6 +796,7 @@ export default function MobileDashboard() {
 
   // ── Dashboard computed
   const dashFiltered = useMemo(() => {
+    if (devForceEmpty) return [];
     if (!dashDateRange.from && !dashDateRange.to) return transactions;
     return transactions.filter((t) => {
       const d = new Date(t.transaction_date + "T00:00:00");
@@ -772,7 +804,7 @@ export default function MobileDashboard() {
       if (dashDateRange.to && d > dashDateRange.to) return false;
       return true;
     });
-  }, [transactions, dashDateRange]);
+  }, [transactions, dashDateRange, devForceEmpty]);
 
   const dashSorted = useMemo(
     () =>
@@ -3179,34 +3211,51 @@ export default function MobileDashboard() {
               </button>
               <span className="text-sm font-semibold" style={{ color: "var(--category-expense)" }}>Dev Tools</span>
             </div>
-            <div className="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-5">
+            <div className="flex-1 overflow-y-auto py-2 flex flex-col">
 
-              <div>
-                <p className="text-xs font-semibold mb-2" style={{ color: muted, letterSpacing: "0.08em" }}>LOADING</p>
-                <div className="flex flex-col gap-2">
-                  <DevRow label="Skeleton" description="Toggle loading state">
-                    <DevToggle active={loading} onToggle={() => setLoading(v => !v)} />
-                  </DevRow>
-                  <DevRow label="Re-fetch" description="Reset and reload data">
-                    <button
-                      onClick={() => { setLoading(true); getTransactions().then(res => { setTransactions(res.data); setLoading(false); }); }}
-                      className="px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer border"
-                      style={{ color: text, borderColor: border, backgroundColor: `color-mix(in srgb, ${text} 6%, transparent)` }}
-                    >Run</button>
-                  </DevRow>
+              <MDevSection label="LOADING & STATE" border={border} muted={muted} first />
+              <DevRow label="Skeleton" description="Toggle loading state">
+                <DevToggle active={loading} onToggle={() => setLoading(v => !v)} />
+              </DevRow>
+              <DevRow label="Force empty" description="Zero out display data">
+                <DevToggle active={devForceEmpty} onToggle={() => setDevForceEmpty(v => !v)} />
+              </DevRow>
+              <DevRow label="Force next error" description="Next fetch throws">
+                <DevToggle active={devForceError} onToggle={() => { const n = !devForceError; setDevForceError(n); devForceErrorRef.current = n; }} />
+              </DevRow>
+              <DevRow label="Re-fetch" description="Reload transactions">
+                <button onClick={() => { setLoading(true); refresh(); }} className="px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer border" style={{ color: text, borderColor: border, backgroundColor: `color-mix(in srgb, ${text} 6%, transparent)` }}>Run</button>
+              </DevRow>
+
+              <MDevSection label="NETWORK" border={border} muted={muted} />
+              <div className="px-5 py-2 flex flex-col gap-1">
+                <span className="text-xs" style={{ color: muted }}>Slow network</span>
+                <div className="flex gap-1">
+                  {[0, 500, 2000, 5000].map(ms => (
+                    <button key={ms} onClick={() => setDevDelay(ms)} style={{ flex: 1, padding: "4px 0", borderRadius: 6, border: `1px solid ${devDelay === ms ? "var(--category-expense)" : border}`, backgroundColor: devDelay === ms ? "color-mix(in srgb, var(--category-expense) 12%, transparent)" : "transparent", color: devDelay === ms ? "var(--category-expense)" : muted, fontSize: 10, fontWeight: 600, cursor: "pointer" }}>
+                      {ms === 0 ? "Off" : ms < 1000 ? `${ms}ms` : `${ms/1000}s`}
+                    </button>
+                  ))}
                 </div>
               </div>
 
-              <div>
-                <p className="text-xs font-semibold mb-2" style={{ color: muted, letterSpacing: "0.08em" }}>DATA</p>
-                <div className="flex flex-col gap-2">
-                  <DevRow label="Transactions" description="Currently loaded">
-                    <span className="text-xs font-bold" style={{ color: text }}>{transactions.length}</span>
-                  </DevRow>
-                  <DevRow label="Nav tab" description="Active tab">
-                    <span className="text-xs font-mono" style={{ color: "var(--category-income)" }}>{navTab}</span>
-                  </DevRow>
-                </div>
+              <MDevSection label="DATA" border={border} muted={muted} />
+              <MDevInfo label="Transactions" value={transactions.length} muted={muted} text={text} />
+              <MDevInfo label="Last fetch" value={devLastFetch ? devLastFetch.toLocaleTimeString() : "—"} muted={muted} text={text} />
+              <MDevInfo label="Nav tab" value={navTab} muted={muted} text={text} />
+              <MDevInfo label="Date range" value={dashDateRange.from ? `${dashDateRange.from.toLocaleDateString("en-US",{month:"short",day:"numeric"})} → ${dashDateRange.to?.toLocaleDateString("en-US",{month:"short",day:"numeric"}) ?? "…"}` : "All time"} muted={muted} text={text} />
+
+              <MDevSection label="UI" border={border} muted={muted} />
+              <DevRow label="Toggle theme" description="Flip dark / light">
+                <button onClick={() => document.documentElement.classList.toggle("dark")} className="px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer border" style={{ color: text, borderColor: border, backgroundColor: `color-mix(in srgb, ${text} 6%, transparent)` }}>Flip</button>
+              </DevRow>
+
+              <MDevSection label="SESSION" border={border} muted={muted} />
+              <MDevInfo label="Token expiry" value={(() => { try { const t = localStorage.getItem("token"); if (!t) return "None"; const p = JSON.parse(atob(t.split(".")[1])); return p.exp ? new Date(p.exp * 1000).toLocaleTimeString() : "No exp"; } catch { return "Invalid"; } })()} muted={muted} text={text} />
+              <div className="px-5 py-2">
+                <button onClick={() => { localStorage.clear(); window.location.reload(); }} className="w-full py-2 rounded-xl text-xs font-bold cursor-pointer border" style={{ color: "var(--category-expense)", borderColor: "var(--category-expense)", backgroundColor: "color-mix(in srgb, var(--category-expense) 8%, transparent)" }}>
+                  Clear localStorage + Reload
+                </button>
               </div>
 
             </div>
@@ -3231,9 +3280,26 @@ export default function MobileDashboard() {
   );
 }
 
+function MDevSection({ label, border, muted, first = false }) {
+  return (
+    <div style={{ padding: "8px 20px 4px", borderTop: first ? "none" : `1px solid ${border}`, marginTop: first ? 0 : 4 }}>
+      <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: "0.1em", color: muted }}>{label}</span>
+    </div>
+  );
+}
+
+function MDevInfo({ label, value, muted, text }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "4px 20px", gap: 12 }}>
+      <span style={{ fontSize: 13, color: muted }}>{label}</span>
+      <span style={{ fontSize: 11, fontWeight: 600, color: text, fontFamily: "monospace", textAlign: "right", maxWidth: 130, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{String(value)}</span>
+    </div>
+  );
+}
+
 function DevRow({ label, description, children }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "6px 20px" }}>
       <div>
         <p style={{ fontSize: 13, fontWeight: 500 }}>{label}</p>
         <p style={{ fontSize: 11, opacity: 0.45, marginTop: 1 }}>{description}</p>
