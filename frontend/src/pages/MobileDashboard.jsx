@@ -540,6 +540,7 @@ export default function MobileDashboard() {
   // ── Data
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [backendSleeping, setBackendSleeping] = useState(false);
 
   async function devFetch() {
     if (devForceErrorRef.current) {
@@ -552,11 +553,15 @@ export default function MobileDashboard() {
   }
 
   useEffect(() => {
+    const sleepTimer = setTimeout(() => setBackendSleeping(true), 4000);
     devFetch().then((res) => {
+      clearTimeout(sleepTimer);
       setTransactions(res.data);
       setLoading(false);
+      setBackendSleeping(false);
       setDevLastFetch(new Date());
-    }).catch(() => setLoading(false));
+    }).catch(() => { clearTimeout(sleepTimer); setLoading(false); });
+    return () => clearTimeout(sleepTimer);
   }, []);
 
   function refresh() {
@@ -1214,8 +1219,10 @@ export default function MobileDashboard() {
               })}
             </div>
 
+            {backendSleeping && <MobileBackendWaking dark={dark} text={text} muted={muted} />}
+
             {/* Summary cards */}
-            {loading ? (
+            {!backendSleeping && loading ? (
               <div className="grid grid-cols-2 gap-3">
                 {[...Array(4)].map((_, i) => (
                   <div
@@ -1297,7 +1304,7 @@ export default function MobileDashboard() {
             )}
 
             {/* Donut chart */}
-            {loading || isDashPending ? (
+            {!backendSleeping && (loading || isDashPending) ? (
               <div className="rounded-2xl border px-4 py-3" style={{ backgroundColor: surface, borderColor: border }}>
                 <MSkel h={24} w="55%" dark={dark} style={{ marginBottom: 8 }} />
                 <div style={{ height: 190, display: "flex", alignItems: "center", justifyContent: "center" }}>
@@ -1420,7 +1427,7 @@ export default function MobileDashboard() {
             )}
 
             {/* Transaction list */}
-            {loading ? (
+            {!backendSleeping && loading ? (
               <div
                 className="rounded-2xl border"
                 style={{ backgroundColor: surface, borderColor: border }}
@@ -3276,6 +3283,22 @@ export default function MobileDashboard() {
 
       {transactions.length === 0 && <Footer />}
       <RenderWakeButton />
+    </div>
+  );
+}
+
+function MobileBackendWaking({ dark, text, muted }) {
+  const accentColor = dark ? "#81c784" : "#43a047";
+  return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "50vh", gap: 14, padding: "0 24px" }}>
+      <style>{`@keyframes pulse-dot{0%,80%,100%{transform:scale(0.55);opacity:0.35}40%{transform:scale(1);opacity:1}}`}</style>
+      <div style={{ display: "flex", gap: 6 }}>
+        {[0, 1, 2].map(i => (
+          <div key={i} style={{ width: 8, height: 8, borderRadius: "50%", backgroundColor: accentColor, animation: `pulse-dot 1.2s ease-in-out ${i * 0.2}s infinite` }} />
+        ))}
+      </div>
+      <p style={{ fontSize: 16, fontWeight: 600, color: text, margin: 0 }}>Starting up…</p>
+      <p style={{ fontSize: 13, color: muted, margin: 0, textAlign: "center", lineHeight: 1.5 }}>Backend is waking up, this usually takes ~50 seconds.</p>
     </div>
   );
 }
