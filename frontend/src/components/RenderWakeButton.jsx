@@ -7,7 +7,8 @@ const TIMEOUT = 120;
 const POLL_MS = 5000;
 
 export default function RenderWakeButton() {
-  const [status, setStatus] = useState("checking");
+  const isDemo = localStorage.getItem("demo") === "true";
+  const [status, setStatus] = useState(isDemo ? "gone" : "checking");
   const [elapsed, setElapsed] = useState(0);
   const dark = useTheme();
 
@@ -20,6 +21,7 @@ export default function RenderWakeButton() {
   };
 
   useEffect(() => {
+    if (isDemo) return;
     const check = async () => {
       try {
         await axios.get((import.meta.env.VITE_API_URL ?? "/api") + "/", {
