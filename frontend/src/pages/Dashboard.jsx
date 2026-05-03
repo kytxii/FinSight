@@ -511,7 +511,7 @@ export default function Dashboard() {
           top: 0,
           left: 0,
           width: addMode === "batch" ? 460 : 210,
-          height: "100vh",
+          height: "100dvh",
           zIndex: 9,
           borderRight: `1px solid ${border}`,
           backgroundColor: surface,
