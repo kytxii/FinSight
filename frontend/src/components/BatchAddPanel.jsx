@@ -2,8 +2,9 @@ import { useState, useEffect } from "react";
 import { CATEGORY_CONFIG } from "../utils/finance";
 import { useTheme } from "../hooks/useTheme";
 import { createTransaction } from "../api/transactions";
+import { getToday } from "../utils/time";
 
-const today = () => new Date().toLocaleDateString("en-CA");
+const today = () => getToday();
 
 let _lid = 0;
 const newDraft = () => ({ _lid: ++_lid, name: "", amount: "", category: "EXPENSE", transaction_date: today() });

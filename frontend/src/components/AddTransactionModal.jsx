@@ -2,6 +2,7 @@ import { useState } from "react";
 import { CATEGORY_CONFIG } from "../utils/finance";
 import { createTransaction } from "../api/transactions";
 import { useTheme } from "../hooks/useTheme";
+import { getToday } from "../utils/time";
 
 const CATEGORY_OPTIONS = Object.entries(CATEGORY_CONFIG).map(
   ([key, { label }]) => ({
@@ -23,7 +24,7 @@ export default function AddTransactionModal({
   const text = dark ? "var(--dark-text)" : "var(--light-text)";
   const input = dark ? "var(--dark-bg)" : "var(--light-bg)";
 
-  const today = new Date().toLocaleDateString("en-CA");
+  const today = getToday();
   const defaultCategory = activeTab === "ALL" ? "EXPENSE" : activeTab;
 
   const [form, setForm] = useState({
