@@ -4,10 +4,21 @@ import client from "../api/client";
 
 const AuthContext = createContext(null);
 
+const DEMO_AVATAR =
+  "data:image/svg+xml," +
+  encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">' +
+      '<circle cx="50" cy="50" r="50" fill="#6b7280"/>' +
+      '<circle cx="50" cy="36" r="19" fill="#f3f4f6"/>' +
+      '<path d="M12 100 Q12 62 50 62 Q88 62 88 100 Z" fill="#f3f4f6"/>' +
+      "</svg>",
+  );
+
 const DEMO_USER = {
-  first_name: "Demo",
-  last_name: "User",
-  email_address: "demo@finsight.app",
+  first_name: "John",
+  last_name: "Smith",
+  email_address: "@finsight.app",
+  avatar: DEMO_AVATAR,
 };
 
 export function AuthProvider({ children }) {
@@ -47,14 +58,19 @@ export function AuthProvider({ children }) {
   // Sync user from server on startup so cross-device changes (e.g. avatar) are picked up
   useEffect(() => {
     if (!token || isDemo()) return;
-    client.get("/users/me").then((res) => {
-      setUser(res.data);
-      localStorage.setItem("user", JSON.stringify(res.data));
-    }).catch(() => {});
+    client
+      .get("/users/me")
+      .then((res) => {
+        setUser(res.data);
+        localStorage.setItem("user", JSON.stringify(res.data));
+      })
+      .catch(() => {});
   }, []);
 
   return (
-    <AuthContext.Provider value={{ token, user, setUser, login, logout, enterDemoMode, isDemo }}>
+    <AuthContext.Provider
+      value={{ token, user, setUser, login, logout, enterDemoMode, isDemo }}
+    >
       {children}
     </AuthContext.Provider>
   );

@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { useTheme } from "../hooks/useTheme";
+import { getNow } from "../utils/time";
 
 export const PRESETS = ["Current Month", "Last Month", "3m", "6m", "1y", "All"];
 
 export function getPresetRange(label) {
   if (label === "All") return { from: null, to: null };
 
-  const now = new Date();
+  const now = getNow();
   const from = new Date(now);
   const to = new Date(now);
   to.setHours(23, 59, 59, 999);

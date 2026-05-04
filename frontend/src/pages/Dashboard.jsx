@@ -23,6 +23,7 @@ import {
   INCOME_TYPES,
   fmt,
 } from "../utils/finance";
+import { getNow, getToday } from "../utils/time";
 import Navbar from "../components/Navbar";
 import BatchAddPanel from "../components/BatchAddPanel";
 import { PRESETS, getPresetRange } from "../components/DateRangeFilter";
@@ -48,7 +49,7 @@ export default function Dashboard() {
   const [activeTab, setActiveTab] = useState("ALL");
   const [addMode, setAddMode] = useState(null); // null | "menu" | "single" | "batch"
   const addOpen = addMode !== null;
-  const addToday = new Date().toLocaleDateString("en-CA");
+  const addToday = getToday();
   const [addForm, setAddForm] = useState({ name: "", amount: "", category: "EXPENSE", transaction_date: addToday });
   const [addLoading, setAddLoading] = useState(false);
   const [addError, setAddError] = useState("");
@@ -115,7 +116,7 @@ export default function Dashboard() {
   const tableRef = useRef(null);
   const addFormRef = useRef(null);
   const [dateRange, setDateRange] = useState(() => {
-    const now = new Date();
+    const now = getNow();
     const from = new Date(now);
     from.setDate(1);
     from.setHours(0, 0, 0, 0);
@@ -511,7 +512,7 @@ export default function Dashboard() {
           top: 0,
           left: 0,
           width: addMode === "batch" ? 460 : 210,
-          height: "100vh",
+          height: "100dvh",
           zIndex: 9,
           borderRight: `1px solid ${border}`,
           backgroundColor: surface,

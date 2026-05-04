@@ -36,6 +36,7 @@ import {
 import { useTheme } from "../hooks/useTheme";
 import { useAuth } from "../context/AuthContext";
 import { PRESETS, getPresetRange } from "../components/DateRangeFilter";
+import { getNow, getToday } from "../utils/time";
 import Footer from "../components/Footer";
 import RenderWakeButton from "../components/RenderWakeButton";
 import RecurringPaymentsModal from "../components/RecurringPaymentsModal";
@@ -496,7 +497,7 @@ const newBatchRow = () => ({
   name: "",
   amount: "",
   category: "EXPENSE",
-  transaction_date: new Date().toLocaleDateString("en-CA"),
+  transaction_date: getToday(),
 });
 
 export default function MobileDashboard() {
@@ -583,7 +584,7 @@ export default function MobileDashboard() {
   const [quickForm, setQuickForm] = useState({
     name: "",
     amount: "",
-    transaction_date: new Date().toLocaleDateString("en-CA"),
+    transaction_date: getToday(),
   });
   const [quickLoading, setQuickLoading] = useState(false);
   const [quickError, setQuickError] = useState("");
@@ -854,7 +855,7 @@ export default function MobileDashboard() {
         ) + 1,
       );
     }
-    const refDate = dashDateRange.from ?? new Date();
+    const refDate = dashDateRange.from ?? getNow();
     const daysInMonth = new Date(
       refDate.getFullYear(),
       refDate.getMonth() + 1,

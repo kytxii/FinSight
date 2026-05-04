@@ -340,8 +340,10 @@ export function clearDemo() {
 }
 
 // ── Auto-apply recurring payments ─────────────────────────────────────────────
+const DEMO_TODAY = "2026-04-28";
+
 function applyRecurringPayments() {
-  const now     = new Date();
+  const now     = new Date(DEMO_TODAY + "T00:00:00");
   const today   = now.getDate();
   const year    = now.getFullYear();
   const month   = String(now.getMonth() + 1).padStart(2, "0");
