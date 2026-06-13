@@ -13,6 +13,7 @@ export default function Login() {
   const [rateLimited, setRateLimited] = useState(false);
   const [countdown, setCountdown] = useState(0);
   const [attempts, setAttempts] = useState(0);
+  const [rememberMe, setRememberMe] = useState(false);
   const [waking, setWaking] = useState(false);
   const [symbolIdx, setSymbolIdx] = useState(0);
   const [phraseIdx, setPhraseIdx] = useState(0);
@@ -52,7 +53,7 @@ export default function Login() {
 
     const attempt = async () => {
       try {
-        const res = await client.post("/auth/login", { email_address: email, password });
+        const res = await client.post("/auth/login", { email_address: email, password, remember_me: rememberMe });
         const token = res.data.access_token;
         const meRes = await client.get("/users/me", {
           headers: { Authorization: `Bearer ${token}` },
@@ -247,6 +248,18 @@ export default function Login() {
               </button>
             </div>
           </div>
+
+          <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer", userSelect: "none" }}>
+            <input
+              type="checkbox"
+              checked={rememberMe}
+              onChange={e => setRememberMe(e.target.checked)}
+              style={{ accentColor: accentColor, width: 14, height: 14, cursor: "pointer" }}
+            />
+            <span style={{ fontSize: "13px", color: dark ? "var(--dark-text)" : "var(--light-text)", opacity: 0.7 }}>
+              Remember me for 7 days
+            </span>
+          </label>
 
           {error && (
             <p style={{ margin: 0, fontSize: "12px", color: "var(--category-expense)", display: "flex", justifyContent: "space-between" }}>
