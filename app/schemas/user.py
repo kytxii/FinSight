@@ -21,6 +21,7 @@ class RegisterRequest(BaseModel):
 class LoginRequest(BaseModel):
     email_address: EmailStr
     password: str
+    remember_me: bool = False
 
 class UpdateUser(BaseModel):
     first_name: str | None = Field(default=None, min_length=2, max_length=20)

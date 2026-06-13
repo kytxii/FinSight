@@ -28,16 +28,26 @@ export function AuthProvider({ children }) {
     const stored = localStorage.getItem("user");
     return stored ? JSON.parse(stored) : null;
   });
+  const [initializing, setInitializing] = useState(!localStorage.getItem("token") && localStorage.getItem("demo") !== "true");
 
-  const login = (newToken, userData) => {
-    clearDemo();
+  const _setSession = (newToken, userData) => {
     localStorage.setItem("token", newToken);
     localStorage.setItem("user", JSON.stringify(userData));
     setToken(newToken);
     setUser(userData);
   };
 
-  const logout = () => {
+  const login = (newToken, userData) => {
+    clearDemo();
+    _setSession(newToken, userData);
+  };
+
+  const logout = async () => {
+    try {
+      await client.post("/auth/logout");
+    } catch {
+      // best-effort — clear client state regardless
+    }
     clearDemo();
     localStorage.removeItem("token");
     localStorage.removeItem("user");
@@ -55,21 +65,42 @@ export function AuthProvider({ children }) {
 
   const isDemo = () => localStorage.getItem("demo") === "true";
 
-  // Sync user from server on startup so cross-device changes (e.g. avatar) are picked up
+  // On startup: if no token, try to restore session via refresh cookie
   useEffect(() => {
-    if (!token || isDemo()) return;
-    client
-      .get("/users/me")
-      .then((res) => {
-        setUser(res.data);
-        localStorage.setItem("user", JSON.stringify(res.data));
-      })
-      .catch(() => {});
+    if (isDemo()) return;
+
+    if (!localStorage.getItem("token")) {
+      client
+        .post("/auth/refresh")
+        .then((res) => {
+          const newToken = res.data.access_token;
+          localStorage.setItem("token", newToken);
+          setToken(newToken);
+          return client.get("/users/me", {
+            headers: { Authorization: `Bearer ${newToken}` },
+          });
+        })
+        .then((res) => {
+          setUser(res.data);
+          localStorage.setItem("user", JSON.stringify(res.data));
+        })
+        .catch(() => {})
+        .finally(() => setInitializing(false));
+    } else {
+      // Sync user profile from server on startup
+      client
+        .get("/users/me")
+        .then((res) => {
+          setUser(res.data);
+          localStorage.setItem("user", JSON.stringify(res.data));
+        })
+        .catch(() => {});
+    }
   }, []);
 
   return (
     <AuthContext.Provider
-      value={{ token, user, setUser, login, logout, enterDemoMode, isDemo }}
+      value={{ token, user, setUser, login, logout, enterDemoMode, isDemo, initializing }}
     >
       {children}
     </AuthContext.Provider>

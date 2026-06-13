@@ -1,6 +1,8 @@
 from pwdlib import PasswordHash
 from pwdlib.hashers.argon2 import Argon2Hasher
 from datetime import datetime, timezone, timedelta
+import hashlib
+import secrets
 import jwt
 from app.core.config import settings
 
@@ -25,3 +27,12 @@ def create_access_token(subject: str) -> str:
 def decode_access_token(token: str) -> str:
     payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
     return payload["sub"]
+
+def generate_refresh_token() -> tuple[str, str]:
+    """Returns (raw_token, token_hash). Store hash only; send raw to client."""
+    raw = secrets.token_hex(32)
+    token_hash = hashlib.sha256(raw.encode()).hexdigest()
+    return raw, token_hash
+
+def hash_token(raw: str) -> str:
+    return hashlib.sha256(raw.encode()).hexdigest()
