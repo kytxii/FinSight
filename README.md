@@ -25,7 +25,7 @@
 | Tool          | Purpose                    |
 | ------------- | -------------------------- |
 | Vite + React  | UI framework               |
-| TypeScript    | UI logic and interactivity |
+| JavaScript    | UI logic and interactivity |
 
 ### Backend
 
