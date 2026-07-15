@@ -43,3 +43,11 @@ class UserResponse(BaseModel):
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str
+
+class OAuthUserInfo(BaseModel):
+    provider_user_id: str
+    email: EmailStr
+    email_verified: bool
+    first_name: str
+    last_name: str
+    avatar: str | None = None

@@ -15,6 +15,7 @@ dependencies = [
     "pwdlib[argon2]",
     "authlib",
     "httpx",
+    "itsdangerous",
     # Validation & config
     "pydantic[email]",
     "pydantic-settings",
