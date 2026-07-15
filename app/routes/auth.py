@@ -1,12 +1,17 @@
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
+from urllib.parse import quote
 from app.schemas.user import RegisterRequest, LoginRequest, UserResponse, TokenResponse
-from app.services.auth_service import register_user, login_user, refresh_session, logout_user
+from app.services.auth_service import register_user, login_user, refresh_session, logout_user, oauth_login
 from app.dependencies import get_db
 from app.core.config import settings
 from app.core.limiter import limiter
+from app.core.oauth import oauth, fetch_oauth_userinfo
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+OAUTH_PROVIDERS = {"google", "github"}
 
 _COOKIE_KWARGS = dict(
     key="refresh_token",
@@ -51,3 +56,32 @@ async def logout(request: Request, response: Response, db: AsyncSession = Depend
     raw_token = request.cookies.get("refresh_token")
     await logout_user(db, raw_token)
     response.delete_cookie(key="refresh_token", path="/")
+
+
+@router.get("/{provider}/login")
+async def oauth_login_redirect(provider: str, request: Request):
+    if provider not in OAUTH_PROVIDERS:
+        raise HTTPException(status_code=404, detail="Unknown provider")
+    client = oauth.create_client(provider)
+    redirect_uri = settings.REDIRECT_URI.format(provider=provider)
+    return await client.authorize_redirect(request, redirect_uri)
+
+
+@router.get("/{provider}/callback")
+async def oauth_callback(provider: str, request: Request, db: AsyncSession = Depends(get_db)):
+    if provider not in OAUTH_PROVIDERS:
+        raise HTTPException(status_code=404, detail="Unknown provider")
+    client = oauth.create_client(provider)
+
+    try:
+        token = await client.authorize_access_token(request)
+        info = await fetch_oauth_userinfo(provider, client, token)
+        _, refresh_token_raw = await oauth_login(db, provider, info)
+    except HTTPException as exc:
+        return RedirectResponse(url=f"{settings.FRONTEND_URL}/login?error={quote(exc.detail)}")
+    except Exception:
+        return RedirectResponse(url=f"{settings.FRONTEND_URL}/login?error={quote('Something went wrong signing in.')}")
+
+    response = RedirectResponse(url=f"{settings.FRONTEND_URL}/")
+    response.set_cookie(value=refresh_token_raw, **_COOKIE_KWARGS)
+    return response

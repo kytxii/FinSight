@@ -4,6 +4,8 @@ import { useAuth } from "../context/AuthContext";
 import client from "../api/client";
 import { useTheme } from "../hooks/useTheme";
 
+const API_BASE = import.meta.env.VITE_API_URL ?? "/api";
+
 export default function Login() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -42,6 +44,15 @@ export default function Login() {
     const symInt = setInterval(() => setSymbolIdx(i => (i + 1) % SYMBOLS.length), 100);
     return () => clearInterval(symInt);
   }, [loading, waking]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const oauthError = params.get("error");
+    if (oauthError) {
+      setError(oauthError);
+      window.history.replaceState({}, "", "/login");
+    }
+  }, []);
   const navigate = useNavigate();
   const dark = useTheme();
 
@@ -305,6 +316,36 @@ export default function Login() {
             <div style={{ flex: 1, height: "1px", backgroundColor: dark ? "var(--dark-border)" : "var(--light-border)" }} />
             <span style={{ fontSize: "11px", opacity: 0.4, color: dark ? "var(--dark-text)" : "var(--light-text)" }}>or</span>
             <div style={{ flex: 1, height: "1px", backgroundColor: dark ? "var(--dark-border)" : "var(--light-border)" }} />
+          </div>
+
+          <div style={{ display: "flex", gap: "8px" }}>
+            <button
+              type="button"
+              onClick={() => { window.location.href = `${API_BASE}/auth/google/login`; }}
+              style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", padding: "8px 12px", borderRadius: "8px", border: `1px solid ${dark ? "var(--dark-border)" : "var(--light-border)"}`, backgroundColor: "transparent", color: dark ? "var(--dark-text)" : "var(--light-text)", fontSize: "13px", fontWeight: 500, cursor: "pointer", opacity: 0.85, transition: "opacity 0.15s" }}
+              onMouseEnter={e => e.currentTarget.style.opacity = "1"}
+              onMouseLeave={e => e.currentTarget.style.opacity = "0.85"}
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24">
+                <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"/>
+                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.99.66-2.25 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.85A11 11 0 0 0 12 23z"/>
+                <path fill="#FBBC05" d="M5.84 14.09A6.6 6.6 0 0 1 5.5 12c0-.73.12-1.43.34-2.09V7.06H2.18A11 11 0 0 0 1 12c0 1.77.42 3.45 1.18 4.94z"/>
+                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.46 2.09 14.97 1 12 1a11 11 0 0 0-9.82 6.06l3.66 2.85C6.71 7.31 9.14 5.38 12 5.38z"/>
+              </svg>
+              Google
+            </button>
+            <button
+              type="button"
+              onClick={() => { window.location.href = `${API_BASE}/auth/github/login`; }}
+              style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: "8px", padding: "8px 12px", borderRadius: "8px", border: `1px solid ${dark ? "var(--dark-border)" : "var(--light-border)"}`, backgroundColor: "transparent", color: dark ? "var(--dark-text)" : "var(--light-text)", fontSize: "13px", fontWeight: 500, cursor: "pointer", opacity: 0.85, transition: "opacity 0.15s" }}
+              onMouseEnter={e => e.currentTarget.style.opacity = "1"}
+              onMouseLeave={e => e.currentTarget.style.opacity = "0.85"}
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.1.79-.25.79-.56 0-.28-.01-1.02-.02-2-3.2.7-3.88-1.54-3.88-1.54-.52-1.34-1.28-1.7-1.28-1.7-1.04-.72.08-.7.08-.7 1.15.08 1.76 1.19 1.76 1.19 1.03 1.75 2.7 1.25 3.36.96.1-.75.4-1.25.73-1.53-2.55-.29-5.24-1.28-5.24-5.7 0-1.26.45-2.29 1.19-3.09-.12-.29-.52-1.47.11-3.06 0 0 .97-.31 3.18 1.18a11 11 0 0 1 5.79 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.77.12 3.06.74.8 1.18 1.83 1.18 3.09 0 4.43-2.69 5.4-5.25 5.69.41.36.78 1.07.78 2.15 0 1.55-.01 2.8-.01 3.18 0 .31.21.67.8.56A10.51 10.51 0 0 0 23.5 12c0-6.35-5.15-11.5-11.5-11.5z"/>
+              </svg>
+              GitHub
+            </button>
           </div>
 
           <button
