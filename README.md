@@ -151,18 +151,20 @@ SECRET_KEY=                        # generate: openssl rand -hex 32
 ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=30
 
-# OAuth2
+# OAuth2 - Google
 GOOGLE_CLIENT_ID=
 GOOGLE_CLIENT_SECRET=
+
+# OAuth2 - GitHub
 GITHUB_CLIENT_ID=
 GITHUB_CLIENT_SECRET=
+
 REDIRECT_URI=http://localhost:8000/auth/{provider}/callback
 
 # App
-ENVIRONMENT=development
+WHITELIST=["example@email.com"]
 FRONTEND_URL=http://localhost:5173
 DEV_URL=http://localhost:5173
-REGISTRATION_WHITELIST=your@email.com
 ```
 
 ---
