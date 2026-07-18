@@ -1,6 +1,9 @@
 // ── Keys ──────────────────────────────────────────────────────────────────────
 const TX_KEY = "demo_transactions";
 const RP_KEY = "demo_recurring";
+const PS_KEY = "demo_paycheck_schedules";
+const PC_KEY = "demo_paychecks";
+const BA_KEY = "demo_balance_anchor";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const getAll  = (key)       => JSON.parse(localStorage.getItem(key) || "[]");
@@ -315,12 +318,17 @@ const SEED_TRANSACTIONS = [
 ];
 
 const SEED_RECURRING = [
-  { id: "demo-r-1", name: "Rent",           amount: "1200.00", day_of_month: 1,  category: "BILL"         },
-  { id: "demo-r-2", name: "Spotify",        amount: "9.99",    day_of_month: 1,  category: "SUBSCRIPTION" },
-  { id: "demo-r-3", name: "Gym Membership", amount: "40.00",   day_of_month: 5,  category: "SUBSCRIPTION" },
-  { id: "demo-r-4", name: "Internet",       amount: "60.00",   day_of_month: 10, category: "BILL"         },
-  { id: "demo-r-5", name: "Netflix",        amount: "15.99",   day_of_month: 15, category: "SUBSCRIPTION" },
-  { id: "demo-r-6", name: "Electric",       amount: "88.00",   day_of_month: 20, category: "BILL"         },
+  { id: "demo-r-1", name: "Rent",           amount: "1200.00", day_of_month: 1,    category: "BILL"         },
+  { id: "demo-r-2", name: "Spotify",        amount: "9.99",    day_of_month: 1,    category: "SUBSCRIPTION" },
+  { id: "demo-r-3", name: "Gym Membership", amount: "40.00",   day_of_month: 5,    category: "SUBSCRIPTION" },
+  { id: "demo-r-4", name: "Internet",       amount: "60.00",   day_of_month: 10,   category: "BILL"         },
+  { id: "demo-r-5", name: "Netflix",        amount: "15.99",   day_of_month: 15,   category: "SUBSCRIPTION" },
+  { id: "demo-r-6", name: "Electric",       amount: "88.00",   day_of_month: 20,   category: "BILL"         },
+  { id: "demo-r-7", name: "Groceries",      amount: "400.00",  day_of_month: null, category: "EXPENSE", is_estimate: true },
+];
+
+const SEED_PAYCHECK_SCHEDULES = [
+  { id: "demo-ps-1", frequency: "BIWEEKLY", start_date: "2026-01-02", active: true },
 ];
 
 // ── Init ──────────────────────────────────────────────────────────────────────
@@ -331,11 +339,17 @@ export function initDemo() {
   if (!localStorage.getItem(RP_KEY)) {
     localStorage.setItem(RP_KEY, JSON.stringify(SEED_RECURRING));
   }
+  if (!localStorage.getItem(PS_KEY)) {
+    localStorage.setItem(PS_KEY, JSON.stringify(SEED_PAYCHECK_SCHEDULES));
+  }
 }
 
 export function clearDemo() {
   localStorage.removeItem(TX_KEY);
   localStorage.removeItem(RP_KEY);
+  localStorage.removeItem(PS_KEY);
+  localStorage.removeItem(PC_KEY);
+  localStorage.removeItem(BA_KEY);
   localStorage.removeItem("demo");
 }
 
@@ -355,7 +369,9 @@ function applyRecurringPayments() {
   let changed = false;
 
   recurring.forEach((rp) => {
-    if (rp.day_of_month > today) return;
+    if (rp.is_estimate) return; // estimates inform surplus math only - never generate ledger transactions
+    if (rp.active === false) return;
+    if (rp.day_of_month == null || rp.day_of_month > today) return;
 
     const alreadyExists = transactions.some(
       (t) =>
@@ -407,17 +423,30 @@ export const updateTransaction = (id, data) => {
 };
 
 export const deleteTransaction = (id) => {
-  saveAll(TX_KEY, getAll(TX_KEY).filter(t => t.id !== id));
+  const transactions = getAll(TX_KEY);
+  const target = transactions.find(t => t.id === id);
+  saveAll(TX_KEY, transactions.filter(t => t.id !== id));
+
+  if (target?.paycheck_id) {
+    saveAll(PC_KEY, getAll(PC_KEY).map(p => p.id === target.paycheck_id ? { ...p, amount: null } : p));
+  }
+
   return Promise.resolve({ data: null, status: 204 });
 };
 
 // ── Recurring payments ────────────────────────────────────────────────────────
 export const getRecurringPayments = () =>
-  respond(getAll(RP_KEY));
+  respond(getAll(RP_KEY).filter((r) => r.active !== false));
 
 export const createRecurringPayment = (data) => {
   const items = getAll(RP_KEY);
-  const item = { id: nextId(), ...data, amount: String(parseFloat(data.amount).toFixed(2)) };
+  const item = {
+    id: nextId(),
+    ...data,
+    amount: String(parseFloat(data.amount).toFixed(2)),
+    is_estimate: data.is_estimate ?? false,
+    active: true,
+  };
   saveAll(RP_KEY, [...items, item]);
   return respond(item);
 };
@@ -435,6 +464,305 @@ export const updateRecurringPayment = (id, data) => {
 };
 
 export const deleteRecurringPayment = (id) => {
-  saveAll(RP_KEY, getAll(RP_KEY).filter(r => r.id !== id));
+  // Soft-deactivate rather than remove - stops generating new transactions,
+  // but existing transaction history (t.recurring_payment_id) stays untouched.
+  saveAll(RP_KEY, getAll(RP_KEY).map(r => r.id === id ? { ...r, active: false } : r));
   return Promise.resolve({ data: null, status: 204 });
+};
+
+// ── Paychecks ─────────────────────────────────────────────────────────────────
+// Mirrors app/services/paycheck_service.py so demo mode behaves the same as the
+// real backend: pay dates are generated per frequency, backfilled lazily on
+// read (past dates + one upcoming), and never invented with an amount.
+
+const PAYCHECK_EXPENSE_CATEGORIES = new Set(["EXPENSE", "BILL", "SUBSCRIPTION", "SAVINGS", "DEBT"]);
+const PAYCHECK_INCOME_CATEGORIES = new Set(["INCOME", "REIMBURSEMENT", "TIPS"]);
+
+function toDateStr(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
+// Adds `months` to `base`, clamping the day-of-month to the target month's length
+// (e.g. Jan 31 + 1 month -> Feb 28), same as the Python service's _add_months.
+function addMonthsClamped(base, months) {
+  const year = base.getFullYear();
+  const month = base.getMonth();
+  const day = base.getDate();
+  const targetIndex = month + months;
+  const targetYear = year + Math.floor(targetIndex / 12);
+  const targetMonth = ((targetIndex % 12) + 12) % 12;
+  const lastDay = new Date(targetYear, targetMonth + 1, 0).getDate();
+  return new Date(targetYear, targetMonth, Math.min(day, lastDay));
+}
+
+// Yields a schedule's pay dates in ascending order, indefinitely. SEMI_MONTHLY
+// is two dates 15 days apart per month, anchored to start_date's day-of-month.
+function* iterPayDates(schedule) {
+  const start = new Date(schedule.start_date + "T00:00:00");
+
+  if (schedule.frequency === "WEEKLY" || schedule.frequency === "BIWEEKLY") {
+    const stepDays = schedule.frequency === "WEEKLY" ? 7 : 14;
+    let current = start;
+    while (true) {
+      yield current;
+      current = new Date(current);
+      current.setDate(current.getDate() + stepDays);
+    }
+  } else if (schedule.frequency === "MONTHLY") {
+    let months = 0;
+    while (true) {
+      yield addMonthsClamped(start, months);
+      months += 1;
+    }
+  } else if (schedule.frequency === "SEMI_MONTHLY") {
+    let months = 0;
+    while (true) {
+      const anchor = addMonthsClamped(start, months);
+      yield anchor;
+      const second = new Date(anchor);
+      second.setDate(second.getDate() + 15);
+      yield second;
+      months += 1;
+    }
+  }
+}
+
+function generatePayDatesThrough(schedule, through) {
+  const dates = [];
+  for (const d of iterPayDates(schedule)) {
+    dates.push(d);
+    if (d > through) break;
+  }
+  return dates;
+}
+
+function nextOccurrence(dayOfMonth, fromDate) {
+  const lastDay = new Date(fromDate.getFullYear(), fromDate.getMonth() + 1, 0).getDate();
+  const candidate = new Date(fromDate.getFullYear(), fromDate.getMonth(), Math.min(dayOfMonth, lastDay));
+  if (candidate >= fromDate) return candidate;
+
+  const nextMonth = addMonthsClamped(new Date(fromDate.getFullYear(), fromDate.getMonth(), 1), 1);
+  const nextLastDay = new Date(nextMonth.getFullYear(), nextMonth.getMonth() + 1, 0).getDate();
+  return new Date(nextMonth.getFullYear(), nextMonth.getMonth(), Math.min(dayOfMonth, nextLastDay));
+}
+
+function backfillPaychecks() {
+  const schedules = getAll(PS_KEY);
+  const paychecks = getAll(PC_KEY);
+  const today = new Date(DEMO_TODAY + "T00:00:00");
+  let changed = false;
+
+  schedules.filter((schedule) => schedule.active !== false).forEach((schedule) => {
+    const expected = generatePayDatesThrough(schedule, today);
+    const existingDates = new Set(
+      paychecks.filter((p) => p.schedule_id === schedule.id).map((p) => p.pay_date)
+    );
+
+    expected.forEach((d) => {
+      const dateStr = toDateStr(d);
+      if (!existingDates.has(dateStr)) {
+        paychecks.push({
+          id: nextId(),
+          schedule_id: schedule.id,
+          pay_date: dateStr,
+          amount: null,
+        });
+        changed = true;
+      }
+    });
+  });
+
+  if (changed) saveAll(PC_KEY, paychecks);
+  return paychecks;
+}
+
+export const getPaycheckSchedules = () => respond(getAll(PS_KEY).filter((s) => s.active !== false));
+
+export const createPaycheckSchedule = (data) => {
+  const items = getAll(PS_KEY);
+  const item = { id: nextId(), frequency: data.frequency, start_date: data.start_date, active: true };
+  saveAll(PS_KEY, [...items, item]);
+  return respond(item);
+};
+
+export const updatePaycheckSchedule = (id, data) => {
+  const items = getAll(PS_KEY);
+  let updated;
+  const next = items.map((s) => {
+    if (s.id !== id) return s;
+    updated = { ...s, ...data };
+    return updated;
+  });
+  saveAll(PS_KEY, next);
+
+  // Unfilled paychecks no longer match the old frequency/start_date - drop
+  // them so the next read backfills fresh ones. Entered amounts stay.
+  saveAll(PC_KEY, getAll(PC_KEY).filter((p) => p.schedule_id !== id || p.amount != null));
+
+  return respond(updated);
+};
+
+export const deletePaycheckSchedule = (id) => {
+  // Soft-deactivate rather than remove - stops generating new paychecks, but
+  // past paychecks and their linked income transactions stay untouched.
+  saveAll(PS_KEY, getAll(PS_KEY).map((s) => s.id === id ? { ...s, active: false } : s));
+  return Promise.resolve({ data: null, status: 204 });
+};
+
+export const getPaychecks = () => {
+  const all = backfillPaychecks();
+
+  // Guessed amount for still-unfilled paychecks, based on recent entries for
+  // that schedule - purely informational, never used in the spendable-surplus
+  // math (which only counts money actually received).
+  const withEstimates = all.map((p) => {
+    if (p.amount != null) return { ...p, estimated_amount: null };
+    const estimate = averageRecentAmounts(p.schedule_id, all);
+    return { ...p, estimated_amount: estimate != null ? estimate.toFixed(2) : null };
+  });
+
+  const sorted = withEstimates.sort((a, b) => b.pay_date.localeCompare(a.pay_date));
+  const pending = sorted.filter((p) => p.pay_date <= DEMO_TODAY && p.amount == null);
+  return respond({ paychecks: sorted, pending_paychecks: pending });
+};
+
+export const updatePaycheckAmount = (id, data) => {
+  const items = getAll(PC_KEY);
+  let updated;
+  const next = items.map((p) => {
+    if (p.id !== id) return p;
+    updated = { ...p, amount: String(parseFloat(data.amount).toFixed(2)) };
+    return updated;
+  });
+  saveAll(PC_KEY, next);
+
+  if (updated) {
+    const transactions = getAll(TX_KEY);
+    const existingIdx = transactions.findIndex((t) => t.paycheck_id === id);
+    if (existingIdx !== -1) {
+      transactions[existingIdx] = { ...transactions[existingIdx], amount: updated.amount, transaction_date: updated.pay_date };
+    } else {
+      transactions.push({
+        id: nextId(),
+        name: "Paycheck",
+        amount: updated.amount,
+        category: "INCOME",
+        transaction_date: updated.pay_date,
+        paycheck_id: id,
+      });
+    }
+    saveAll(TX_KEY, transactions);
+  }
+
+  return respond(updated);
+};
+
+export const getBalanceAnchor = () => {
+  const raw = localStorage.getItem(BA_KEY);
+  return respond(raw ? JSON.parse(raw) : null);
+};
+
+export const setBalanceAnchor = (data) => {
+  const existing = localStorage.getItem(BA_KEY);
+  const anchor = {
+    id: existing ? JSON.parse(existing).id : nextId(),
+    current_balance: String(parseFloat(data.current_balance).toFixed(2)),
+    as_of_date: data.as_of_date,
+  };
+  localStorage.setItem(BA_KEY, JSON.stringify(anchor));
+  return respond(anchor);
+};
+
+function computeRunningBalance() {
+  const raw = localStorage.getItem(BA_KEY);
+  if (!raw) return null;
+  const anchor = JSON.parse(raw);
+
+  const net = getAll(TX_KEY)
+    .filter((t) => t.transaction_date >= anchor.as_of_date)
+    .reduce((sum, t) => sum + (PAYCHECK_INCOME_CATEGORIES.has(t.category) ? parseFloat(t.amount) : -parseFloat(t.amount)), 0);
+
+  return parseFloat(anchor.current_balance) + net;
+}
+
+export const getRunningBalance = () => {
+  const raw = localStorage.getItem(BA_KEY);
+  if (!raw) {
+    return Promise.reject({ response: { status: 404, data: { detail: "No starting balance set" } } });
+  }
+  const anchor = JSON.parse(raw);
+  return respond({ balance: computeRunningBalance().toFixed(2), as_of_date: anchor.as_of_date });
+};
+
+function nextMonthStart(today) {
+  const month = today.getMonth();
+  const year = today.getFullYear();
+  return month === 11 ? new Date(year + 1, 0, 1) : new Date(year, month + 1, 1);
+}
+
+function averageRecentAmounts(scheduleId, allPaychecks, limit = 3) {
+  const amounts = allPaychecks
+    .filter((p) => p.schedule_id === scheduleId && p.amount != null)
+    .sort((a, b) => b.pay_date.localeCompare(a.pay_date))
+    .slice(0, limit)
+    .map((p) => parseFloat(p.amount));
+  if (amounts.length === 0) return null;
+  return amounts.reduce((a, b) => a + b, 0) / amounts.length;
+}
+
+function committedBefore(recurring, today, horizon) {
+  return recurring.reduce((sum, rp) => {
+    // Estimate with no fixed due date - count it in full (conservative).
+    if (rp.day_of_month == null) return sum + parseFloat(rp.amount);
+    const occurrence = nextOccurrence(rp.day_of_month, today);
+    return occurrence < horizon ? sum + parseFloat(rp.amount) : sum;
+  }, 0);
+}
+
+export const getSpendableSurplus = () => {
+  const runningBalance = computeRunningBalance();
+  if (runningBalance == null) {
+    return Promise.reject({ response: { status: 404, data: { detail: "No starting balance set" } } });
+  }
+
+  const schedules = getAll(PS_KEY).filter((s) => s.active !== false);
+  if (schedules.length === 0) {
+    return Promise.reject({ response: { status: 404, data: { detail: "No active paycheck schedule found" } } });
+  }
+
+  const today = new Date(DEMO_TODAY + "T00:00:00");
+  let nextPayday = null;
+  let nextSchedule = null;
+  schedules.forEach((schedule) => {
+    for (const d of iterPayDates(schedule)) {
+      if (d >= today) {
+        if (nextPayday === null || d.getTime() < nextPayday.getTime()) {
+          nextPayday = d;
+          nextSchedule = schedule;
+        }
+        break;
+      }
+    }
+  });
+  const monthEnd = nextMonthStart(today);
+  const nextPaydayEstimate = nextSchedule ? averageRecentAmounts(nextSchedule.id, getAll(PC_KEY)) : null;
+
+  const recurring = getAll(RP_KEY).filter((rp) => rp.active !== false && PAYCHECK_EXPENSE_CATEGORIES.has(rp.category));
+
+  // Primary number: what's actually free to spend/save before bills reset at
+  // the start of next month. Secondary: how much of that is already spoken
+  // for before the next paycheck lands, shown separately for context.
+  const billsBeforeMonthEnd = committedBefore(recurring, today, monthEnd);
+  const billsBeforeNextPayday = committedBefore(recurring, today, nextPayday);
+
+  return respond({
+    next_payday: toDateStr(nextPayday),
+    month_end: toDateStr(monthEnd),
+    spendable_surplus: (runningBalance - billsBeforeMonthEnd).toFixed(2),
+    bills_before_next_payday: billsBeforeNextPayday.toFixed(2),
+    next_payday_estimate: nextPaydayEstimate != null ? nextPaydayEstimate.toFixed(2) : null,
+  });
 };

@@ -17,6 +17,7 @@ import {
 import { useAuth } from "../context/AuthContext";
 import { getTransactions, createTransaction, deleteTransaction } from "../api/transactions";
 import { deleteRecurringPayment } from "../api/recurringPayments";
+import { getSpendableSurplus, getRunningBalance } from "../api/paychecks";
 import {
   CATEGORIES,
   CATEGORY_CONFIG,
@@ -39,6 +40,10 @@ export default function Dashboard() {
   const { isDemo } = useAuth();
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [safeToSpend, setSafeToSpend] = useState(null);
+  const [safeToSpendStatus, setSafeToSpendStatus] = useState("loading"); // loading | ok | no-balance | no-schedule | error
+  const [bankBalance, setBankBalance] = useState(null);
+  const [bankBalanceStatus, setBankBalanceStatus] = useState("loading"); // loading | ok | no-balance | error
   const [backendSleeping, setBackendSleeping] = useState(false);
   const [devMenuOpen, setDevMenuOpen] = useState(false);
   const [devForceEmpty, setDevForceEmpty] = useState(false);
@@ -148,19 +153,47 @@ export default function Dashboard() {
     return () => clearTimeout(sleepTimer);
   }, []);
 
+  function loadSafeToSpend() {
+    getSpendableSurplus().then((res) => {
+      setSafeToSpend(res.data);
+      setSafeToSpendStatus("ok");
+    }).catch((err) => {
+      const detail = err.response?.data?.detail;
+      setSafeToSpend(null);
+      if (detail === "No starting balance set") setSafeToSpendStatus("no-balance");
+      else if (detail === "No active paycheck schedule found") setSafeToSpendStatus("no-schedule");
+      else setSafeToSpendStatus("error");
+    });
+  }
+
+  function loadBankBalance() {
+    getRunningBalance().then((res) => {
+      setBankBalance(res.data);
+      setBankBalanceStatus("ok");
+    }).catch((err) => {
+      const detail = err.response?.data?.detail;
+      setBankBalance(null);
+      setBankBalanceStatus(detail === "No starting balance set" ? "no-balance" : "error");
+    });
+  }
+
+  useEffect(() => { loadSafeToSpend(); loadBankBalance(); }, []);
+
   function refreshTransactions() {
     devFetch().then((res) => {
       setTransactions(res.data);
       setDevLastFetch(new Date());
     }).catch(() => {});
+    loadSafeToSpend();
+    loadBankBalance();
   }
 
   async function handleDelete(t) {
     if (t.recurring_payment_id) {
-      await deleteRecurringPayment(t.recurring_payment_id);
-      setTransactions((prev) =>
-        prev.filter((tx) => tx.recurring_payment_id !== t.recurring_payment_id),
-      );
+      // Stop future recurrences too, but only remove the transaction actually
+      // clicked - recurring payment deletion now deactivates (preserves history).
+      await Promise.all([deleteRecurringPayment(t.recurring_payment_id), deleteTransaction(t.id)]);
+      setTransactions((prev) => prev.filter((tx) => tx.id !== t.id));
     } else {
       await deleteTransaction(t.id);
       setTransactions((prev) => prev.filter((tx) => tx.id !== t.id));
@@ -220,34 +253,6 @@ export default function Dashboard() {
     const savingsRate =
       totalIn > 0 ? ((totalIn - totalOut) / totalIn) * 100 : null;
 
-    // Avg daily spend
-    let days = 1;
-    if (dateRange.from && dateRange.to) {
-      days = Math.max(
-        1,
-        Math.round((dateRange.to - dateRange.from) / (1000 * 60 * 60 * 24)),
-      );
-    } else if (filtered.length > 0) {
-      const timestamps = filtered.map((t) =>
-        new Date(t.transaction_date).getTime(),
-      );
-      days = Math.max(
-        1,
-        Math.round(
-          (Math.max(...timestamps) - Math.min(...timestamps)) /
-            (1000 * 60 * 60 * 24),
-        ) + 1,
-      );
-    }
-    const avgDailySpend = totalOut / days;
-    const refDate = dateRange.from ?? new Date();
-    const daysInMonth = new Date(
-      refDate.getFullYear(),
-      refDate.getMonth() + 1,
-      0,
-    ).getDate();
-    const projectedMonthlySpend = avgDailySpend * daysInMonth;
-
     // Previous period savings rate delta
     let savingsRateDelta = null;
     if (dateRange.from) {
@@ -270,24 +275,6 @@ export default function Dashboard() {
       if (prevIn > 0 && savingsRate !== null) {
         savingsRateDelta = savingsRate - ((prevIn - prevOut) / prevIn) * 100;
       }
-    }
-
-    let projectedMonthlySpendDelta = null;
-    if (dateRange.from) {
-      const periodMs =
-        (dateRange.to ?? new Date()).getTime() - dateRange.from.getTime();
-      const prevFrom = new Date(dateRange.from.getTime() - periodMs);
-      const prevTo = dateRange.from;
-      const prevTotalOut = transactions
-        .filter((t) => activeTab === "ALL" || t.category === activeTab)
-        .filter((t) => {
-          const d = new Date(t.transaction_date + "T00:00:00");
-          return d >= prevFrom && d < prevTo;
-        })
-        .filter((t) => !INCOME_TYPES.has(t.category))
-        .reduce((s, t) => s + parseFloat(t.amount), 0);
-      projectedMonthlySpendDelta =
-        projectedMonthlySpend - (prevTotalOut / days) * daysInMonth;
     }
 
     // Category-specific metrics (non-ALL tabs)
@@ -338,8 +325,6 @@ export default function Dashboard() {
       totalOut,
       savingsRate,
       savingsRateDelta,
-      projectedMonthlySpend,
-      projectedMonthlySpendDelta,
       categoryTotal,
       txCount,
       avgTx,
@@ -503,6 +488,7 @@ export default function Dashboard() {
         onSelectTransaction={handleSelectTransaction}
         onDeleteRecurringPayment={refreshTransactions}
         onSaveRecurringPayment={refreshTransactions}
+        onPaycheckSaved={refreshTransactions}
         onCommand={(cmd, val) => { if (cmd === "devtools") setDevMenuOpen(val); }}
       />
 
@@ -721,8 +707,8 @@ export default function Dashboard() {
         <style>{`@keyframes skel-shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }`}</style>
         {backendSleeping && <BackendWaking dark={dark} text={text} muted={muted} />}
         {!backendSleeping && loading ? (
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-            {[...Array(4)].map((_, i) => (
+          <div className={`grid grid-cols-2 ${activeTab === "ALL" ? "lg:grid-cols-5" : "lg:grid-cols-4"} gap-4`}>
+            {[...Array(activeTab === "ALL" ? 5 : 4)].map((_, i) => (
               <div key={i} className="rounded-2xl px-5 py-5 border" style={{ backgroundColor: surface, borderTopWidth: 3, borderTopColor: border, borderRightColor: border, borderBottomColor: border, borderLeftColor: border }}>
                 <Skel h={24} w="52%" dark={dark} />
                 <Skel h={36} w="62%" dark={dark} style={{ marginTop: 4 }} />
@@ -731,7 +717,7 @@ export default function Dashboard() {
             ))}
           </div>
         ) : (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className={`grid grid-cols-2 ${activeTab === "ALL" ? "lg:grid-cols-5" : "lg:grid-cols-4"} gap-4`}>
           {activeTab === "ALL" ? (
             <>
               <SummaryCard
@@ -752,17 +738,64 @@ export default function Dashboard() {
                 activeColor={netColor}
                 valueColor={netColor}
               />
-              <SummaryCard
-                label="PROJECTED MONTHLY SPENDING"
-                value={fmt(summary.projectedMonthlySpend)}
-                activeColor={activeColor}
-                deltaLabel={
-                  summary.projectedMonthlySpendDelta != null
-                    ? `${summary.projectedMonthlySpendDelta >= 0 ? "↑" : "↓"} ${fmt(Math.abs(summary.projectedMonthlySpendDelta))} vs last month`
-                    : null
+              {(() => {
+                if (bankBalanceStatus === "ok") {
+                  const val = parseFloat(bankBalance.balance);
+                  const color = val >= 0 ? "var(--category-income)" : "var(--category-expense)";
+                  const asOf = new Date(bankBalance.as_of_date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
+                  return (
+                    <SummaryCard
+                      label="LIVE BANK BALANCE"
+                      value={fmt(bankBalance.balance)}
+                      activeColor={color}
+                      valueColor={color}
+                      deltaLabel={`since ${asOf}`}
+                      deltaUp={val >= 0}
+                    />
+                  );
                 }
-                deltaUp={summary.projectedMonthlySpendDelta <= 0}
-              />
+                return (
+                  <SummaryCard
+                    label="LIVE BANK BALANCE"
+                    value={bankBalanceStatus === "loading" ? "—" : "Not set up"}
+                    activeColor={muted}
+                    deltaLabel={bankBalanceStatus === "loading" ? null : "Set a starting balance"}
+                    deltaUp={true}
+                  />
+                );
+              })()}
+              {(() => {
+                if (safeToSpendStatus === "ok") {
+                  const val = parseFloat(safeToSpend.spendable_surplus);
+                  const color = val >= 0 ? "var(--category-income)" : "var(--category-expense)";
+                  const shortDate = (d) => new Date(d + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
+                  return (
+                    <SummaryCard
+                      label="SAFE TO SPEND"
+                      value={fmt(safeToSpend.spendable_surplus)}
+                      activeColor={color}
+                      valueColor={color}
+                      deltaLabel={`before ${shortDate(safeToSpend.month_end)}`}
+                      deltaUp={val >= 0}
+                      subLabel={`-${fmt(safeToSpend.bills_before_next_payday)} before ${safeToSpend.next_payday_estimate != null ? `~${fmt(safeToSpend.next_payday_estimate)} ` : ""}paycheck on ${shortDate(safeToSpend.next_payday)}`}
+                    />
+                  );
+                }
+                const prompt = safeToSpendStatus === "no-balance"
+                  ? "Set a starting balance"
+                  : safeToSpendStatus === "no-schedule"
+                    ? "Set up a paycheck schedule"
+                    : safeToSpendStatus === "loading" ? "—" : "Unavailable";
+                return (
+                  <SummaryCard
+                    label="SAFE TO SPEND"
+                    value={safeToSpendStatus === "loading" ? "—" : "Not set up"}
+                    activeColor={muted}
+                    deltaLabel={safeToSpendStatus === "loading" ? null : prompt}
+                    deltaUp={true}
+                  />
+                );
+              })()}
             </>
           ) : (
             <>

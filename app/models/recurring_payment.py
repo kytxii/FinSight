@@ -1,4 +1,4 @@
-from sqlalchemy import String, Numeric, Integer, Enum as CategoryEnum, UUID, DateTime
+from sqlalchemy import String, Numeric, Integer, Boolean, Enum as CategoryEnum, UUID, DateTime
 from sqlalchemy.orm import Mapped, mapped_column
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -13,8 +13,10 @@ class RecurringPayment(Base):
 
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     amount: Mapped[Decimal] = mapped_column(Numeric(10, 2), nullable=False)
-    day_of_month: Mapped[int] = mapped_column(Integer, nullable=False)
+    day_of_month: Mapped[int | None] = mapped_column(Integer, nullable=True)
     category: Mapped[Category] = mapped_column(CategoryEnum(Category), nullable=False)
+    is_estimate: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
 
     last_applied_month: Mapped[str | None] = mapped_column(String(7), nullable=True)
 

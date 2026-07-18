@@ -33,6 +33,8 @@ async def create_recurring_payments(recurring_payment: CreateRecurringPayment, c
 async def update_recurring_payments(recurring_payment_id: UUID, data: UpdateRecurringPayment, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     try:
         result = await recurring_payment_service.update_recurring_payment(recurring_payment_id, data, current_user.id, db)
+    except recurring_payment_service.InvalidRecurringPaymentError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     return result

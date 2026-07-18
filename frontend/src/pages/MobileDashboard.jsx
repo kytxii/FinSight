@@ -26,6 +26,7 @@ import {
   createTransaction,
   deleteTransaction,
 } from "../api/transactions";
+import { getSpendableSurplus, getRunningBalance } from "../api/paychecks";
 import EditTransactionModal from "../components/EditTransactionModal";
 import {
   CATEGORIES,
@@ -36,11 +37,12 @@ import {
 import { useTheme } from "../hooks/useTheme";
 import { useAuth } from "../context/AuthContext";
 import { PRESETS, getPresetRange } from "../components/DateRangeFilter";
-import { getNow, getToday } from "../utils/time";
+import { getToday } from "../utils/time";
 import Footer from "../components/Footer";
 import RenderWakeButton from "../components/RenderWakeButton";
 import RecurringPaymentsModal from "../components/RecurringPaymentsModal";
 import AccountPanel from "../components/AccountPanel";
+import PaychecksPanel from "../components/PaychecksPanel";
 
 // ── Icons ────────────────────────────────────────────────────────────────────
 
@@ -530,6 +532,7 @@ export default function MobileDashboard() {
     isSaving: false,
     onSave: null,
   });
+  const [paychecksOpen, setPaychecksOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const [acctSave, setAcctSave] = useState({
     isDirty: false,
@@ -542,6 +545,10 @@ export default function MobileDashboard() {
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [backendSleeping, setBackendSleeping] = useState(false);
+  const [safeToSpend, setSafeToSpend] = useState(null);
+  const [safeToSpendStatus, setSafeToSpendStatus] = useState("loading"); // loading | ok | no-balance | no-schedule | error
+  const [bankBalance, setBankBalance] = useState(null);
+  const [bankBalanceStatus, setBankBalanceStatus] = useState("loading"); // loading | ok | no-balance | error
 
   async function devFetch() {
     if (devForceErrorRef.current) {
@@ -565,11 +572,39 @@ export default function MobileDashboard() {
     return () => clearTimeout(sleepTimer);
   }, []);
 
+  function loadSafeToSpend() {
+    getSpendableSurplus().then((res) => {
+      setSafeToSpend(res.data);
+      setSafeToSpendStatus("ok");
+    }).catch((err) => {
+      const detail = err.response?.data?.detail;
+      setSafeToSpend(null);
+      if (detail === "No starting balance set") setSafeToSpendStatus("no-balance");
+      else if (detail === "No active paycheck schedule found") setSafeToSpendStatus("no-schedule");
+      else setSafeToSpendStatus("error");
+    });
+  }
+
+  function loadBankBalance() {
+    getRunningBalance().then((res) => {
+      setBankBalance(res.data);
+      setBankBalanceStatus("ok");
+    }).catch((err) => {
+      const detail = err.response?.data?.detail;
+      setBankBalance(null);
+      setBankBalanceStatus(detail === "No starting balance set" ? "no-balance" : "error");
+    });
+  }
+
+  useEffect(() => { loadSafeToSpend(); loadBankBalance(); }, []);
+
   function refresh() {
     devFetch().then((res) => {
       setTransactions(res.data);
       setDevLastFetch(new Date());
     }).catch(() => {});
+    loadSafeToSpend();
+    loadBankBalance();
   }
 
   const [editingTransaction, setEditingTransaction] = useState(null);
@@ -835,35 +870,8 @@ export default function MobileDashboard() {
       .filter((t) => !INCOME_TYPES.has(t.category))
       .reduce((s, t) => s + parseFloat(t.amount), 0);
     const net = totalIn - totalOut;
-    let days = 1;
-    if (dashDateRange.from && dashDateRange.to) {
-      days = Math.max(
-        1,
-        Math.round(
-          (dashDateRange.to - dashDateRange.from) / (1000 * 60 * 60 * 24),
-        ),
-      );
-    } else if (dashFiltered.length > 0) {
-      const timestamps = dashFiltered.map((t) =>
-        new Date(t.transaction_date).getTime(),
-      );
-      days = Math.max(
-        1,
-        Math.round(
-          (Math.max(...timestamps) - Math.min(...timestamps)) /
-            (1000 * 60 * 60 * 24),
-        ) + 1,
-      );
-    }
-    const refDate = dashDateRange.from ?? getNow();
-    const daysInMonth = new Date(
-      refDate.getFullYear(),
-      refDate.getMonth() + 1,
-      0,
-    ).getDate();
-    const projectedMonthlySpend = (totalOut / days) * daysInMonth;
-    return { totalIn, totalOut, net, projectedMonthlySpend };
-  }, [dashFiltered, dashDateRange]);
+    return { totalIn, totalOut, net };
+  }, [dashFiltered]);
 
   const dashPieData = useMemo(() => {
     const grouped = {};
@@ -1225,7 +1233,7 @@ export default function MobileDashboard() {
             {/* Summary cards */}
             {!backendSleeping && loading ? (
               <div className="grid grid-cols-2 gap-3">
-                {[...Array(4)].map((_, i) => (
+                {[...Array(5)].map((_, i) => (
                   <div
                     key={i}
                     className="rounded-2xl px-4 py-4 border"
@@ -1271,12 +1279,31 @@ export default function MobileDashboard() {
                         ? "var(--category-income)"
                         : "var(--category-expense)",
                   },
-                  {
-                    label: "PROJ. MONTHLY",
-                    value: fmt(dashSummary.projectedMonthlySpend),
-                    color: "var(--category-all)",
-                  },
-                ].map(({ label, value, color }) => (
+                  bankBalanceStatus === "ok"
+                    ? {
+                        label: "LIVE BANK BALANCE",
+                        value: fmt(bankBalance.balance),
+                        color: parseFloat(bankBalance.balance) >= 0 ? "var(--category-income)" : "var(--category-expense)",
+                        caption: `since ${new Date(bankBalance.as_of_date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}`,
+                      }
+                    : {
+                        label: "LIVE BANK BALANCE",
+                        value: bankBalanceStatus === "loading" ? "—" : "Not set up",
+                        color: muted,
+                      },
+                  safeToSpendStatus === "ok"
+                    ? {
+                        label: "SAFE TO SPEND",
+                        value: fmt(safeToSpend.spendable_surplus),
+                        color: parseFloat(safeToSpend.spendable_surplus) >= 0 ? "var(--category-income)" : "var(--category-expense)",
+                        caption: `before ${new Date(safeToSpend.month_end + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })} · -${fmt(safeToSpend.bills_before_next_payday)} before ${safeToSpend.next_payday_estimate != null ? `~${fmt(safeToSpend.next_payday_estimate)} ` : ""}paycheck on ${new Date(safeToSpend.next_payday + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}`,
+                      }
+                    : {
+                        label: "SAFE TO SPEND",
+                        value: safeToSpendStatus === "loading" ? "—" : safeToSpendStatus === "no-balance" ? "Set balance" : safeToSpendStatus === "no-schedule" ? "Set schedule" : "Unavailable",
+                        color: muted,
+                      },
+                ].map(({ label, value, color, caption }) => (
                   <div
                     key={label}
                     className="rounded-2xl px-4 py-4 border"
@@ -1299,6 +1326,11 @@ export default function MobileDashboard() {
                     >
                       {value}
                     </p>
+                    {caption && (
+                      <p className="text-[10px] mt-0.5" style={{ color: muted }}>
+                        {caption}
+                      </p>
+                    )}
                   </div>
                 ))}
               </div>
@@ -2879,6 +2911,33 @@ export default function MobileDashboard() {
         </div>
       )}
 
+      {/* ── Paychecks overlay ── */}
+      {paychecksOpen && (
+        <div
+          className="fixed inset-0 z-50 flex flex-col"
+          style={{ backgroundColor: surface, color: text }}
+        >
+          <div
+            className="px-5 py-4 flex items-center justify-between border-b shrink-0"
+            style={{ borderColor: border }}
+          >
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setPaychecksOpen(false)}
+                className="p-1 rounded-lg cursor-pointer"
+                style={{ color: muted }}
+              >
+                <IconChevronLeft />
+              </button>
+              <span className="text-sm font-semibold" style={{ color: muted }}>
+                Paychecks
+              </span>
+            </div>
+          </div>
+          <PaychecksPanel mobile onSaved={refresh} />
+        </div>
+      )}
+
       {/* ── Drawer (menu + account as sliding track) ── */}
       <div
         className="fixed top-0 right-0 h-full w-72 z-50 border-l"
@@ -3016,6 +3075,34 @@ export default function MobileDashboard() {
                   <path d="M12 7v5l4 2" />
                 </svg>
                 Recurring Payments
+              </button>
+              <button
+                className="w-full flex items-center gap-3 px-3 py-2.5 mt-2 rounded-xl text-sm font-medium cursor-pointer text-left border"
+                style={{
+                  color: text,
+                  borderColor: `color-mix(in srgb, ${text} 18%, transparent)`,
+                  backgroundColor: `color-mix(in srgb, ${text} 5%, transparent)`,
+                }}
+                onClick={() => {
+                  setDrawerOpen(false);
+                  setPaychecksOpen(true);
+                }}
+              >
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <rect x="2" y="5" width="20" height="14" rx="2" />
+                  <line x1="2" y1="10" x2="22" y2="10" />
+                </svg>
+                Paychecks
               </button>
             </div>
             <div className="mx-5 border-t" style={{ borderColor: border }} />
