@@ -28,6 +28,15 @@ export default function Navbar({ transactions = [], onSelectTransaction, onDelet
   const debounceRef = useRef(null);
   const containerRef = useRef(null);
 
+  // Lock background scroll while the drawer is open - otherwise the panel and
+  // the dashboard behind it both scroll (and both show a scrollbar) at once.
+  useEffect(() => {
+    if (!drawerOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = previousOverflow; };
+  }, [drawerOpen]);
+
   const bg     = dark ? "var(--dark-surface)" : "var(--light-surface)";
   const border = dark ? "var(--dark-border)"  : "var(--light-border)";
   const text   = dark ? "var(--dark-text)"    : "var(--light-text)";

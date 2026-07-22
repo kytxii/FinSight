@@ -149,22 +149,36 @@ async def delete_paycheck_schedule(schedule_id: UUID, current_user: UUID, db: As
     await db.commit()
 
 
-async def _backfill_paychecks(schedule: PaycheckSchedule, current_user: UUID, db: AsyncSession) -> None:
+async def _backfill_paychecks(schedules: list[PaycheckSchedule], current_user: UUID, db: AsyncSession) -> None:
+    active = [s for s in schedules if s.active]
+    if not active:
+        return
+
     today = date.today()
-    expected_dates = _generate_pay_dates_through(schedule, today)
+    expected_by_schedule = {s.id: _generate_pay_dates_through(s, today) for s in active}
 
-    existing = await db.scalars(select(Paycheck.pay_date).where(Paycheck.schedule_id == schedule.id))
-    existing_dates = set(existing.all())
+    # One query for every active schedule's existing dates instead of one per
+    # schedule - this used to fan out with the number of schedules a user has.
+    existing_rows = await db.execute(
+        select(Paycheck.schedule_id, Paycheck.pay_date).where(
+            Paycheck.schedule_id.in_([s.id for s in active])
+        )
+    )
+    existing_by_schedule: dict[UUID, set[date]] = {}
+    for schedule_id, pay_date in existing_rows:
+        existing_by_schedule.setdefault(schedule_id, set()).add(pay_date)
 
-    for pay_date in expected_dates:
-        if pay_date not in existing_dates:
-            db.add(Paycheck(
-                schedule_id=schedule.id,
-                pay_date=pay_date,
-                amount=None,
-                created_by=current_user,
-                updated_by=current_user,
-            ))
+    for schedule in active:
+        existing_dates = existing_by_schedule.get(schedule.id, set())
+        for pay_date in expected_by_schedule[schedule.id]:
+            if pay_date not in existing_dates:
+                db.add(Paycheck(
+                    schedule_id=schedule.id,
+                    pay_date=pay_date,
+                    amount=None,
+                    created_by=current_user,
+                    updated_by=current_user,
+                ))
 
 
 async def _average_recent_amounts(schedule_id: UUID, db: AsyncSession, limit: int = 3) -> Decimal | None:
@@ -179,19 +193,45 @@ async def _average_recent_amounts(schedule_id: UUID, db: AsyncSession, limit: in
     return sum(amounts, start=Decimal("0")) / Decimal(len(amounts))
 
 
+async def _average_recent_amounts_by_schedule(schedule_ids: list[UUID], db: AsyncSession, limit: int = 3) -> dict[UUID, Decimal]:
+    """Same result as calling _average_recent_amounts per schedule, in one query.
+
+    Rows come back ordered by schedule_id then pay_date desc, so the first
+    `limit` rows seen for each schedule_id are already its most recent - no
+    window function needed at this data volume.
+    """
+    if not schedule_ids:
+        return {}
+
+    rows = await db.execute(
+        select(Paycheck.schedule_id, Paycheck.amount)
+        .where(Paycheck.schedule_id.in_(schedule_ids), Paycheck.amount.is_not(None))
+        .order_by(Paycheck.schedule_id, Paycheck.pay_date.desc())
+    )
+    recent_by_schedule: dict[UUID, list[Decimal]] = {}
+    for schedule_id, amount in rows:
+        bucket = recent_by_schedule.setdefault(schedule_id, [])
+        if len(bucket) < limit:
+            bucket.append(amount)
+
+    return {
+        schedule_id: sum(amounts, start=Decimal("0")) / Decimal(len(amounts))
+        for schedule_id, amounts in recent_by_schedule.items()
+    }
+
+
 async def get_paychecks(current_user: UUID, db: AsyncSession):
     # All schedules (active or not) so deactivated schedules' history still lists -
     # only active ones get new rows backfilled.
     schedules = (await db.scalars(select(PaycheckSchedule).where(PaycheckSchedule.created_by == current_user))).all()
 
-    for schedule in schedules:
-        if schedule.active:
-            await _backfill_paychecks(schedule, current_user, db)
+    await _backfill_paychecks(schedules, current_user, db)
     await db.commit()
 
     schedule_ids = [schedule.id for schedule in schedules]
+    schedule_names = {schedule.id: schedule.name for schedule in schedules}
     result = await db.scalars(
-        select(Paycheck).where(Paycheck.schedule_id.in_(schedule_ids)).order_by(Paycheck.pay_date)
+        select(Paycheck).where(Paycheck.schedule_id.in_(schedule_ids)).order_by(Paycheck.pay_date.desc())
     )
     paychecks = result.all()
 
@@ -200,16 +240,14 @@ async def get_paychecks(current_user: UUID, db: AsyncSession):
 
     # Guessed amount for still-unfilled paychecks, based on recent entries for
     # that schedule - purely informational, never used in the spendable-surplus
-    # math (which only counts money actually received).
+    # math (which only counts money actually received). One batched query
+    # instead of one per schedule that still needs a guess.
+    unfilled_schedule_ids = list({p.schedule_id for p in paychecks if p.amount is None})
+    estimates = await _average_recent_amounts_by_schedule(unfilled_schedule_ids, db)
+
     for p in paychecks:
-        p.estimated_amount = None
-    for schedule_id in {p.schedule_id for p in paychecks if p.amount is None}:
-        estimate = await _average_recent_amounts(schedule_id, db)
-        if estimate is None:
-            continue
-        for p in paychecks:
-            if p.schedule_id == schedule_id and p.amount is None:
-                p.estimated_amount = estimate
+        p.schedule_name = schedule_names.get(p.schedule_id)
+        p.estimated_amount = estimates.get(p.schedule_id) if p.amount is None else None
 
     return paychecks, pending
 

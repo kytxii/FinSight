@@ -328,7 +328,7 @@ const SEED_RECURRING = [
 ];
 
 const SEED_PAYCHECK_SCHEDULES = [
-  { id: "demo-ps-1", frequency: "BIWEEKLY", start_date: "2026-01-02", active: true },
+  { id: "demo-ps-1", name: "Northwind Traders", frequency: "BIWEEKLY", start_date: "2026-01-02", active: true },
 ];
 
 // ── Init ──────────────────────────────────────────────────────────────────────
@@ -583,7 +583,7 @@ export const getPaycheckSchedules = () => respond(getAll(PS_KEY).filter((s) => s
 
 export const createPaycheckSchedule = (data) => {
   const items = getAll(PS_KEY);
-  const item = { id: nextId(), frequency: data.frequency, start_date: data.start_date, active: true };
+  const item = { id: nextId(), name: data.name, frequency: data.frequency, start_date: data.start_date, active: true };
   saveAll(PS_KEY, [...items, item]);
   return respond(item);
 };
@@ -614,14 +614,16 @@ export const deletePaycheckSchedule = (id) => {
 
 export const getPaychecks = () => {
   const all = backfillPaychecks();
+  const scheduleNames = Object.fromEntries(getAll(PS_KEY).map((s) => [s.id, s.name]));
 
   // Guessed amount for still-unfilled paychecks, based on recent entries for
   // that schedule - purely informational, never used in the spendable-surplus
   // math (which only counts money actually received).
   const withEstimates = all.map((p) => {
-    if (p.amount != null) return { ...p, estimated_amount: null };
+    const schedule_name = scheduleNames[p.schedule_id] ?? null;
+    if (p.amount != null) return { ...p, schedule_name, estimated_amount: null };
     const estimate = averageRecentAmounts(p.schedule_id, all);
-    return { ...p, estimated_amount: estimate != null ? estimate.toFixed(2) : null };
+    return { ...p, schedule_name, estimated_amount: estimate != null ? estimate.toFixed(2) : null };
   });
 
   const sorted = withEstimates.sort((a, b) => b.pay_date.localeCompare(a.pay_date));

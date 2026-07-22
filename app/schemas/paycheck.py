@@ -5,6 +5,7 @@ from uuid import UUID
 from app.models.paycheck_schedule import PaycheckFrequency
 
 class PaycheckScheduleBase(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
     frequency: PaycheckFrequency
     start_date: date
 
@@ -12,6 +13,7 @@ class CreatePaycheckSchedule(PaycheckScheduleBase):
     pass
 
 class UpdatePaycheckSchedule(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=100)
     frequency: PaycheckFrequency | None = None
     start_date: date | None = None
     active: bool | None = None
@@ -32,6 +34,7 @@ class UpdatePaycheckAmount(BaseModel):
 class PaycheckResponse(BaseModel):
     id: UUID
     schedule_id: UUID
+    schedule_name: str | None = None
     pay_date: date
     amount: Decimal | None
     estimated_amount: Decimal | None = None

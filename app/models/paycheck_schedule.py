@@ -1,6 +1,6 @@
 from enum import Enum
 from typing import TYPE_CHECKING
-from sqlalchemy import Date, DateTime, UUID, Boolean, Enum as PaycheckFrequencyEnum
+from sqlalchemy import String, Date, DateTime, UUID, Boolean, Enum as PaycheckFrequencyEnum
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from datetime import datetime, date, timezone
 from app.database import Base
@@ -22,6 +22,7 @@ class PaycheckSchedule(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
 
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
     frequency: Mapped[PaycheckFrequency] = mapped_column(PaycheckFrequencyEnum(PaycheckFrequency), nullable=False)
     start_date: Mapped[date] = mapped_column(Date, nullable=False)
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
