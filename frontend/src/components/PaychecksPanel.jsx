@@ -11,6 +11,8 @@ import {
   updatePaycheckAmount,
   getBalanceAnchor,
   setBalanceAnchor,
+  getSpendingReserve,
+  setSpendingReserve,
 } from "../api/paychecks";
 
 const FREQUENCY_OPTIONS = [
@@ -97,13 +99,19 @@ export default function PaychecksPanel({ mobile = false, onSaved }) {
   const [balanceDraft, setBalanceDraft]       = useState({ current_balance: "", as_of_date: getToday() });
   const [balanceError, setBalanceError]       = useState("");
 
+  const [spendingReserve, setSpendingReserveState] = useState("0.00");
+  const [editingReserve, setEditingReserve]         = useState(false);
+  const [reserveDraft, setReserveDraft]             = useState("");
+  const [reserveError, setReserveError]             = useState("");
+
   async function load() {
     setLoading(true);
     try {
-      const [schedulesRes, paychecksRes, balanceRes] = await Promise.all([
+      const [schedulesRes, paychecksRes, balanceRes, reserveRes] = await Promise.all([
         getPaycheckSchedules(),
         getPaychecks(),
         getBalanceAnchor(),
+        getSpendingReserve(),
       ]);
       setSchedules(schedulesRes.data);
       setPaychecks(paychecksRes.data.paychecks);
@@ -112,6 +120,8 @@ export default function PaychecksPanel({ mobile = false, onSaved }) {
       if (balanceRes.data) {
         setBalanceDraft({ current_balance: String(balanceRes.data.current_balance), as_of_date: balanceRes.data.as_of_date });
       }
+      setSpendingReserveState(reserveRes.data.spending_reserve);
+      setReserveDraft(String(reserveRes.data.spending_reserve));
     } catch {}
     finally { setLoading(false); }
   }
@@ -273,6 +283,27 @@ export default function PaychecksPanel({ mobile = false, onSaved }) {
       setBalanceAnchorState(previous);
       setEditingBalance(true);
       setBalanceError(err.response?.data?.detail ?? "Something went wrong");
+    }
+  }
+
+  async function handleSaveReserve() {
+    const n = parseFloat(reserveDraft);
+    if (isNaN(n) || n < 0) return;
+    setReserveError("");
+
+    const previous = spendingReserve;
+    // Optimistic: show the new reserve immediately, sync with the server in the background.
+    setSpendingReserveState(n.toFixed(2));
+    setEditingReserve(false);
+
+    try {
+      const res = await setSpendingReserve({ spending_reserve: n });
+      setSpendingReserveState(res.data.spending_reserve);
+      onSaved?.();
+    } catch (err) {
+      setSpendingReserveState(previous);
+      setEditingReserve(true);
+      setReserveError(err.response?.data?.detail ?? "Something went wrong");
     }
   }
 
@@ -561,6 +592,57 @@ export default function PaychecksPanel({ mobile = false, onSaved }) {
                 )}
                 <p style={{ fontSize: 10, color: muted, marginTop: 6 }}>
                   Safe to Spend on the dashboard builds forward from this using your actual transactions.
+                </p>
+              </div>
+
+              {/* ── Spending reserve ── */}
+              <div>
+                <p style={{ ...labelStyle, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 8 }}>
+                  Spending Reserve
+                </p>
+                {editingReserve ? (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: "12px", borderRadius: 10, border: `1px solid ${border}`, backgroundColor: faint }}>
+                    <div>
+                      <p style={labelStyle}>Don't-touch floor</p>
+                      <input
+                        type="number" step="0.01" min="0" placeholder="0.00"
+                        value={reserveDraft}
+                        onChange={e => setReserveDraft(e.target.value)}
+                        style={fieldStyle}
+                      />
+                    </div>
+                    {reserveError && <p style={{ fontSize: 11, color: "var(--category-expense)" }}>{reserveError}</p>}
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <button type="button" onClick={() => { setEditingReserve(false); setReserveDraft(spendingReserve); setReserveError(""); }}
+                        style={{ flex: 1, padding: "6px 0", borderRadius: 8, border: `1px solid ${border}`, background: "transparent", color: muted, fontSize: 12, fontWeight: 600, cursor: "pointer" }}
+                      >Cancel</button>
+                      <button type="button" onClick={handleSaveReserve} disabled={reserveDraft === ""}
+                        style={{ flex: 1, padding: "6px 0", borderRadius: 8, border: `1px solid ${income}`, backgroundColor: `color-mix(in srgb, ${income} 15%, transparent)`, color: income, fontSize: 12, fontWeight: 700, cursor: "pointer" }}
+                      >Save</button>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{
+                    display: "flex", alignItems: "center", justifyContent: "space-between",
+                    padding: "8px 12px", borderRadius: 10, border: `1px solid ${border}`, backgroundColor: faint,
+                    fontSize: mobile ? 13 : 12,
+                  }}>
+                    <div>
+                      <span style={{ fontWeight: 600, fontVariantNumeric: "tabular-nums" }}>{fmt(spendingReserve)}</span>
+                      <span style={{ color: muted, marginLeft: 8 }}>set aside for groceries/gas/eating out</span>
+                    </div>
+                    <button onClick={() => setEditingReserve(true)} aria-label="Edit spending reserve"
+                      style={{ color: muted, background: "none", border: "none", cursor: "pointer", padding: 3, display: "inline-flex", flexShrink: 0 }}
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4Z" />
+                      </svg>
+                    </button>
+                  </div>
+                )}
+                <p style={{ fontSize: 10, color: muted, marginTop: 6 }}>
+                  Subtracted from Safe to Spend to get what's actually free to allocate.
                 </p>
               </div>
             </>

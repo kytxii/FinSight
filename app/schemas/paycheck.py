@@ -53,6 +53,7 @@ class SpendableSurplusResponse(BaseModel):
     next_payday: date
     month_end: date
     spendable_surplus: Decimal
+    free_to_allocate: Decimal
     bills_before_next_payday: Decimal
     next_payday_estimate: Decimal | None = None
 
@@ -74,3 +75,9 @@ class BalanceAnchorResponse(BaseModel):
 class RunningBalanceResponse(BaseModel):
     balance: Decimal
     as_of_date: date
+
+class SetSpendingReserve(BaseModel):
+    spending_reserve: Decimal = Field(ge=0)
+
+class SpendingReserveResponse(BaseModel):
+    spending_reserve: Decimal

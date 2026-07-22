@@ -1,7 +1,8 @@
 from typing import Optional
-from sqlalchemy import String, DateTime, UUID, Text
+from sqlalchemy import String, DateTime, UUID, Text, Numeric
 from sqlalchemy.orm import Mapped, mapped_column
 from datetime import datetime, timezone
+from decimal import Decimal
 from app.database import Base
 import uuid
 
@@ -15,6 +16,10 @@ class User(Base):
     email_address: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
     password_hash: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
     avatar: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # User-set "don't touch" floor for groceries/gas/eating-out, netted against
+    # spendable_surplus to produce free_to_allocate. Manual only, not derived.
+    spending_reserve: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 2), nullable=True, default=0)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))

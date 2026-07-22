@@ -5,10 +5,11 @@ from datetime import date, timedelta
 from decimal import Decimal
 from typing import Iterator, NamedTuple
 import calendar
-from app.models import Paycheck, PaycheckSchedule, RecurringPayment, Transaction, BalanceAnchor
+from app.models import Paycheck, PaycheckSchedule, RecurringPayment, Transaction, BalanceAnchor, User
 from app.models.paycheck_schedule import PaycheckFrequency
 from app.models.category import Category
 from app.schemas import CreatePaycheckSchedule, UpdatePaycheckSchedule, UpdatePaycheckAmount, SetBalanceAnchor
+from app.schemas.paycheck import SetSpendingReserve
 
 # "Recurring expenses" for the spendable surplus calc - categories that represent
 # money going out. INCOME, TIPS, and REIMBURSEMENT are inflows, not expenses.
@@ -80,6 +81,7 @@ class SpendableSurplusResult(NamedTuple):
     next_payday: date
     month_end: date
     spendable_surplus: Decimal
+    free_to_allocate: Decimal
     bills_before_next_payday: Decimal
     next_payday_estimate: Decimal | None
 
@@ -149,13 +151,13 @@ async def delete_paycheck_schedule(schedule_id: UUID, current_user: UUID, db: As
     await db.commit()
 
 
-async def _backfill_paychecks(schedules: list[PaycheckSchedule], current_user: UUID, db: AsyncSession) -> None:
+async def _backfill_paychecks(schedules: list[PaycheckSchedule], current_user: UUID, db: AsyncSession, through: date | None = None) -> None:
     active = [s for s in schedules if s.active]
     if not active:
         return
 
-    today = date.today()
-    expected_by_schedule = {s.id: _generate_pay_dates_through(s, today) for s in active}
+    through = through or date.today()
+    expected_by_schedule = {s.id: _generate_pay_dates_through(s, through) for s in active}
 
     # One query for every active schedule's existing dates instead of one per
     # schedule - this used to fan out with the number of schedules a user has.
@@ -311,9 +313,13 @@ async def _get_running_balance(current_user: UUID, db: AsyncSession) -> Decimal 
     if anchor is None:
         return None
 
+    # Bounded to today - an already-entered future-dated paycheck transaction
+    # must not inflate the *current* running balance. Future income is instead
+    # surfaced explicitly via the projected-income sum in get_spendable_surplus.
     transactions = (await db.scalars(select(Transaction).where(
         Transaction.created_by == current_user,
         Transaction.transaction_date >= anchor.as_of_date,
+        Transaction.transaction_date <= date.today(),
     ))).all()
 
     net = sum(
@@ -344,12 +350,47 @@ def _committed_before(recurring_payments: list[RecurringPayment], today: date, h
             # Estimate with no fixed due date - count it in full. Conservative:
             # under-reporting surplus is safer than over-reporting it.
             total += rp.amount
-        elif _next_occurrence(rp.day_of_month, today) < horizon:
+        elif _next_occurrence(rp.day_of_month, today) <= horizon:
             total += rp.amount
     return total
 
 
-async def get_spendable_surplus(current_user: UUID, db: AsyncSession) -> SpendableSurplusResult:
+async def _projected_income_before(schedules: list[PaycheckSchedule], today: date, month_end: date, current_user: UUID, db: AsyncSession) -> Decimal:
+    """Sum every future paycheck landing before month_end, across all active schedules.
+
+    Actual amount if already entered, else that schedule's average estimate.
+    Paychecks with pay_date <= today are excluded - they're either already
+    reflected in the running balance (amount entered -> linked Transaction) or
+    still pending entry, not a projection.
+    """
+    schedule_ids = [s.id for s in schedules]
+    if not schedule_ids:
+        return Decimal("0")
+
+    # Backfilling through month_end (rather than just today) guarantees a row
+    # exists for every payday in the window we're about to sum, including ones
+    # further out than the immediate next check (e.g. two biweekly paydays
+    # landing in the same month).
+    await _backfill_paychecks(schedules, current_user, db, through=month_end)
+    await db.commit()
+
+    future_paychecks = (await db.scalars(
+        select(Paycheck).where(
+            Paycheck.schedule_id.in_(schedule_ids),
+            Paycheck.pay_date > today,
+            Paycheck.pay_date < month_end,
+        )
+    )).all()
+
+    estimates_by_schedule = await _average_recent_amounts_by_schedule(schedule_ids, db)
+
+    return sum(
+        (p.amount if p.amount is not None else estimates_by_schedule.get(p.schedule_id) or Decimal("0") for p in future_paychecks),
+        start=Decimal("0"),
+    )
+
+
+async def get_spendable_surplus(current_user: UUID, spending_reserve: Decimal, db: AsyncSession) -> SpendableSurplusResult:
     today = date.today()
 
     running_balance = await _get_running_balance(current_user, db)
@@ -384,10 +425,27 @@ async def get_spendable_surplus(current_user: UUID, db: AsyncSession) -> Spendab
     bills_before_month_end = _committed_before(recurring_payments, today, month_end)
     bills_before_next_payday = _committed_before(recurring_payments, today, next_payday)
 
+    projected_income = await _projected_income_before(schedules, today, month_end, current_user, db)
+
+    spendable_surplus = running_balance + projected_income - bills_before_month_end
+    free_to_allocate = spendable_surplus - spending_reserve
+
     return SpendableSurplusResult(
         next_payday=next_payday,
         month_end=month_end,
-        spendable_surplus=running_balance - bills_before_month_end,
+        spendable_surplus=spendable_surplus,
+        free_to_allocate=free_to_allocate,
         bills_before_next_payday=bills_before_next_payday,
         next_payday_estimate=next_payday_estimate,
     )
+
+
+async def get_spending_reserve(current_user: User) -> Decimal:
+    return current_user.spending_reserve or Decimal("0")
+
+
+async def set_spending_reserve(data: SetSpendingReserve, current_user: User, db: AsyncSession) -> Decimal:
+    current_user.spending_reserve = data.spending_reserve
+    await db.commit()
+    await db.refresh(current_user)
+    return current_user.spending_reserve

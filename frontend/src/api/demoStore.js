@@ -4,6 +4,7 @@ const RP_KEY = "demo_recurring";
 const PS_KEY = "demo_paycheck_schedules";
 const PC_KEY = "demo_paychecks";
 const BA_KEY = "demo_balance_anchor";
+const RES_KEY = "demo_spending_reserve";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const getAll  = (key)       => JSON.parse(localStorage.getItem(key) || "[]");
@@ -350,6 +351,7 @@ export function clearDemo() {
   localStorage.removeItem(PS_KEY);
   localStorage.removeItem(PC_KEY);
   localStorage.removeItem(BA_KEY);
+  localStorage.removeItem(RES_KEY);
   localStorage.removeItem("demo");
 }
 
@@ -549,14 +551,14 @@ function nextOccurrence(dayOfMonth, fromDate) {
   return new Date(nextMonth.getFullYear(), nextMonth.getMonth(), Math.min(dayOfMonth, nextLastDay));
 }
 
-function backfillPaychecks() {
+function backfillPaychecks(through) {
   const schedules = getAll(PS_KEY);
   const paychecks = getAll(PC_KEY);
-  const today = new Date(DEMO_TODAY + "T00:00:00");
+  const horizon = through ?? new Date(DEMO_TODAY + "T00:00:00");
   let changed = false;
 
   schedules.filter((schedule) => schedule.active !== false).forEach((schedule) => {
-    const expected = generatePayDatesThrough(schedule, today);
+    const expected = generatePayDatesThrough(schedule, horizon);
     const existingDates = new Set(
       paychecks.filter((p) => p.schedule_id === schedule.id).map((p) => p.pay_date)
     );
@@ -683,8 +685,11 @@ function computeRunningBalance() {
   if (!raw) return null;
   const anchor = JSON.parse(raw);
 
+  // Bounded to "today" - an already-entered future-dated paycheck transaction
+  // must not inflate the *current* running balance. Future income is instead
+  // surfaced explicitly via the projected-income sum in getSpendableSurplus.
   const net = getAll(TX_KEY)
-    .filter((t) => t.transaction_date >= anchor.as_of_date)
+    .filter((t) => t.transaction_date >= anchor.as_of_date && t.transaction_date <= DEMO_TODAY)
     .reduce((sum, t) => sum + (PAYCHECK_INCOME_CATEGORIES.has(t.category) ? parseFloat(t.amount) : -parseFloat(t.amount)), 0);
 
   return parseFloat(anchor.current_balance) + net;
@@ -720,8 +725,50 @@ function committedBefore(recurring, today, horizon) {
     // Estimate with no fixed due date - count it in full (conservative).
     if (rp.day_of_month == null) return sum + parseFloat(rp.amount);
     const occurrence = nextOccurrence(rp.day_of_month, today);
-    return occurrence < horizon ? sum + parseFloat(rp.amount) : sum;
+    return occurrence <= horizon ? sum + parseFloat(rp.amount) : sum;
   }, 0);
+}
+
+// Sum every future paycheck landing before monthEnd, across all active
+// schedules - actual amount if entered, else that schedule's average
+// estimate. Paychecks with pay_date <= today are excluded - they're either
+// already reflected in the running balance or still pending entry.
+function projectedIncomeBefore(schedules, today, monthEnd) {
+  if (schedules.length === 0) return 0;
+
+  // Backfilling through monthEnd (rather than just today) guarantees a row
+  // exists for every payday in the window we're about to sum, including ones
+  // further out than the immediate next check.
+  const allPaychecks = backfillPaychecks(monthEnd);
+  const todayStr = toDateStr(today);
+  const monthEndStr = toDateStr(monthEnd);
+  const scheduleIds = new Set(schedules.map((s) => s.id));
+
+  const future = allPaychecks.filter(
+    (p) => scheduleIds.has(p.schedule_id) && p.pay_date > todayStr && p.pay_date < monthEndStr
+  );
+
+  return future.reduce((sum, p) => {
+    if (p.amount != null) return sum + parseFloat(p.amount);
+    const estimate = averageRecentAmounts(p.schedule_id, allPaychecks);
+    return sum + (estimate ?? 0);
+  }, 0);
+}
+
+export const getSpendingReserve = () => {
+  const raw = localStorage.getItem(RES_KEY);
+  return respond({ spending_reserve: raw ? JSON.parse(raw).spending_reserve : "0.00" });
+};
+
+export const setSpendingReserve = (data) => {
+  const value = parseFloat(data.spending_reserve).toFixed(2);
+  localStorage.setItem(RES_KEY, JSON.stringify({ spending_reserve: value }));
+  return respond({ spending_reserve: value });
+};
+
+function getSpendingReserveValue() {
+  const raw = localStorage.getItem(RES_KEY);
+  return raw ? parseFloat(JSON.parse(raw).spending_reserve) : 0;
 }
 
 export const getSpendableSurplus = () => {
@@ -760,10 +807,15 @@ export const getSpendableSurplus = () => {
   const billsBeforeMonthEnd = committedBefore(recurring, today, monthEnd);
   const billsBeforeNextPayday = committedBefore(recurring, today, nextPayday);
 
+  const projectedIncome = projectedIncomeBefore(schedules, today, monthEnd);
+  const spendableSurplus = runningBalance + projectedIncome - billsBeforeMonthEnd;
+  const freeToAllocate = spendableSurplus - getSpendingReserveValue();
+
   return respond({
     next_payday: toDateStr(nextPayday),
     month_end: toDateStr(monthEnd),
-    spendable_surplus: (runningBalance - billsBeforeMonthEnd).toFixed(2),
+    spendable_surplus: spendableSurplus.toFixed(2),
+    free_to_allocate: freeToAllocate.toFixed(2),
     bills_before_next_payday: billsBeforeNextPayday.toFixed(2),
     next_payday_estimate: nextPaydayEstimate != null ? nextPaydayEstimate.toFixed(2) : null,
   });

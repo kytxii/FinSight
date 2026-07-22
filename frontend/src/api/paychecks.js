@@ -13,3 +13,5 @@ export const getSpendableSurplus    = ()          => isDemo() ? demo.getSpendabl
 export const getBalanceAnchor       = ()          => isDemo() ? demo.getBalanceAnchor()               : client.get('/paychecks/balance');
 export const setBalanceAnchor       = (data)      => isDemo() ? demo.setBalanceAnchor(data)           : client.put('/paychecks/balance', data);
 export const getRunningBalance      = ()          => isDemo() ? demo.getRunningBalance()              : client.get('/paychecks/running-balance');
+export const getSpendingReserve     = ()          => isDemo() ? demo.getSpendingReserve()              : client.get('/paychecks/reserve');
+export const setSpendingReserve     = (data)      => isDemo() ? demo.setSpendingReserve(data)          : client.patch('/paychecks/reserve', data);

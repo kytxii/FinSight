@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
+from decimal import Decimal
 from app.dependencies import get_db, get_current_user
 from app.models import User
 from app.schemas.paycheck import (
@@ -14,6 +15,8 @@ from app.schemas.paycheck import (
     SetBalanceAnchor,
     BalanceAnchorResponse,
     RunningBalanceResponse,
+    SetSpendingReserve,
+    SpendingReserveResponse,
 )
 from app.services import paycheck_service
 
@@ -53,13 +56,14 @@ async def get_paychecks(current_user: User = Depends(get_current_user), db: Asyn
 @router.get("/spendable-surplus", response_model=SpendableSurplusResponse)
 async def get_spendable_surplus(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     try:
-        result = await paycheck_service.get_spendable_surplus(current_user.id, db)
+        result = await paycheck_service.get_spendable_surplus(current_user.id, current_user.spending_reserve or Decimal("0"), db)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     return SpendableSurplusResponse(
         next_payday=result.next_payday,
         month_end=result.month_end,
         spendable_surplus=result.spendable_surplus,
+        free_to_allocate=result.free_to_allocate,
         bills_before_next_payday=result.bills_before_next_payday,
         next_payday_estimate=result.next_payday_estimate,
     )
@@ -81,6 +85,16 @@ async def get_running_balance(current_user: User = Depends(get_current_user), db
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     return RunningBalanceResponse(balance=result.balance, as_of_date=result.as_of_date)
+
+@router.get("/reserve", response_model=SpendingReserveResponse)
+async def get_spending_reserve(current_user: User = Depends(get_current_user)):
+    result = await paycheck_service.get_spending_reserve(current_user)
+    return SpendingReserveResponse(spending_reserve=result)
+
+@router.patch("/reserve", response_model=SpendingReserveResponse)
+async def set_spending_reserve(data: SetSpendingReserve, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    result = await paycheck_service.set_spending_reserve(data, current_user, db)
+    return SpendingReserveResponse(spending_reserve=result)
 
 @router.patch("/{paycheck_id}", response_model=PaycheckResponse)
 async def update_paycheck_amount(paycheck_id: UUID, data: UpdatePaycheckAmount, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):

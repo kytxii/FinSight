@@ -1296,7 +1296,7 @@ export default function MobileDashboard() {
                         label: "SAFE TO SPEND",
                         value: fmt(safeToSpend.spendable_surplus),
                         color: parseFloat(safeToSpend.spendable_surplus) >= 0 ? "var(--category-income)" : "var(--category-expense)",
-                        caption: `before ${new Date(safeToSpend.month_end + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })} · -${fmt(safeToSpend.bills_before_next_payday)} before ${safeToSpend.next_payday_estimate != null ? `~${fmt(safeToSpend.next_payday_estimate)} ` : ""}paycheck on ${new Date(safeToSpend.next_payday + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}`,
+                        caption: `before ${new Date(safeToSpend.month_end + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })} · -${fmt(safeToSpend.bills_before_next_payday)} before ${safeToSpend.next_payday_estimate != null ? `~${fmt(safeToSpend.next_payday_estimate)} ` : ""}paycheck on ${new Date(safeToSpend.next_payday + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}${parseFloat(safeToSpend.spendable_surplus) - parseFloat(safeToSpend.free_to_allocate) > 0 ? ` · ${fmt(parseFloat(safeToSpend.spendable_surplus) - parseFloat(safeToSpend.free_to_allocate))} reserved → ${fmt(safeToSpend.free_to_allocate)} free` : ""}`,
                       }
                     : {
                         label: "SAFE TO SPEND",

@@ -769,6 +769,8 @@ export default function Dashboard() {
                   const val = parseFloat(safeToSpend.spendable_surplus);
                   const color = val >= 0 ? "var(--category-income)" : "var(--category-expense)";
                   const shortDate = (d) => new Date(d + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
+                  const reserved = parseFloat(safeToSpend.spendable_surplus) - parseFloat(safeToSpend.free_to_allocate);
+                  const reserveNote = reserved > 0 ? ` · ${fmt(reserved)} reserved → ${fmt(safeToSpend.free_to_allocate)} free` : "";
                   return (
                     <SummaryCard
                       label="SAFE TO SPEND"
@@ -777,7 +779,7 @@ export default function Dashboard() {
                       valueColor={color}
                       deltaLabel={`before ${shortDate(safeToSpend.month_end)}`}
                       deltaUp={val >= 0}
-                      subLabel={`-${fmt(safeToSpend.bills_before_next_payday)} before ${safeToSpend.next_payday_estimate != null ? `~${fmt(safeToSpend.next_payday_estimate)} ` : ""}paycheck on ${shortDate(safeToSpend.next_payday)}`}
+                      subLabel={`-${fmt(safeToSpend.bills_before_next_payday)} before ${safeToSpend.next_payday_estimate != null ? `~${fmt(safeToSpend.next_payday_estimate)} ` : ""}paycheck on ${shortDate(safeToSpend.next_payday)}${reserveNote}`}
                     />
                   );
                 }
