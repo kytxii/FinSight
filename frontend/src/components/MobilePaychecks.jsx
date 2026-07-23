@@ -10,6 +10,8 @@ import {
   updatePaycheckAmount,
   getBalanceAnchor,
   setBalanceAnchor,
+  getSpendingReserve,
+  setSpendingReserve,
 } from "../api/paychecks";
 import { IconIncomeTile } from "./categoryIcons";
 import { HOME_TEXT, HOME_MUTED, HOME_SURFACE, HOME_DIVIDER, HOME_INCOME, HOME_EXPENSE, TILE_COLOR } from "./categoryVisuals";
@@ -110,13 +112,19 @@ export default function MobilePaychecks({ onSaved }) {
   const [balanceDraft, setBalanceDraft] = useState({ current_balance: "", as_of_date: getToday() });
   const [balanceError, setBalanceError] = useState("");
 
+  const [spendingReserve, setSpendingReserveState] = useState("0.00");
+  const [editingReserve, setEditingReserve] = useState(false);
+  const [reserveDraft, setReserveDraft] = useState("");
+  const [reserveError, setReserveError] = useState("");
+
   async function load() {
     setLoading(true);
     try {
-      const [schedulesRes, paychecksRes, balanceRes] = await Promise.all([
+      const [schedulesRes, paychecksRes, balanceRes, reserveRes] = await Promise.all([
         getPaycheckSchedules(),
         getPaychecks(),
         getBalanceAnchor(),
+        getSpendingReserve(),
       ]);
       setSchedules(schedulesRes.data);
       setPaychecks(paychecksRes.data.paychecks);
@@ -125,6 +133,8 @@ export default function MobilePaychecks({ onSaved }) {
       if (balanceRes.data) {
         setBalanceDraft({ current_balance: String(balanceRes.data.current_balance), as_of_date: balanceRes.data.as_of_date });
       }
+      setSpendingReserveState(reserveRes.data.spending_reserve);
+      setReserveDraft(String(reserveRes.data.spending_reserve));
     } catch { /* best-effort load */ }
     finally { setLoading(false); }
   }
@@ -271,6 +281,24 @@ export default function MobilePaychecks({ onSaved }) {
       setBalanceAnchorState(previous);
       setEditingBalance(true);
       setBalanceError(err.response?.data?.detail ?? "Something went wrong");
+    }
+  }
+
+  async function handleSaveReserve() {
+    const n = parseFloat(reserveDraft);
+    if (isNaN(n) || n < 0) return;
+    setReserveError("");
+    const previous = spendingReserve;
+    setSpendingReserveState(n.toFixed(2));
+    setEditingReserve(false);
+    try {
+      const res = await setSpendingReserve({ spending_reserve: n });
+      setSpendingReserveState(res.data.spending_reserve);
+      onSaved?.();
+    } catch (err) {
+      setSpendingReserveState(previous);
+      setEditingReserve(true);
+      setReserveError(err.response?.data?.detail ?? "Something went wrong");
     }
   }
 
@@ -519,6 +547,52 @@ export default function MobilePaychecks({ onSaved }) {
                 )}
                 <p style={{ fontSize: 11, color: HOME_MUTED, marginTop: 8, padding: "0 2px" }}>
                   Safe to Spend on the dashboard builds forward from this using your actual transactions.
+                </p>
+              </div>
+
+              {/* ── Spending reserve ── */}
+              <div>
+                <SectionLabel>Spending Reserve</SectionLabel>
+
+                {editingReserve ? (
+                  <div style={{ ...cardStyle, padding: 14, display: "flex", flexDirection: "column", gap: 8 }}>
+                    <div>
+                      <p style={labelStyle}>Don't-touch floor</p>
+                      <input
+                        type="number" step="0.01" min="0" placeholder="0.00"
+                        value={reserveDraft}
+                        onChange={e => setReserveDraft(e.target.value)}
+                        style={fieldStyle}
+                      />
+                    </div>
+                    {reserveError && <p style={{ fontSize: 12, color: HOME_EXPENSE, margin: 0 }}>{reserveError}</p>}
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button type="button" onClick={() => { setEditingReserve(false); setReserveDraft(spendingReserve); setReserveError(""); }}
+                        style={{ flex: 1, padding: "8px 0", borderRadius: 10, border: `1px solid ${HOME_DIVIDER}`, background: "transparent", color: HOME_MUTED, fontSize: 13, fontWeight: 600, cursor: "pointer" }}
+                      >Cancel</button>
+                      <button type="button" onClick={handleSaveReserve} disabled={reserveDraft === ""}
+                        style={{ flex: 1, padding: "8px 0", borderRadius: 10, border: `1px solid ${HOME_INCOME}`, backgroundColor: `color-mix(in srgb, ${HOME_INCOME} 15%, transparent)`, color: HOME_INCOME, fontSize: 13, fontWeight: 700, cursor: "pointer" }}
+                      >Save</button>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ ...cardStyle, display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px" }}>
+                    <div>
+                      <span style={{ fontWeight: 700, fontSize: 17, fontVariantNumeric: "tabular-nums", color: HOME_TEXT }}>{fmt(spendingReserve)}</span>
+                      <span style={{ color: HOME_MUTED, marginLeft: 8, fontSize: 12.5 }}>groceries / gas / eating out</span>
+                    </div>
+                    <button onClick={() => setEditingReserve(true)} aria-label="Edit spending reserve"
+                      style={{ color: HOME_MUTED, background: "none", border: "none", cursor: "pointer", padding: 5, display: "inline-flex", flexShrink: 0 }}
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4Z" />
+                      </svg>
+                    </button>
+                  </div>
+                )}
+                <p style={{ fontSize: 11, color: HOME_MUTED, marginTop: 8, padding: "0 2px" }}>
+                  Subtracted from Safe to Spend to get what's actually free to allocate.
                 </p>
               </div>
             </>

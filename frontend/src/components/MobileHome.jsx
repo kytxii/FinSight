@@ -127,9 +127,39 @@ function ChangeBadge({ current, previous, goodWhenUp }) {
   );
 }
 
+function SafeToSpendCard({ safeToSpend, status, cardStyle, onOpenPaychecks }) {
+  const shortDate = (d) => new Date(d + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
+
+  let value, valueColor, caption;
+  if (status === "ok" && safeToSpend) {
+    const surplus = parseFloat(safeToSpend.spendable_surplus);
+    valueColor = surplus >= 0 ? HOME_INCOME : HOME_EXPENSE;
+    value = fmt(safeToSpend.spendable_surplus);
+    const reserved = surplus - parseFloat(safeToSpend.free_to_allocate);
+    const reserveNote = reserved > 0 ? ` · ${fmt(reserved)} reserved → ${fmt(safeToSpend.free_to_allocate)} free` : "";
+    caption = `before ${shortDate(safeToSpend.month_end)} · -${fmt(safeToSpend.bills_before_next_payday)} before ${safeToSpend.next_payday_estimate != null ? `~${fmt(safeToSpend.next_payday_estimate)} ` : ""}paycheck on ${shortDate(safeToSpend.next_payday)}${reserveNote}`;
+  } else if (status === "loading") {
+    value = "—"; valueColor = HOME_MUTED; caption = null;
+  } else if (status === "no-balance") {
+    value = "Not set up"; valueColor = HOME_MUTED; caption = "Set a starting balance";
+  } else if (status === "no-schedule") {
+    value = "Not set up"; valueColor = HOME_MUTED; caption = "Set up a paycheck schedule";
+  } else {
+    value = "Unavailable"; valueColor = HOME_MUTED; caption = null;
+  }
+
+  return (
+    <div onClick={onOpenPaychecks} style={{ ...cardStyle, padding: "14px 16px", marginTop: 16, cursor: "pointer" }}>
+      <p style={{ margin: 0, fontSize: 12, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", color: HOME_MUTED }}>Safe to Spend</p>
+      <p style={{ margin: "6px 0 0", fontSize: 28, fontWeight: 800, letterSpacing: "-0.6px", fontVariantNumeric: "tabular-nums", color: valueColor }}>{value}</p>
+      {caption && <p style={{ margin: "6px 0 0", fontSize: 12.5, fontWeight: 500, color: HOME_MUTED }}>{caption}</p>}
+    </div>
+  );
+}
+
 export default function MobileHome({
   loading, user,
-  dashSummary, dashLastMonthSummary, dashSorted, dashCategoryTotals,
+  dashSummary, dashLastMonthSummary, safeToSpend, safeToSpendStatus, dashSorted, dashCategoryTotals,
   searchVisible, onToggleSearch, searchContainerRef,
   query, debouncedQuery, searchOpen, suggestions,
   onQueryChange, onSearchKeyDown, onSelectTransaction,
@@ -292,6 +322,8 @@ export default function MobileHome({
           )}
         </div>
       </div>
+      {/* Safe to Spend */}
+      <SafeToSpendCard safeToSpend={safeToSpend} status={safeToSpendStatus} cardStyle={cardStyle} onOpenPaychecks={onOpenPaychecks} />
       {/* Primary nav card */}
       <div style={{ ...cardStyle, marginTop: 16 }}>
         {NAV_ROWS.map((cat, i) => {

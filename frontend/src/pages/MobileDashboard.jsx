@@ -23,6 +23,7 @@ import {
   createTransaction,
   deleteTransaction,
 } from "../api/transactions";
+import { getSpendableSurplus } from "../api/paychecks";
 import EditTransactionModal from "../components/EditTransactionModal";
 import {
   CATEGORIES,
@@ -358,6 +359,8 @@ export default function MobileDashboard() {
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [backendSleeping, setBackendSleeping] = useState(false);
+  const [safeToSpend, setSafeToSpend] = useState(null);
+  const [safeToSpendStatus, setSafeToSpendStatus] = useState("loading"); // loading | ok | no-balance | no-schedule | error
 
   async function devFetch() {
     if (devForceErrorRef.current) {
@@ -369,6 +372,19 @@ export default function MobileDashboard() {
     return getTransactions();
   }
 
+  function loadSafeToSpend() {
+    getSpendableSurplus().then((res) => {
+      setSafeToSpend(res.data);
+      setSafeToSpendStatus("ok");
+    }).catch((err) => {
+      const detail = err.response?.data?.detail;
+      setSafeToSpend(null);
+      if (detail === "No starting balance set") setSafeToSpendStatus("no-balance");
+      else if (detail === "No active paycheck schedule found") setSafeToSpendStatus("no-schedule");
+      else setSafeToSpendStatus("error");
+    });
+  }
+
   useEffect(() => {
     const sleepTimer = setTimeout(() => setBackendSleeping(true), 4000);
     devFetch().then((res) => {
@@ -378,6 +394,7 @@ export default function MobileDashboard() {
       setBackendSleeping(false);
       setDevLastFetch(new Date());
     }).catch(() => { clearTimeout(sleepTimer); setLoading(false); });
+    loadSafeToSpend();
     return () => clearTimeout(sleepTimer);
   }, []);
 
@@ -386,6 +403,7 @@ export default function MobileDashboard() {
       setTransactions(res.data);
       setDevLastFetch(new Date());
     }).catch(() => {});
+    loadSafeToSpend();
   }
 
   const [editingTransaction, setEditingTransaction] = useState(null);
@@ -901,6 +919,8 @@ export default function MobileDashboard() {
                     user={user}
                     dashSummary={dashSummary}
                     dashLastMonthSummary={dashLastMonthSummary}
+                    safeToSpend={safeToSpend}
+                    safeToSpendStatus={safeToSpendStatus}
                     dashSorted={dashSorted}
                     dashCategoryTotals={dashCategoryTotals}
                     searchVisible={searchVisible}
