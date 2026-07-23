@@ -5,8 +5,9 @@ import { useAuth } from "../context/AuthContext";
 import { CATEGORY_CONFIG, fmt } from "../utils/finance";
 import RecurringPaymentsModal from "./RecurringPaymentsModal";
 import AccountPanel from "./AccountPanel";
+import PaychecksPanel from "./PaychecksPanel";
 
-export default function Navbar({ transactions = [], onSelectTransaction, onDeleteRecurringPayment, onSaveRecurringPayment, onCommand }) {
+export default function Navbar({ transactions = [], onSelectTransaction, onDeleteRecurringPayment, onSaveRecurringPayment, onPaycheckSaved, onCommand }) {
   const dark = useTheme();
   const { logout, user, isDemo } = useAuth();
   const navigate = useNavigate();
@@ -15,6 +16,8 @@ export default function Navbar({ transactions = [], onSelectTransaction, onDelet
   const [rpSave, setRpSave] = useState({ isDirty: false, isSaving: false, onSave: null });
   const [accountOpen, setAccountOpen] = useState(false);
   const [acctSave, setAcctSave] = useState({ isDirty: false, isSaving: false, saveStatus: null, onSave: null });
+  const [paychecksOpen, setPaychecksOpen] = useState(false);
+  const [paychecksHovered, setPaychecksHovered] = useState(false);
   const [recurringHovered, setRecurringHovered] = useState(false);
   const [feedbackHovered, setFeedbackHovered] = useState(false);
   const [themeHovered, setThemeHovered] = useState(false);
@@ -24,6 +27,15 @@ export default function Navbar({ transactions = [], onSelectTransaction, onDelet
   const [open, setOpen] = useState(false);
   const debounceRef = useRef(null);
   const containerRef = useRef(null);
+
+  // Lock background scroll while the drawer is open - otherwise the panel and
+  // the dashboard behind it both scroll (and both show a scrollbar) at once.
+  useEffect(() => {
+    if (!drawerOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = previousOverflow; };
+  }, [drawerOpen]);
 
   const bg     = dark ? "var(--dark-surface)" : "var(--light-surface)";
   const border = dark ? "var(--dark-border)"  : "var(--light-border)";
@@ -223,7 +235,7 @@ export default function Navbar({ transactions = [], onSelectTransaction, onDelet
         <div
           className="fixed inset-0 z-40"
           style={{ backgroundColor: "rgba(0,0,0,0.4)" }}
-          onClick={() => { setDrawerOpen(false); setRecurringOpen(false); setAccountOpen(false); }}
+          onClick={() => { setDrawerOpen(false); setRecurringOpen(false); setAccountOpen(false); setPaychecksOpen(false); }}
         />
       )}
 
@@ -231,7 +243,7 @@ export default function Navbar({ transactions = [], onSelectTransaction, onDelet
       <div
         className="fixed top-0 right-0 h-full z-50 flex flex-col border-l"
         style={{
-          width: recurringOpen ? "580px" : accountOpen ? "380px" : "288px",
+          width: recurringOpen ? "580px" : accountOpen ? "380px" : paychecksOpen ? "420px" : "288px",
           backgroundColor: bg,
           borderColor: border,
           color: text,
@@ -242,9 +254,9 @@ export default function Navbar({ transactions = [], onSelectTransaction, onDelet
         {/* Header */}
         <div className="px-5 py-4 flex items-center justify-between border-b shrink-0" style={{ borderColor: border }}>
           <div className="flex items-center gap-2">
-            {(recurringOpen || accountOpen) && (
+            {(recurringOpen || accountOpen || paychecksOpen) && (
               <button
-                onClick={() => { setRecurringOpen(false); setAccountOpen(false); setRpSave({ isDirty: false, isSaving: false, onSave: null }); }}
+                onClick={() => { setRecurringOpen(false); setAccountOpen(false); setPaychecksOpen(false); setRpSave({ isDirty: false, isSaving: false, onSave: null }); }}
                 className="p-1 rounded-lg cursor-pointer"
                 style={{ color: muted }}
                 aria-label="Back"
@@ -256,7 +268,7 @@ export default function Navbar({ transactions = [], onSelectTransaction, onDelet
               </button>
             )}
             <span className="text-sm font-semibold" style={{ color: muted }}>
-              {recurringOpen ? "Recurring Payments" : accountOpen ? "Account" : "Menu"}
+              {recurringOpen ? "Recurring Payments" : accountOpen ? "Account" : paychecksOpen ? "Paychecks" : "Menu"}
             </span>
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
@@ -278,7 +290,7 @@ export default function Navbar({ transactions = [], onSelectTransaction, onDelet
                 </button>
               );
             })()}
-          <button onClick={() => { setDrawerOpen(false); setRecurringOpen(false); setAccountOpen(false); }} className="p-1 rounded-lg cursor-pointer" aria-label="Close menu">
+          <button onClick={() => { setDrawerOpen(false); setRecurringOpen(false); setAccountOpen(false); setPaychecksOpen(false); }} className="p-1 rounded-lg cursor-pointer" aria-label="Close menu">
             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24"
               fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M18 6 6 18M6 6l12 12" />
@@ -292,6 +304,8 @@ export default function Navbar({ transactions = [], onSelectTransaction, onDelet
           <RecurringPaymentsModal inline onSaveStateChange={setRpSave} onDelete={onDeleteRecurringPayment} onSaved={onSaveRecurringPayment} />
         ) : accountOpen ? (
           <AccountPanel onSaveStateChange={setAcctSave} />
+        ) : paychecksOpen ? (
+          <PaychecksPanel onSaved={onPaycheckSaved} />
         ) : (
           <>
             <button
@@ -342,6 +356,29 @@ export default function Navbar({ transactions = [], onSelectTransaction, onDelet
                   <path d="M12 7v5l4 2" />
                 </svg>
                 Recurring Payments
+              </button>
+              <button
+                className="w-full flex items-center gap-3 px-3 py-2.5 mt-2 rounded-xl text-sm font-medium cursor-pointer text-left border"
+                style={{
+                  color: text,
+                  borderColor: paychecksHovered
+                    ? `color-mix(in srgb, ${text} 40%, transparent)`
+                    : `color-mix(in srgb, ${text} 18%, transparent)`,
+                  backgroundColor: paychecksHovered
+                    ? `color-mix(in srgb, ${text} 10%, transparent)`
+                    : `color-mix(in srgb, ${text} 5%, transparent)`,
+                  transition: "background-color 150ms ease, border-color 150ms ease",
+                }}
+                onMouseEnter={() => setPaychecksHovered(true)}
+                onMouseLeave={() => setPaychecksHovered(false)}
+                onClick={() => setPaychecksOpen(true)}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24"
+                  fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="2" y="5" width="20" height="14" rx="2" />
+                  <line x1="2" y1="10" x2="22" y2="10" />
+                </svg>
+                Paychecks
               </button>
             </div>
 

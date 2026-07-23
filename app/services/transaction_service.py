@@ -3,7 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
 import calendar
-from app.models import Transaction, RecurringPayment
+from app.models import Transaction, RecurringPayment, Paycheck
 from app.schemas import CreateTransaction, UpdateTransaction
 
 
@@ -59,6 +59,13 @@ async def delete_transaction(transaction_id: UUID, current_user: UUID, db: Async
     if transaction.created_by != current_user:
         raise ValueError("Transaction not found")
 
+    if transaction.paycheck_id is not None:
+        paycheck_result = await db.execute(select(Paycheck).where(Paycheck.id == transaction.paycheck_id))
+        paycheck = paycheck_result.scalar_one_or_none()
+        if paycheck is not None:
+            paycheck.amount = None
+            paycheck.updated_by = current_user
+
     await db.delete(transaction)
     await db.commit()
 
@@ -68,12 +75,15 @@ async def apply_recurring_payments(user_id: UUID, db: AsyncSession) -> None:
     due = await db.scalars(
         select(RecurringPayment)
         .where(RecurringPayment.created_by == user_id)
+        .where(RecurringPayment.active.is_(True))
         .where(RecurringPayment.day_of_month <= today.day)
     )
 
-    current_month = today.strftime("%Y-%m")                      
-                                                                                     
-    for rp in due.all():                                                               
+    current_month = today.strftime("%Y-%m")
+
+    for rp in due.all():
+        if rp.is_estimate:
+            continue  # estimates inform surplus math only - never generate ledger transactions
         if rp.last_applied_month == current_month:
             continue
 

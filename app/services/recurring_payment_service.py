@@ -1,4 +1,4 @@
-from sqlalchemy import select, delete
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
 from datetime import date
@@ -6,8 +6,18 @@ import calendar
 from app.models import RecurringPayment, Transaction
 from app.schemas import CreateRecurringPayment, UpdateRecurringPayment
 
+# Fields that also exist on Transaction - the only ones safe to mirror onto a
+# linked transaction when a recurring payment is edited.
+_TRANSACTION_MIRROR_FIELDS = {"name", "amount", "category"}
+
+class InvalidRecurringPaymentError(ValueError):
+    pass
+
 async def get_recurring_payments(current_user: UUID, db: AsyncSession):
-    result = await db.execute(select(RecurringPayment).where(RecurringPayment.created_by == current_user))
+    result = await db.execute(select(RecurringPayment).where(
+        RecurringPayment.created_by == current_user,
+        RecurringPayment.active.is_(True),
+    ))
     return result.scalars().all()
 
 async def get_recurring_payment_by_id(recurring_payment_id: UUID, current_user: UUID, db: AsyncSession):
@@ -18,7 +28,7 @@ async def get_recurring_payment_by_id(recurring_payment_id: UUID, current_user: 
         raise ValueError("Recurring payment not found")
     if recurring_payment.created_by != current_user:
         raise ValueError("Recurring payment not found")
-    
+
     return recurring_payment
 
 async def create_recurring_payment(recurring_payment: CreateRecurringPayment, current_user: UUID, db: AsyncSession):
@@ -30,8 +40,8 @@ async def create_recurring_payment(recurring_payment: CreateRecurringPayment, cu
     await db.refresh(new_recurring_payment)
     return new_recurring_payment
 
-async def update_recurring_payment(recurring_payment_id: UUID, data: UpdateRecurringPayment, current_user: UUID, db: AsyncSession):                     
-      result = await db.execute(select(RecurringPayment).where(RecurringPayment.id == recurring_payment_id))                                                            
+async def update_recurring_payment(recurring_payment_id: UUID, data: UpdateRecurringPayment, current_user: UUID, db: AsyncSession):
+      result = await db.execute(select(RecurringPayment).where(RecurringPayment.id == recurring_payment_id))
       recurring_payment = result.scalar_one_or_none()
 
       if recurring_payment is None:
@@ -39,9 +49,13 @@ async def update_recurring_payment(recurring_payment_id: UUID, data: UpdateRecur
       if recurring_payment.created_by != current_user:
           raise ValueError("Recurring payment not found")
 
-      for key, value in data.model_dump(exclude_unset=True).items():
+      changes = data.model_dump(exclude_unset=True)
+      for key, value in changes.items():
           setattr(recurring_payment, key, value)
       recurring_payment.updated_by = current_user
+
+      if not recurring_payment.is_estimate and recurring_payment.day_of_month is None:
+          raise InvalidRecurringPaymentError("day_of_month is required unless is_estimate is True")
 
       today = date.today()
       month_start = today.replace(day=1)
@@ -54,8 +68,9 @@ async def update_recurring_payment(recurring_payment_id: UUID, data: UpdateRecur
               ))
       linked = result.scalar_one_or_none()
       if linked:
-          for key, value in data.model_dump(exclude_unset=True).items():
-              setattr(linked, key, value)
+          for key, value in changes.items():
+              if key in _TRANSACTION_MIRROR_FIELDS:
+                  setattr(linked, key, value)
 
       await db.commit()
       await db.refresh(recurring_payment)
@@ -70,6 +85,7 @@ async def delete_recurring_payment(recurring_payment_id: UUID, current_user: UUI
     if recurring_payment.created_by != current_user:
         raise ValueError("Recurring payment not found")
 
-    await db.execute(delete(Transaction).where(Transaction.recurring_payment_id == recurring_payment_id))
-    await db.delete(recurring_payment)
+    # Soft-deactivate rather than hard delete - preserves transactions.recurring_payment_id history.
+    recurring_payment.active = False
+    recurring_payment.updated_by = current_user
     await db.commit()

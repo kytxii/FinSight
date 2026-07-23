@@ -8,7 +8,7 @@ import {
   deleteRecurringPayment,
 } from "../api/recurringPayments";
 
-const EMPTY_DRAFT = { name: "", amount: "", day_of_month: "", category: "SUBSCRIPTION" };
+const EMPTY_DRAFT = { name: "", amount: "", day_of_month: "", category: "SUBSCRIPTION", is_estimate: false };
 
 const SKELETON_WIDTHS = [
   ["68%", "58%", "60%", "55%"],
@@ -25,8 +25,7 @@ function ordinal(n) {
 function isDraftValid(d) {
   return d.name.trim() !== "" &&
     parseFloat(d.amount) > 0 &&
-    parseInt(d.day_of_month, 10) >= 1 &&
-    parseInt(d.day_of_month, 10) <= 28;
+    (d.is_estimate || (parseInt(d.day_of_month, 10) >= 1 && parseInt(d.day_of_month, 10) <= 31));
 }
 
 let _lid = 0;
@@ -81,9 +80,14 @@ export default function RecurringPaymentsModal({ onClose, inline = false, onSave
       if (isNaN(n) || n <= 0) return;
       parsed = n;
     } else if (field === "day_of_month") {
-      const n = parseInt(parsed, 10);
-      if (isNaN(n) || n < 1 || n > 28) return;
-      parsed = n;
+      if (parsed === "") {
+        if (!row.is_estimate) return; // day_of_month required unless estimate
+        parsed = null;
+      } else {
+        const n = parseInt(parsed, 10);
+        if (isNaN(n) || n < 1 || n > 31) return;
+        parsed = n;
+      }
     } else {
       if (!parsed) return;
     }
@@ -122,6 +126,12 @@ export default function RecurringPaymentsModal({ onClose, inline = false, onSave
     ));
   };
 
+  // ── Toggle estimate ──────────────────────────────────────────────────────
+
+  const toggleEstimate = (id) => {
+    setRows(prev => prev.map(r => r.id === id ? { ...r, is_estimate: !r.is_estimate } : r));
+  };
+
   // ── Dirty check ───────────────────────────────────────────────────────────
 
   const anyDraftValid = drafts.some(isDraftValid);
@@ -132,7 +142,8 @@ export default function RecurringPaymentsModal({ onClose, inline = false, onSave
     if (row.name !== orig.name ||
       Math.abs(parseFloat(row.amount) - parseFloat(orig.amount)) > 0.001 ||
       row.day_of_month !== orig.day_of_month ||
-      row.category !== orig.category) return true;
+      row.category !== orig.category ||
+      row.is_estimate !== orig.is_estimate) return true;
     if (editCell?.id === row.id) {
       const f = editCell.field;
       if (f === "name") return editValue.trim() !== String(orig.name);
@@ -155,8 +166,9 @@ export default function RecurringPaymentsModal({ onClose, inline = false, onSave
           validDrafts.map(d => createRecurringPayment({
             name: d.name.trim(),
             amount: parseFloat(d.amount),
-            day_of_month: parseInt(d.day_of_month, 10),
+            day_of_month: d.day_of_month === "" ? null : parseInt(d.day_of_month, 10),
             category: d.category,
+            is_estimate: d.is_estimate,
           }))
         );
         const newRows = results.map(r => r.data);
@@ -173,7 +185,8 @@ export default function RecurringPaymentsModal({ onClose, inline = false, onSave
         return row.name !== orig.name ||
           Math.abs(parseFloat(row.amount) - parseFloat(orig.amount)) > 0.001 ||
           row.day_of_month !== orig.day_of_month ||
-          row.category !== orig.category;
+          row.category !== orig.category ||
+          row.is_estimate !== orig.is_estimate;
       });
 
       await Promise.all(dirtyRows.map(row => {
@@ -183,6 +196,7 @@ export default function RecurringPaymentsModal({ onClose, inline = false, onSave
         if (Math.abs(parseFloat(row.amount) - parseFloat(orig.amount)) > 0.001) changes.amount = parseFloat(row.amount);
         if (row.day_of_month !== orig.day_of_month) changes.day_of_month = row.day_of_month;
         if (row.category !== orig.category) changes.category = row.category;
+        if (row.is_estimate !== orig.is_estimate) changes.is_estimate = row.is_estimate;
         return updateRecurringPayment(row.id, changes);
       }));
 
@@ -206,10 +220,43 @@ export default function RecurringPaymentsModal({ onClose, inline = false, onSave
   // ── Cell renderers ────────────────────────────────────────────────────────
 
   const renderDisplay = (row, field) => {
-    if (field === "amount")       return <span style={{ fontVariantNumeric: "tabular-nums" }}>{fmt(row.amount)}</span>;
-    if (field === "day_of_month") return <span>every {ordinal(row.day_of_month)}</span>;
+    if (field === "amount") {
+      return (
+        <span style={{ fontVariantNumeric: "tabular-nums", color: row.is_estimate ? muted : undefined }}>
+          {row.is_estimate ? "~" : ""}{fmt(row.amount)}
+        </span>
+      );
+    }
+    if (field === "day_of_month") {
+      if (row.day_of_month == null) return <span style={{ color: muted }}>—</span>;
+      return <span>every {ordinal(row.day_of_month)}</span>;
+    }
     return <span style={{ fontWeight: 500 }}>{row[field]}</span>;
   };
+
+  const estimateToggle = (active, onClick) => (
+    <button
+      onClick={onClick}
+      title="Estimate (no fixed due date)"
+      style={{
+        flexShrink: 0,
+        fontSize: "10px",
+        fontWeight: 700,
+        width: "16px",
+        height: "16px",
+        borderRadius: "4px",
+        border: `1px solid ${active ? "var(--category-savings)" : "transparent"}`,
+        color: active ? "var(--category-savings)" : muted,
+        backgroundColor: active ? "color-mix(in srgb, var(--category-savings) 15%, transparent)" : "transparent",
+        cursor: "pointer",
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      ~
+    </button>
+  );
 
   const renderCell = (row, field) => {
     const isEditing = editCell?.id === row.id && editCell?.field === field;
@@ -239,8 +286,9 @@ export default function RecurringPaymentsModal({ onClose, inline = false, onSave
       );
     }
 
+    let content;
     if (isEditing) {
-      return (
+      content = (
         <input autoFocus
           type={field === "amount" || field === "day_of_month" ? "number" : "text"}
           value={editValue}
@@ -248,7 +296,7 @@ export default function RecurringPaymentsModal({ onClose, inline = false, onSave
           onBlur={() => commitEdit(row.id, field)}
           onKeyDown={e => { if (e.key === "Enter") e.target.blur(); if (e.key === "Escape") setEditCell(null); }}
           min={field === "day_of_month" ? 1 : field === "amount" ? 0.01 : undefined}
-          max={field === "day_of_month" ? 28 : undefined}
+          max={field === "day_of_month" ? 31 : undefined}
           step={field === "amount" ? "0.01" : undefined}
           style={{
             width: "100%", background: "transparent", color: text,
@@ -256,15 +304,26 @@ export default function RecurringPaymentsModal({ onClose, inline = false, onSave
           }}
         />
       );
+    } else {
+      content = (
+        <div onClick={() => startEdit(row.id, field, row[field] ?? "")}
+          style={{ cursor: "text", minHeight: "20px" }}
+        >
+          {renderDisplay(row, field)}
+        </div>
+      );
     }
 
-    return (
-      <div onClick={() => startEdit(row.id, field, row[field])}
-        style={{ cursor: "text", minHeight: "20px" }}
-      >
-        {renderDisplay(row, field)}
-      </div>
-    );
+    if (field === "day_of_month") {
+      return (
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <div style={{ flex: 1, minWidth: 0 }}>{content}</div>
+          {estimateToggle(row.is_estimate, () => toggleEstimate(row.id))}
+        </div>
+      );
+    }
+
+    return content;
   };
 
   // ── Column config ─────────────────────────────────────────────────────────
@@ -430,9 +489,10 @@ export default function RecurringPaymentsModal({ onClose, inline = false, onSave
                   {[
                     { field: "name",         type: "text",   placeholder: "e.g. Netflix" },
                     { field: "amount",       type: "number", placeholder: "0.00"         },
-                    { field: "day_of_month", type: "number", placeholder: "1–28"         },
+                    { field: "day_of_month", type: "number", placeholder: d.is_estimate ? "optional" : "1–31" },
                   ].map(({ field, type, placeholder }, i) => (
                     <td key={field} style={tdStyle(false, i === 0)}>
+                      <div style={{ display: "flex", alignItems: "center", gap: field === "day_of_month" ? 6 : 0 }}>
                       <input
                         autoFocus={i === 0 && isLast}
                         type={type}
@@ -441,13 +501,15 @@ export default function RecurringPaymentsModal({ onClose, inline = false, onSave
                         onChange={e => setDrafts(prev => prev.map((x, xi) => xi === idx ? { ...x, [field]: e.target.value } : x))}
                         onKeyDown={e => { if (e.key === "Escape") setDrafts(prev => prev.filter((_, xi) => xi !== idx)); }}
                         min={field === "day_of_month" ? 1 : field === "amount" ? 0.01 : undefined}
-                        max={field === "day_of_month" ? 28 : undefined}
+                        max={field === "day_of_month" ? 31 : undefined}
                         step={field === "amount" ? "0.01" : undefined}
                         style={{
                           width: "100%", background: "transparent", color: text,
                           border: "none", outline: "none", fontSize: mobile ? "15px" : "13px", fontFamily: "inherit",
                         }}
                       />
+                      {field === "day_of_month" && estimateToggle(d.is_estimate, () => setDrafts(prev => prev.map((x, xi) => xi === idx ? { ...x, is_estimate: !x.is_estimate } : x)))}
+                      </div>
                     </td>
                   ))}
                   <td style={tdStyle(true)}>

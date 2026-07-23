@@ -23,3 +23,4 @@ class Transaction(Base):
     updated_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
 
     recurring_payment_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("recurring_payments.id", ondelete="SET NULL"), nullable=True)
+    paycheck_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("paychecks.id", ondelete="SET NULL"), nullable=True)
