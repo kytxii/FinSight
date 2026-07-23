@@ -4,12 +4,9 @@ import {
   useMemo,
   useCallback,
   useRef,
-  useTransition,
 } from "react";
 import { useNavigate } from "react-router-dom";
 import {
-  PieChart,
-  Pie,
   Cell,
   Tooltip,
   ResponsiveContainer,
@@ -26,7 +23,6 @@ import {
   createTransaction,
   deleteTransaction,
 } from "../api/transactions";
-import { getSpendableSurplus, getRunningBalance } from "../api/paychecks";
 import EditTransactionModal from "../components/EditTransactionModal";
 import {
   CATEGORIES,
@@ -40,9 +36,13 @@ import { PRESETS, getPresetRange } from "../components/DateRangeFilter";
 import { getToday } from "../utils/time";
 import Footer from "../components/Footer";
 import RenderWakeButton from "../components/RenderWakeButton";
-import RecurringPaymentsModal from "../components/RecurringPaymentsModal";
 import AccountPanel from "../components/AccountPanel";
-import PaychecksPanel from "../components/PaychecksPanel";
+import MobileHome from "../components/MobileHome";
+import MobileCategory from "../components/MobileCategory";
+import MobilePaychecks from "../components/MobilePaychecks";
+import MobileRecurring from "../components/MobileRecurring";
+import SwipeableRow from "../components/SwipeableRow";
+import { HOME_BG, HOME_TEXT, HOME_MUTED, HOME_DIVIDER, HOME_SURFACE, HOME_INCOME } from "../components/categoryVisuals";
 
 // ── Icons ────────────────────────────────────────────────────────────────────
 
@@ -153,190 +153,6 @@ function IconChevronLeft({ size = 16 }) {
     >
       <path d="M15 18l-6-6 6-6" />
     </svg>
-  );
-}
-
-// ── Swipeable row ─────────────────────────────────────────────────────────────
-
-const REVEAL_W = 130;
-
-function SwipeableRow({
-  id,
-  openId,
-  setOpenId,
-  onEdit,
-  onDelete,
-  border,
-  surface,
-  text,
-  children,
-}) {
-  const contentRef = useRef(null);
-  const startXRef = useRef(0);
-  const startYRef = useRef(0);
-  const startOffsetRef = useRef(0);
-  const currentOffsetRef = useRef(0);
-  const movedRef = useRef(false);
-  const isOpen = openId === id;
-
-  const setTransform = (x) => {
-    currentOffsetRef.current = x;
-    if (contentRef.current)
-      contentRef.current.style.transform = `translateX(${x}px)`;
-  };
-
-  const animateTo = (x) => {
-    if (!contentRef.current) return;
-    contentRef.current.style.transition = "transform 0.22s ease";
-    setTransform(x);
-    setTimeout(() => {
-      if (contentRef.current) contentRef.current.style.transition = "none";
-    }, 220);
-  };
-
-  const snapTo = (target) => {
-    animateTo(target);
-    setOpenId(
-      target === -REVEAL_W ? id : (prev) => (prev === id ? null : prev),
-    );
-  };
-
-  // Close when another row opens
-  useEffect(() => {
-    if (!isOpen && currentOffsetRef.current !== 0) animateTo(0);
-  }, [isOpen]);
-
-  // Non-passive touchmove so we can preventDefault during horizontal drag
-  useEffect(() => {
-    const el = contentRef.current;
-    if (!el) return;
-    const onMove = (e) => {
-      const dx = e.touches[0].clientX - startXRef.current;
-      const dy = e.touches[0].clientY - startYRef.current;
-      if (!movedRef.current) {
-        if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
-        if (Math.abs(dy) > Math.abs(dx)) return; // vertical scroll — let browser handle it
-        movedRef.current = true;
-      }
-      e.preventDefault();
-      setTransform(
-        Math.max(-REVEAL_W, Math.min(0, startOffsetRef.current + dx)),
-      );
-    };
-    el.addEventListener("touchmove", onMove, { passive: false });
-    return () => el.removeEventListener("touchmove", onMove);
-  }, []);
-
-  const handleTouchStart = (e) => {
-    startXRef.current = e.touches[0].clientX;
-    startYRef.current = e.touches[0].clientY;
-    startOffsetRef.current = currentOffsetRef.current;
-    movedRef.current = false;
-    if (contentRef.current) contentRef.current.style.transition = "none";
-  };
-
-  const handleTouchEnd = () => {
-    if (!movedRef.current) return;
-    snapTo(currentOffsetRef.current < -REVEAL_W / 2 ? -REVEAL_W : 0);
-  };
-
-  return (
-    <div
-      style={{
-        position: "relative",
-        overflow: "hidden",
-        borderTop: `1px solid ${border}`,
-        zIndex: isOpen ? 10 : "auto",
-      }}
-    >
-      <div
-        style={{
-          position: "absolute",
-          right: 0,
-          top: 0,
-          bottom: 0,
-          width: REVEAL_W,
-          display: "flex",
-          backgroundColor: `color-mix(in srgb, ${surface} 80%, #888)`,
-        }}
-      >
-        <button
-          onClick={() => {
-            snapTo(0);
-            onEdit();
-          }}
-          style={{
-            flex: 1,
-            background: "transparent",
-            border: "none",
-            cursor: "pointer",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            color: text,
-          }}
-        >
-          <svg
-            width="20"
-            height="20"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-          </svg>
-        </button>
-        <button
-          onClick={() => {
-            snapTo(0);
-            onDelete();
-          }}
-          style={{
-            flex: 1,
-            background: "transparent",
-            border: "none",
-            cursor: "pointer",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            color: "var(--category-expense)",
-          }}
-        >
-          <svg
-            width="20"
-            height="20"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          >
-            <polyline points="3 6 5 6 21 6" />
-            <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
-            <path d="M10 11v6M14 11v6" />
-            <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
-          </svg>
-        </button>
-      </div>
-      <div
-        ref={contentRef}
-        onTouchStart={handleTouchStart}
-        onTouchEnd={handleTouchEnd}
-        style={{
-          transform: "translateX(0)",
-          position: "relative",
-          zIndex: 1,
-          willChange: "transform",
-        }}
-      >
-        {children}
-      </div>
-    </div>
   );
 }
 
@@ -515,6 +331,7 @@ export default function MobileDashboard() {
 
   // ── Navigation
   const [navTab, setNavTab] = useState("dashboard");
+  const [categoryView, setCategoryView] = useState(null);
   const [addSheetOpen, setAddSheetOpen] = useState(false);
   const [entrySheetOpen, setEntrySheetOpen] = useState(false);
 
@@ -527,11 +344,7 @@ export default function MobileDashboard() {
   const [devLastFetch, setDevLastFetch] = useState(null);
   const devForceErrorRef = useRef(false);
   const [recurringOpen, setRecurringOpen] = useState(false);
-  const [rpSave, setRpSave] = useState({
-    isDirty: false,
-    isSaving: false,
-    onSave: null,
-  });
+  const [recurringAddSignal, setRecurringAddSignal] = useState(0);
   const [paychecksOpen, setPaychecksOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const [acctSave, setAcctSave] = useState({
@@ -545,10 +358,6 @@ export default function MobileDashboard() {
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
   const [backendSleeping, setBackendSleeping] = useState(false);
-  const [safeToSpend, setSafeToSpend] = useState(null);
-  const [safeToSpendStatus, setSafeToSpendStatus] = useState("loading"); // loading | ok | no-balance | no-schedule | error
-  const [bankBalance, setBankBalance] = useState(null);
-  const [bankBalanceStatus, setBankBalanceStatus] = useState("loading"); // loading | ok | no-balance | error
 
   async function devFetch() {
     if (devForceErrorRef.current) {
@@ -572,39 +381,11 @@ export default function MobileDashboard() {
     return () => clearTimeout(sleepTimer);
   }, []);
 
-  function loadSafeToSpend() {
-    getSpendableSurplus().then((res) => {
-      setSafeToSpend(res.data);
-      setSafeToSpendStatus("ok");
-    }).catch((err) => {
-      const detail = err.response?.data?.detail;
-      setSafeToSpend(null);
-      if (detail === "No starting balance set") setSafeToSpendStatus("no-balance");
-      else if (detail === "No active paycheck schedule found") setSafeToSpendStatus("no-schedule");
-      else setSafeToSpendStatus("error");
-    });
-  }
-
-  function loadBankBalance() {
-    getRunningBalance().then((res) => {
-      setBankBalance(res.data);
-      setBankBalanceStatus("ok");
-    }).catch((err) => {
-      const detail = err.response?.data?.detail;
-      setBankBalance(null);
-      setBankBalanceStatus(detail === "No starting balance set" ? "no-balance" : "error");
-    });
-  }
-
-  useEffect(() => { loadSafeToSpend(); loadBankBalance(); }, []);
-
   function refresh() {
     devFetch().then((res) => {
       setTransactions(res.data);
       setDevLastFetch(new Date());
     }).catch(() => {});
-    loadSafeToSpend();
-    loadBankBalance();
   }
 
   const [editingTransaction, setEditingTransaction] = useState(null);
@@ -696,14 +477,8 @@ export default function MobileDashboard() {
     }
   };
 
-  // ── Dashboard state (always ALL)
-  const [dashPreset, setDashPreset] = useState("Current Month");
-  const [dashDateRange, setDashDateRange] = useState(() =>
-    getPresetRange("Current Month"),
-  );
-  const [isDashPending, startDashTransition] = useTransition();
-  const [dashPage, setDashPage] = useState(1);
-  const [dashPerPage, setDashPerPage] = useState(10);
+  // ── Dashboard state (fixed to current month - no picker on the Home tab)
+  const dashDateRange = useMemo(() => getPresetRange("Current Month"), []);
 
   // ── Analytics state
   const [analyticsTab, setAnalyticsTab] = useState("ALL");
@@ -722,10 +497,11 @@ export default function MobileDashboard() {
   const [query, setQuery] = useState("");
   const [debouncedQuery, setDebouncedQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
+  const [searchVisible, setSearchVisible] = useState(false);
   const [highlightId, setHighlightId] = useState(null);
   const debounceRef = useRef(null);
   const searchContainerRef = useRef(null);
-  const tableRef = useRef(null);
+  const analyticsTableRef = useRef(null);
   const touchStartY = useRef(0);
   const dragYRef = useRef(0);
   const [dragY, setDragY] = useState(0);
@@ -765,6 +541,7 @@ export default function MobileDashboard() {
   const handleSearchKeyDown = (e) => {
     if (e.key === "Escape") {
       setSearchOpen(false);
+      setSearchVisible(false);
       setQuery("");
       setDebouncedQuery("");
     }
@@ -782,13 +559,25 @@ export default function MobileDashboard() {
     }
   };
 
+  const handleToggleSearch = () => {
+    setSearchVisible((v) => {
+      if (v) {
+        setSearchOpen(false);
+        setQuery("");
+        setDebouncedQuery("");
+      }
+      return !v;
+    });
+  };
+
   useEffect(() => {
     function onMouseDown(e) {
       if (
         searchContainerRef.current &&
         !searchContainerRef.current.contains(e.target)
-      )
+      ) {
         setSearchOpen(false);
+      }
     }
     document.addEventListener("mousedown", onMouseDown);
     return () => document.removeEventListener("mousedown", onMouseDown);
@@ -815,24 +604,29 @@ export default function MobileDashboard() {
       setQuery("");
       setDebouncedQuery("");
       setSearchOpen(false);
-      setNavTab("dashboard");
+      setNavTab("analytics");
+      setAnalyticsTab("ALL");
+      setAnalyticsPreset("All");
+      setAnalyticsFromVal("");
+      setAnalyticsToVal("");
+      setAnalyticsDateRange(getPresetRange("All"));
       const allSorted = [...transactions].sort(
         (a, b) => new Date(b.transaction_date) - new Date(a.transaction_date),
       );
       const idx = allSorted.findIndex((tx) => tx.id === t.id);
-      if (idx !== -1) setDashPage(Math.ceil((idx + 1) / dashPerPage));
+      if (idx !== -1) setAnalyticsPage(Math.ceil((idx + 1) / analyticsPerPage));
       setHighlightId(t.id);
       setTimeout(() => setHighlightId(null), 2500);
       setTimeout(
         () =>
-          tableRef.current?.scrollIntoView({
+          analyticsTableRef.current?.scrollIntoView({
             behavior: "smooth",
             block: "start",
           }),
         50,
       );
     },
-    [transactions, dashPerPage],
+    [transactions, analyticsPerPage],
   );
 
   // ── Dashboard computed
@@ -854,14 +648,6 @@ export default function MobileDashboard() {
       ),
     [dashFiltered],
   );
-  const dashPaginated = dashSorted.slice(
-    (dashPage - 1) * dashPerPage,
-    dashPage * dashPerPage,
-  );
-  useEffect(() => {
-    setDashPage(1);
-  }, [dashFiltered, dashPerPage]);
-
   const dashSummary = useMemo(() => {
     const totalIn = dashFiltered
       .filter((t) => INCOME_TYPES.has(t.category))
@@ -873,17 +659,29 @@ export default function MobileDashboard() {
     return { totalIn, totalOut, net };
   }, [dashFiltered]);
 
-  const dashPieData = useMemo(() => {
-    const grouped = {};
+  const dashCategoryTotals = useMemo(() => {
+    const totals = {};
     dashFiltered.forEach((t) => {
-      grouped[t.category] = (grouped[t.category] ?? 0) + parseFloat(t.amount);
+      totals[t.category] = (totals[t.category] ?? 0) + parseFloat(t.amount);
     });
-    return Object.entries(grouped).map(([cat, value]) => ({
-      name: CATEGORY_CONFIG[cat]?.label ?? cat,
-      value: parseFloat(value.toFixed(2)),
-      color: `var(--category-${cat.toLowerCase()})`,
-    }));
+    return totals;
   }, [dashFiltered]);
+
+  // ── Last month (for the small +/-% badges on Home's Income/Expense cards)
+  const dashLastMonthRange = useMemo(() => getPresetRange("Last Month"), []);
+  const dashLastMonthSummary = useMemo(() => {
+    const inRange = transactions.filter((t) => {
+      const d = new Date(t.transaction_date + "T00:00:00");
+      return d >= dashLastMonthRange.from && d <= dashLastMonthRange.to;
+    });
+    const totalIn = inRange
+      .filter((t) => INCOME_TYPES.has(t.category))
+      .reduce((s, t) => s + parseFloat(t.amount), 0);
+    const totalOut = inRange
+      .filter((t) => !INCOME_TYPES.has(t.category))
+      .reduce((s, t) => s + parseFloat(t.amount), 0);
+    return { totalIn, totalOut };
+  }, [transactions, dashLastMonthRange]);
 
   // ── Analytics computed
   const analyticsColor = `var(--category-${analyticsTab.toLowerCase()})`;
@@ -1070,468 +868,72 @@ export default function MobileDashboard() {
 
   return (
     <div
-      className="min-h-dvh flex flex-col"
-      style={{ backgroundColor: bg, color: text }}
+      className="h-dvh flex flex-col overflow-hidden"
+      style={{ backgroundColor: navTab === "dashboard" ? HOME_BG : bg, color: text }}
     >
-      {/* ── Header ── */}
-      <header
-        className="border-b sticky top-0 z-20 px-4 py-3 flex items-center gap-3"
-        style={{ backgroundColor: surface, borderColor: border }}
-      >
-        <span
-          className="font-mono text-2xl font-bold bg-clip-text text-transparent shrink-0"
-          style={{
-            backgroundImage: dark
-              ? "linear-gradient(to right, #ffffff, #d1d5db, #9ca3af)"
-              : "linear-gradient(to right, #000000, #374151, #6b7280)",
-          }}
-        >
-          FinSight
-        </span>
-        <div className="flex-1 min-w-0 relative" ref={searchContainerRef}>
-          <input
-            value={query}
-            onChange={handleQueryChange}
-            onKeyDown={handleSearchKeyDown}
-            onFocus={() => query && setSearchOpen(true)}
-            placeholder="Search transactions..."
-            className="w-full rounded-xl px-3 py-1.5 text-sm border"
-            style={{
-              backgroundColor: bg,
-              borderColor: border,
-              color: text,
-              outline: "none",
-            }}
-          />
-          {searchOpen && suggestions.length > 0 && (
-            <div
-              className="absolute top-full mt-1.5 left-0 right-0 rounded-xl border shadow-lg overflow-hidden z-50"
-              style={{ backgroundColor: surface, borderColor: border }}
-            >
-              {suggestions.map((t) => {
-                const catColor = `var(--category-${t.category.toLowerCase()})`;
-                const date = new Date(
-                  t.transaction_date + "T00:00:00",
-                ).toLocaleDateString("en-US", {
-                  month: "short",
-                  day: "numeric",
-                });
-                return (
-                  <button
-                    key={t.id}
-                    onMouseDown={() => handleSelectTransaction(t)}
-                    className="w-full flex items-center gap-2 px-3 py-2.5 text-left"
-                    style={{ backgroundColor: surface, color: text }}
-                  >
-                    <span
-                      style={{
-                        width: 7,
-                        height: 7,
-                        borderRadius: "50%",
-                        backgroundColor: catColor,
-                        flexShrink: 0,
-                      }}
-                    />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold truncate">{t.name}</p>
-                      <p
-                        className="text-xs truncate"
-                        style={{ color: catColor }}
-                      >
-                        {CATEGORY_CONFIG[t.category]?.label ?? t.category} ·{" "}
-                        {date}
-                      </p>
-                    </div>
-                    <span
-                      className="text-sm font-bold shrink-0"
-                      style={{ color: catColor }}
-                    >
-                      {fmt(t.amount)}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-          {searchOpen && debouncedQuery.trim() && suggestions.length === 0 && (
-            <div
-              className="absolute top-full mt-1.5 left-0 right-0 rounded-xl border shadow-lg px-3 py-2.5 text-sm z-50"
-              style={{
-                backgroundColor: surface,
-                borderColor: border,
-                color: muted,
-              }}
-            >
-              No transactions found
-            </div>
-          )}
-        </div>
-        <button
-          onClick={() => {
-            setDrawerOpen(true);
-            setAccountOpen(true);
-          }}
-          className="w-8 h-8 rounded-full shrink-0 cursor-pointer overflow-hidden flex items-center justify-center text-xs font-bold"
-          style={{
-            backgroundColor: `color-mix(in srgb, ${text} 12%, transparent)`,
-            color: text,
-          }}
-          aria-label="Open account"
-        >
-          {user?.avatar ? (
-            <img
-              src={user.avatar}
-              alt="avatar"
-              style={{ width: "100%", height: "100%", objectFit: "cover" }}
-            />
-          ) : (
-            (user?.first_name?.[0]?.toUpperCase() ?? "?")
-          )}
-        </button>
-      </header>
 
       {/* ── Main content ── */}
-      <main className="flex-1 px-4 pt-4 pb-28 space-y-4">
+      <main
+        className="flex-1 px-4 pb-28 space-y-4 overflow-y-auto"
+        style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 1rem)", WebkitOverflowScrolling: "touch" }}
+      >
         <style>{`@keyframes skel-shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }`}</style>
         {/* Dashboard tab */}
         {navTab === "dashboard" && (
           <>
-            {/* Date preset */}
-            <div
-              className="flex gap-2 overflow-x-auto -mr-4 pr-4"
-              style={{ scrollbarWidth: "none" }}
-            >
-              {PRESETS.map((label) => {
-                const active = dashPreset === label;
-                return (
-                  <button
-                    key={label}
-                    onClick={() => {
-                      setDashPreset(label);
-                      startDashTransition(() =>
-                        setDashDateRange(getPresetRange(label)),
-                      );
-                    }}
-                    className="px-3 py-1.5 text-xs font-semibold rounded-xl border cursor-pointer transition-all duration-150 active:scale-95 shrink-0"
-                    style={{
-                      color: active ? "var(--category-all)" : muted,
-                      borderColor: active ? "var(--category-all)" : border,
-                      backgroundColor: active
-                        ? `color-mix(in srgb, var(--category-all) 12%, transparent)`
-                        : "transparent",
-                      touchAction: "manipulation",
-                    }}
-                  >
-                    {label}
-                  </button>
-                );
-              })}
-            </div>
-
-            {backendSleeping && <MobileBackendWaking dark={dark} text={text} muted={muted} />}
-
-            {/* Summary cards */}
-            {!backendSleeping && loading ? (
-              <div className="grid grid-cols-2 gap-3">
-                {[...Array(5)].map((_, i) => (
-                  <div
-                    key={i}
-                    className="rounded-2xl px-4 py-4 border"
-                    style={{
-                      backgroundColor: surface,
-                      borderTopWidth: 3,
-                      borderTopColor: border,
-                      borderRightColor: border,
-                      borderBottomColor: border,
-                      borderLeftColor: border,
-                    }}
-                  >
-                    <MSkel h={15} w="55%" dark={dark} />
-                    <MSkel
-                      h={28}
-                      w="65%"
-                      dark={dark}
-                      style={{ marginTop: 4 }}
-                    />
-                  </div>
-                ))}
-              </div>
+            {categoryView ? (
+              <MobileCategory
+                category={categoryView}
+                transactions={dashFiltered}
+                loading={loading}
+                onBack={() => setCategoryView(null)}
+                onEditTransaction={setEditingTransaction}
+                onDeleteTransaction={handleDelete}
+              />
             ) : (
-              <div className="grid grid-cols-2 gap-3">
-                {[
-                  {
-                    label: "INCOME",
-                    value: fmt(dashSummary.totalIn),
-                    color: "var(--category-income)",
-                  },
-                  {
-                    label: "EXPENSES",
-                    value: fmt(dashSummary.totalOut),
-                    color: "var(--category-expense)",
-                  },
-                  {
-                    label: "NET",
-                    value:
-                      (dashSummary.net >= 0 ? "+" : "-") +
-                      fmt(Math.abs(dashSummary.net)),
-                    color:
-                      dashSummary.net >= 0
-                        ? "var(--category-income)"
-                        : "var(--category-expense)",
-                  },
-                  bankBalanceStatus === "ok"
-                    ? {
-                        label: "LIVE BANK BALANCE",
-                        value: fmt(bankBalance.balance),
-                        color: parseFloat(bankBalance.balance) >= 0 ? "var(--category-income)" : "var(--category-expense)",
-                        caption: `since ${new Date(bankBalance.as_of_date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}`,
-                      }
-                    : {
-                        label: "LIVE BANK BALANCE",
-                        value: bankBalanceStatus === "loading" ? "—" : "Not set up",
-                        color: muted,
-                      },
-                  safeToSpendStatus === "ok"
-                    ? {
-                        label: "SAFE TO SPEND",
-                        value: fmt(safeToSpend.spendable_surplus),
-                        color: parseFloat(safeToSpend.spendable_surplus) >= 0 ? "var(--category-income)" : "var(--category-expense)",
-                        caption: `before ${new Date(safeToSpend.month_end + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })} · -${fmt(safeToSpend.bills_before_next_payday)} before ${safeToSpend.next_payday_estimate != null ? `~${fmt(safeToSpend.next_payday_estimate)} ` : ""}paycheck on ${new Date(safeToSpend.next_payday + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}`,
-                      }
-                    : {
-                        label: "SAFE TO SPEND",
-                        value: safeToSpendStatus === "loading" ? "—" : safeToSpendStatus === "no-balance" ? "Set balance" : safeToSpendStatus === "no-schedule" ? "Set schedule" : "Unavailable",
-                        color: muted,
-                      },
-                ].map(({ label, value, color, caption }) => (
-                  <div
-                    key={label}
-                    className="rounded-2xl px-4 py-4 border"
-                    style={{
-                      backgroundColor: surface,
-                      borderColor: border,
-                      borderTopColor: color,
-                      borderTopWidth: "3px",
+              <>
+                {backendSleeping && (
+                  <MobileBackendWaking dark={dark} text={text} muted={muted} />
+                )}
+                {!backendSleeping && (
+                  <MobileHome
+                    loading={loading}
+                    user={user}
+                    dashSummary={dashSummary}
+                    dashLastMonthSummary={dashLastMonthSummary}
+                    dashSorted={dashSorted}
+                    dashCategoryTotals={dashCategoryTotals}
+                    searchVisible={searchVisible}
+                    onToggleSearch={handleToggleSearch}
+                    searchContainerRef={searchContainerRef}
+                    query={query}
+                    debouncedQuery={debouncedQuery}
+                    searchOpen={searchOpen}
+                    suggestions={suggestions}
+                    onQueryChange={handleQueryChange}
+                    onSearchKeyDown={handleSearchKeyDown}
+                    onSelectTransaction={handleSelectTransaction}
+                    onOpenAccount={() => { setDrawerOpen(true); setAccountOpen(true); }}
+                    onOpenAdd={() => setAddSheetOpen(true)}
+                    onOpenRecurring={() => setRecurringOpen(true)}
+                    onOpenPaychecks={() => setPaychecksOpen(true)}
+                    onViewCategory={(cat) => setCategoryView(cat)}
+                    onViewSpendingByCategory={() => { setNavTab("analytics"); setAnalyticsTab("ALL"); }}
+                    onSeeAllTransactions={() => {
+                      setNavTab("analytics");
+                      setAnalyticsTab("ALL");
+                      setAnalyticsPreset("All");
+                      setAnalyticsFromVal("");
+                      setAnalyticsToVal("");
+                      setAnalyticsDateRange(getPresetRange("All"));
                     }}
-                  >
-                    <p
-                      className="text-xs font-medium mb-1"
-                      style={{ color: muted }}
-                    >
-                      {label}
-                    </p>
-                    <p
-                      className="text-lg font-bold tracking-tight"
-                      style={{ color }}
-                    >
-                      {value}
-                    </p>
-                    {caption && (
-                      <p className="text-[10px] mt-0.5" style={{ color: muted }}>
-                        {caption}
-                      </p>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Donut chart */}
-            {!backendSleeping && (loading || isDashPending) ? (
-              <div className="rounded-2xl border px-4 py-3" style={{ backgroundColor: surface, borderColor: border }}>
-                <MSkel h={24} w="55%" dark={dark} style={{ marginBottom: 8 }} />
-                <div style={{ height: 190, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                  <MobileDonutSkel dark={dark} surface={surface} />
-                </div>
-                <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: "6px 16px", justifyContent: "center" }}>
-                  {[55, 70, 48, 62, 40].map((w, i) => (
-                    <div key={i} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                      <MSkel h={9} w={9} dark={dark} style={{ borderRadius: "50%", flexShrink: 0 }} />
-                      <MSkel h={18} w={w} dark={dark} />
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              dashPieData.length > 0 && (
-                <div
-                  className="rounded-2xl border px-4 py-3"
-                  style={{ backgroundColor: surface, borderColor: border }}
-                >
-                  <p
-                    className="text-base font-semibold mb-2"
-                    style={{ color: text }}
-                  >
-                    Breakdown by Category
-                  </p>
-                  <div style={{ position: "relative" }}>
-                    <ResponsiveContainer
-                      width="100%"
-                      height={190}
-                      style={{ pointerEvents: "none" }}
-                    >
-                      <PieChart>
-                        <Pie
-                          data={dashPieData}
-                          dataKey="value"
-                          nameKey="name"
-                          cx="50%"
-                          cy="50%"
-                          innerRadius={55}
-                          outerRadius={80}
-                          strokeWidth={0}
-                          animationBegin={0}
-                          animationDuration={500}
-                        >
-                          {dashPieData.map((entry) => (
-                            <Cell key={entry.name} fill={entry.color} />
-                          ))}
-                        </Pie>
-                        <Tooltip {...tooltipProps} formatter={(v) => fmt(v)} />
-                      </PieChart>
-                    </ResponsiveContainer>
-                    <div
-                      style={{
-                        position: "absolute",
-                        top: 0,
-                        left: 0,
-                        right: 0,
-                        bottom: 0,
-                        display: "flex",
-                        flexDirection: "column",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        pointerEvents: "none",
-                      }}
-                    >
-                      <span
-                        style={{
-                          fontSize: 26,
-                          fontWeight: 700,
-                          color: text,
-                          lineHeight: 1,
-                        }}
-                      >
-                        {dashFiltered.length}
-                      </span>
-                      <span
-                        style={{ fontSize: 11, color: muted, marginTop: 4 }}
-                      >
-                        transactions
-                      </span>
-                    </div>
-                  </div>
-                  <div
-                    style={{
-                      display: "flex",
-                      flexWrap: "wrap",
-                      gap: "6px 16px",
-                      justifyContent: "center",
-                      marginTop: 8,
-                    }}
-                  >
-                    {dashPieData.map((entry) => (
-                      <div
-                        key={entry.name}
-                        style={{
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 6,
-                        }}
-                      >
-                        <span
-                          style={{
-                            width: 9,
-                            height: 9,
-                            borderRadius: "50%",
-                            backgroundColor: entry.color,
-                            flexShrink: 0,
-                            display: "inline-block",
-                          }}
-                        />
-                        <span style={{ color: text, fontSize: 12 }}>
-                          {entry.name}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )
-            )}
-
-            {/* Transaction list */}
-            {!backendSleeping && loading ? (
-              <div
-                className="rounded-2xl border"
-                style={{ backgroundColor: surface, borderColor: border }}
-              >
-                <div
-                  className="px-4 py-3 border-b"
-                  style={{ borderColor: border }}
-                >
-                  <MSkel h={24} w="170px" dark={dark} />
-                </div>
-                {[...Array(10)].map((_, i) => (
-                  <div
-                    key={i}
-                    className="px-4 py-3 border-t flex items-center gap-3"
-                    style={{ borderColor: border }}
-                  >
-                    <div
-                      style={{
-                        flex: 1,
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: 5,
-                      }}
-                    >
-                      <MSkel h={20} w="60%" dark={dark} />
-                      <MSkel h={16} w="45%" dark={dark} />
-                    </div>
-                    <MSkel h={20} w="60px" dark={dark} />
-                  </div>
-                ))}
-                <div
-                  className="px-4 py-3 border-t flex items-center justify-between"
-                  style={{ borderColor: border }}
-                >
-                  <MSkel h={16} w="120px" dark={dark} />
-                  <MSkel h={16} w="80px" dark={dark} />
-                </div>
-              </div>
-            ) : (
-              <div
-                ref={tableRef}
-                className="rounded-2xl border"
-                style={{ backgroundColor: surface, borderColor: border }}
-              >
-                <p
-                  className="px-4 py-3 text-base font-semibold border-b"
-                  style={{ borderColor: border, color: text }}
-                >
-                  Recent Transactions
-                </p>
-                <TransactionList
-                  items={dashPaginated}
-                  total={dashSorted.length}
-                  page={dashPage}
-                  setPage={setDashPage}
-                  perPage={dashPerPage}
-                  setPerPage={setDashPerPage}
-                  accentColor="var(--category-all)"
-                  highlightId={highlightId}
-                  text={text}
-                  muted={muted}
-                  border={border}
-                  surface={surface}
-                  onEdit={setEditingTransaction}
-                  onDelete={handleDelete}
-                />
-              </div>
+                    onEditTransaction={setEditingTransaction}
+                  />
+                )}
+              </>
             )}
           </>
         )}
-
         {/* Analytics tab */}
         {navTab === "analytics" && (
           <>
@@ -1984,6 +1386,7 @@ export default function MobileDashboard() {
 
             {/* Transaction table */}
             <div
+              ref={analyticsTableRef}
               className="rounded-2xl border"
               style={{ backgroundColor: surface, borderColor: analyticsColor }}
             >
@@ -2110,7 +1513,7 @@ export default function MobileDashboard() {
                 perPage={analyticsPerPage}
                 setPerPage={setAnalyticsPerPage}
                 accentColor={analyticsColor}
-                highlightId={null}
+                highlightId={highlightId}
                 text={text}
                 muted={muted}
                 border={border}
@@ -2142,80 +1545,83 @@ export default function MobileDashboard() {
         )}
       </main>
 
-      {/* ── Bottom nav ── */}
+      {/* ── Bottom nav — full-width liquid-glass bar, ported from the Cranberry project's BottomNav ── */}
       <nav
-        className="fixed bottom-0 left-0 right-0 z-30 border-t flex items-center"
-        style={{
-          backgroundColor: surface,
-          borderColor: border,
-          paddingBottom: "env(safe-area-inset-bottom)",
-          transform: "translateZ(0)",
-          willChange: "transform",
-        }}
+        className="fixed bottom-0 left-0 right-0 z-30 flex px-4 pointer-events-none"
+        style={{ paddingBottom: "max(7px, calc(env(safe-area-inset-bottom, 0px) / 2))" }}
       >
-        {[
-          { id: "dashboard", label: "Dashboard", Icon: IconDashboard },
-          { id: "analytics", label: "Analytics", Icon: IconAnalytics },
-          { id: "add", label: "Add", Icon: null },
-          { id: "ai", label: "AI", Icon: IconAI },
-          { id: "more", label: "Menu", Icon: IconMore },
-        ].map(({ id, label, Icon }) => {
-          if (id === "add") {
+        <div
+          className="relative flex items-center gap-1 p-1.5 rounded-full pointer-events-auto w-full"
+          style={{
+            backgroundColor: "rgba(255,255,255,0.05)",
+            backdropFilter: "blur(28px) saturate(200%)",
+            WebkitBackdropFilter: "blur(28px) saturate(200%)",
+            border: "1px solid rgba(255,255,255,0.16)",
+            boxShadow: "0 10px 34px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.3), inset 0 -1px 0 rgba(255,255,255,0.04)",
+          }}
+        >
+          {(() => {
+            const items = [
+              { id: "dashboard", label: "Dashboard", Icon: IconDashboard },
+              { id: "analytics", label: "Analytics", Icon: IconAnalytics },
+              { id: "ai", label: "AI", Icon: IconAI },
+              { id: "more", label: "Menu", Icon: IconMore },
+            ];
+            const activeIndex = items.findIndex(({ id }) => id === navTab);
             return (
-              <button
-                key="add"
-                onClick={() => setAddSheetOpen(true)}
-                className="flex-1 flex flex-col items-center justify-center py-3 cursor-pointer"
-                aria-label="Add"
-              >
-                <div
-                  className="w-11 h-11 rounded-full flex items-center justify-center"
-                  style={{
-                    backgroundColor: "var(--category-income)",
-                    color: "#000",
-                  }}
-                >
-                  <IconPlus size={22} />
-                </div>
-              </button>
+              <>
+                {activeIndex !== -1 && (
+                  // Outer slot exactly matches one flex-1 button's box (same left/width math
+                  // the buttons use), so translateX(N * 100%) — relative to the slot's own
+                  // width — lines up perfectly with the Nth button. The inner div is purely
+                  // cosmetic inset, kept off the positioned box so it can't skew the math.
+                  <div
+                    aria-hidden
+                    style={{
+                      position: "absolute", top: 0, bottom: 0, left: 0,
+                      width: `${100 / items.length}%`,
+                      transform: `translateX(${activeIndex * 100}%)`,
+                      transition: "transform 280ms cubic-bezier(0.32, 0.72, 0, 1)",
+                    }}
+                  >
+                    <div style={{
+                      position: "absolute", inset: "6px 3px",
+                      borderRadius: 999,
+                      backgroundColor: "rgba(255,255,255,0.1)",
+                    }} />
+                  </div>
+                )}
+                {items.map(({ id, label, Icon }) => {
+                  if (id === "more") {
+                    return (
+                      <button
+                        key="more"
+                        onClick={() => setDrawerOpen(true)}
+                        className="relative z-10 flex-1 flex flex-col items-center justify-center gap-0.5 py-2.5 rounded-full transition-colors duration-200 cursor-pointer active:scale-95"
+                        style={{ color: "#8e8e93" }}
+                      >
+                        <IconMore size={20} />
+                        <span className="text-[10px] font-semibold">Menu</span>
+                      </button>
+                    );
+                  }
+                  const active = navTab === id;
+                  return (
+                    <button
+                      key={id}
+                      onClick={() => { setNavTab(id); setCategoryView(null); }}
+                      className="relative z-10 flex-1 flex flex-col items-center justify-center gap-0.5 py-2.5 rounded-full transition-colors duration-200 cursor-pointer active:scale-95"
+                      style={{ color: active ? "#4493f8" : "#8e8e93" }}
+                    >
+                      <Icon size={20} />
+                      <span className="text-[10px] font-semibold">{label}</span>
+                    </button>
+                  );
+                })}
+              </>
             );
-          }
-          if (id === "more") {
-            return (
-              <button
-                key="more"
-                onClick={() => setDrawerOpen(true)}
-                className="flex-1 flex flex-col items-center justify-center gap-1 py-3 cursor-pointer"
-              >
-                <span style={{ color: muted }}>
-                  <IconMore size={20} />
-                </span>
-                <span
-                  className="text-[10px] font-semibold"
-                  style={{ color: muted }}
-                >
-                  Menu
-                </span>
-              </button>
-            );
-          }
-          const active = navTab === id;
-          const color = active ? "var(--category-all)" : muted;
-          return (
-            <button
-              key={id}
-              onClick={() => setNavTab(id)}
-              className="flex-1 flex flex-col items-center justify-center gap-1 py-3 cursor-pointer"
-            >
-              <span style={{ color }}>
-                <Icon size={20} />
-              </span>
-              <span className="text-[10px] font-semibold" style={{ color }}>
-                {label}
-              </span>
-            </button>
-          );
-        })}
+          })()}
+        </div>
       </nav>
 
       {/* ── Overlay ── */}
@@ -2829,85 +2235,41 @@ export default function MobileDashboard() {
       {recurringOpen && (
         <div
           className="fixed inset-0 z-50 flex flex-col"
-          style={{ backgroundColor: surface, color: text }}
+          style={{ backgroundColor: HOME_BG, color: HOME_TEXT }}
         >
           <div
-            className="px-5 py-4 flex items-center justify-between border-b shrink-0"
-            style={{ borderColor: border }}
+            className="px-4 pb-3 flex items-center justify-between shrink-0"
+            style={{ borderBottom: `1px solid ${HOME_DIVIDER}`, paddingTop: "calc(env(safe-area-inset-top, 0px) + 14px)" }}
           >
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
               <button
-                onClick={() => {
-                  setRecurringOpen(false);
-                  setRpSave({ isDirty: false, isSaving: false, onSave: null });
+                onClick={() => setRecurringOpen(false)}
+                aria-label="Back to home"
+                style={{
+                  width: 36, height: 36, borderRadius: "50%", flexShrink: 0, cursor: "pointer",
+                  background: HOME_SURFACE, border: "1px solid rgba(255,255,255,0.07)",
+                  display: "flex", alignItems: "center", justifyContent: "center", color: HOME_TEXT,
                 }}
-                className="p-1 rounded-lg cursor-pointer"
-                style={{ color: muted }}
               >
-                <IconChevronLeft />
+                <IconChevronLeft size={19} />
               </button>
-              <span className="text-sm font-semibold" style={{ color: muted }}>
+              <span className="text-base font-semibold" style={{ color: HOME_TEXT }}>
                 Recurring Payments
               </span>
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-              {(() => {
-                const status = rpSave.isSaving
-                  ? "Saving…"
-                  : rpSave.isDirty
-                    ? "Unsaved"
-                    : rpSave.saveStatus === "saved"
-                      ? "Saved"
-                      : null;
-                const statusColor =
-                  rpSave.saveStatus === "saved" && !rpSave.isDirty
-                    ? "var(--category-income)"
-                    : `color-mix(in srgb, ${text} 40%, transparent)`;
-                return status ? (
-                  <span
-                    style={{
-                      fontSize: "11px",
-                      color: statusColor,
-                      transition: "color 0.3s",
-                    }}
-                  >
-                    {status}
-                  </span>
-                ) : null;
-              })()}
-              <button
-                onClick={() => rpSave.onSave?.()}
-                disabled={!rpSave.isDirty || rpSave.isSaving}
-                style={{
-                  fontSize: "12px",
-                  fontWeight: 600,
-                  padding: "4px 12px",
-                  borderRadius: "8px",
-                  border: "1px solid var(--category-income)",
-                  color: "var(--category-income)",
-                  backgroundColor: rpSave.isDirty
-                    ? "color-mix(in srgb, var(--category-income) 18%, transparent)"
-                    : "transparent",
-                  boxShadow: rpSave.isDirty
-                    ? "0 0 0 2px color-mix(in srgb, var(--category-income) 20%, transparent)"
-                    : "none",
-                  cursor:
-                    rpSave.isDirty && !rpSave.isSaving ? "pointer" : "default",
-                  opacity: rpSave.isDirty ? (rpSave.isSaving ? 0.6 : 1) : 0.25,
-                  transition: "all 0.2s ease",
-                }}
-              >
-                {rpSave.isSaving ? "Saving…" : "Save"}
-              </button>
-            </div>
+            <button
+              onClick={() => setRecurringAddSignal(n => n + 1)}
+              aria-label="Add recurring payment"
+              style={{
+                width: 36, height: 36, borderRadius: "50%", flexShrink: 0, cursor: "pointer",
+                background: HOME_SURFACE, border: "1px solid rgba(255,255,255,0.07)",
+                display: "flex", alignItems: "center", justifyContent: "center", color: HOME_INCOME,
+              }}
+            >
+              <IconPlus size={19} />
+            </button>
           </div>
-          <RecurringPaymentsModal
-            inline
-            mobile
-            onSaveStateChange={setRpSave}
-            onDelete={refresh}
-            onSaved={refresh}
-          />
+          <MobileRecurring onSaved={refresh} openAddSignal={recurringAddSignal} />
         </div>
       )}
 
@@ -2915,26 +2277,30 @@ export default function MobileDashboard() {
       {paychecksOpen && (
         <div
           className="fixed inset-0 z-50 flex flex-col"
-          style={{ backgroundColor: surface, color: text }}
+          style={{ backgroundColor: HOME_BG, color: HOME_TEXT }}
         >
           <div
-            className="px-5 py-4 flex items-center justify-between border-b shrink-0"
-            style={{ borderColor: border }}
+            className="px-4 pb-3 flex items-center shrink-0"
+            style={{ borderBottom: `1px solid ${HOME_DIVIDER}`, paddingTop: "calc(env(safe-area-inset-top, 0px) + 14px)" }}
           >
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
               <button
                 onClick={() => setPaychecksOpen(false)}
-                className="p-1 rounded-lg cursor-pointer"
-                style={{ color: muted }}
+                aria-label="Back to home"
+                style={{
+                  width: 36, height: 36, borderRadius: "50%", flexShrink: 0, cursor: "pointer",
+                  background: HOME_SURFACE, border: "1px solid rgba(255,255,255,0.07)",
+                  display: "flex", alignItems: "center", justifyContent: "center", color: HOME_TEXT,
+                }}
               >
-                <IconChevronLeft />
+                <IconChevronLeft size={19} />
               </button>
-              <span className="text-sm font-semibold" style={{ color: muted }}>
+              <span className="text-base font-semibold" style={{ color: HOME_TEXT }}>
                 Paychecks
               </span>
             </div>
           </div>
-          <PaychecksPanel mobile onSaved={refresh} />
+          <MobilePaychecks onSaved={refresh} />
         </div>
       )}
 
@@ -2971,7 +2337,7 @@ export default function MobileDashboard() {
           >
             <div
               className="px-5 py-4 flex items-center justify-between border-b shrink-0"
-              style={{ borderColor: border }}
+              style={{ borderColor: border, paddingTop: "calc(env(safe-area-inset-top, 0px) + 1rem)" }}
             >
               <span className="text-sm font-semibold" style={{ color: muted }}>
                 Menu
@@ -3219,7 +2585,7 @@ export default function MobileDashboard() {
           >
             <div
               className="px-5 py-4 flex items-center justify-between border-b shrink-0"
-              style={{ borderColor: border }}
+              style={{ borderColor: border, paddingTop: "calc(env(safe-area-inset-top, 0px) + 1rem)" }}
             >
               <div className="flex items-center gap-2">
                 <button
@@ -3300,7 +2666,7 @@ export default function MobileDashboard() {
 
           {/* Dev tools panel */}
           <div style={{ width: "33.333%", height: "100%", display: "flex", flexDirection: "column" }}>
-            <div className="px-5 py-4 flex items-center gap-2 border-b shrink-0" style={{ borderColor: border }}>
+            <div className="px-5 py-4 flex items-center gap-2 border-b shrink-0" style={{ borderColor: border, paddingTop: "calc(env(safe-area-inset-top, 0px) + 1rem)" }}>
               <button onClick={() => setDevOpen(false)} className="p-1 rounded-lg cursor-pointer" style={{ color: muted }}>
                 <IconChevronLeft />
               </button>
@@ -3439,53 +2805,3 @@ function DevToggle({ active, onToggle }) {
   );
 }
 
-function MSkel({ w = "100%", h = 16, dark = false, style: extra = {} }) {
-  const base = dark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.05)";
-  const hi = dark ? "rgba(255,255,255,0.11)" : "rgba(0,0,0,0.11)";
-  return (
-    <div
-      style={{
-        width: w,
-        height: h,
-        borderRadius: 6,
-        flexShrink: 0,
-        background: `linear-gradient(90deg, ${base} 25%, ${hi} 50%, ${base} 75%)`,
-        backgroundSize: "200% 100%",
-        animation: "skel-shimmer 1.4s ease-in-out infinite",
-        ...extra,
-      }}
-    />
-  );
-}
-
-function MobileDonutSkel({ dark, surface }) {
-  const base = dark ? "rgba(255,255,255,0.05)" : "rgba(0,0,0,0.05)";
-  const hi = dark ? "rgba(255,255,255,0.11)" : "rgba(0,0,0,0.11)";
-  return (
-    <div
-      style={{
-        position: "relative",
-        width: 160,
-        height: 160,
-        borderRadius: "50%",
-        flexShrink: 0,
-        background: `linear-gradient(90deg, ${base} 25%, ${hi} 50%, ${base} 75%)`,
-        backgroundSize: "200% 100%",
-        animation: "skel-shimmer 1.4s ease-in-out infinite",
-      }}
-    >
-      <div
-        style={{
-          position: "absolute",
-          top: "50%",
-          left: "50%",
-          transform: "translate(-50%, -50%)",
-          width: 110,
-          height: 110,
-          borderRadius: "50%",
-          backgroundColor: surface,
-        }}
-      />
-    </div>
-  );
-}
