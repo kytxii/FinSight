@@ -1,10 +1,10 @@
-import { useState } from "react";
-import { updateTransaction } from "../../api/transactions";
+import { useRef, useState } from "react";
+import { updateTransaction, convertTransactionToTipDeposit } from "../../api/transactions";
 import { updateRecurringPayment } from "../../api/recurringPayments";
-import { createPaymentFromTransaction } from "../../api/creditCard";
 import { errorMessage } from "../../utils/errors";
-import { lockedNameFor, MONEY_OUT_TYPES } from "../../utils/finance";
+import { lockedNameFor } from "../../utils/finance";
 import CurrencyInput from "../shared/CurrencyInput";
+import Toggle from "../shared/Toggle";
 import CategoryPicker from "./CategoryPicker";
 import CompactDateField from "./CompactDateField";
 import {
@@ -37,68 +37,63 @@ function IconClear({ size = 15 }) {
   );
 }
 
-export default function MobileTransactionModal({ transaction, onClose, onSaved, onDelete, onLocate, onSplitAsPayment }) {
+export default function MobileTransactionModal({ transaction, onClose, onSaved, onDelete, onLocate }) {
   const [form, setForm] = useState({
     name: transaction.name,
     amount: String(transaction.amount),
     category: transaction.category,
     transaction_date: transaction.transaction_date,
     note: transaction.note ?? "",
-    paid_with_cash: transaction.paid_with_cash ?? false,
+    convertToDeposit: false,
   });
-  const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [error, setError] = useState("");
-  const [splitting, setSplitting] = useState(false);
+  const savedRef = useRef(false);
 
   const Icon = CATEGORY_ICON[form.category];
   const tileColor = TILE_COLOR[form.category] ?? HOME_MUTED;
-  const busy = saving || deleting;
+  const busy = deleting;
 
   function setCategory(category) {
-    // Cash on hand only applies to spend categories - drop the flag along
-    // with the checkbox once it's switched away from one (#151).
-    setForm((f) => ({
-      ...f, category, name: lockedNameFor(category) ?? f.name,
-      paid_with_cash: MONEY_OUT_TYPES.has(category) ? f.paid_with_cash : false,
-    }));
+    setForm((f) => ({ ...f, category, name: lockedNameFor(category) ?? f.name }));
   }
 
-  async function handleSave() {
-    if (busy) return;
-    setSaving(true);
-    setError("");
-    try {
-      await updateTransaction(transaction.id, { ...form, amount: parseFloat(form.amount) });
-      if (transaction.recurring_payment_id) {
-        const day = parseInt(form.transaction_date.split("-")[2], 10);
-        await updateRecurringPayment(transaction.recurring_payment_id, {
-          name: form.name,
-          amount: parseFloat(form.amount),
-          category: form.category,
-          day_of_month: day,
-        });
+  // Closes the instant the button is tapped - the actual save (and, if the
+  // Type toggle was flipped, the conversion) run in the background after.
+  // #156 + this pass: there's no toast system yet, so a background failure
+  // just leaves the row as the server last had it on the next refresh -
+  // no error is surfaced here since the sheet is already gone.
+  function handleSave() {
+    if (savedRef.current || busy) return;
+    savedRef.current = true;
+    const { convertToDeposit, ...rest } = form;
+    onClose();
+    (async () => {
+      try {
+        if (convertToDeposit) {
+          // Persist any edits first - the convert endpoint carries over
+          // whatever amount/date the transaction has server-side.
+          await updateTransaction(transaction.id, { ...rest, amount: parseFloat(form.amount) });
+          await convertTransactionToTipDeposit(transaction.id);
+        } else {
+          await updateTransaction(transaction.id, { ...rest, amount: parseFloat(form.amount) });
+          if (transaction.recurring_payment_id) {
+            const day = parseInt(form.transaction_date.split("-")[2], 10);
+            await updateRecurringPayment(transaction.recurring_payment_id, {
+              name: form.name,
+              amount: parseFloat(form.amount),
+              category: form.category,
+              day_of_month: day,
+            });
+          }
+        }
+      } catch {
+        // Silent - see comment above.
+      } finally {
+        onSaved();
       }
-      onSaved();
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function handleSplitTap() {
-    if (splitting) return;
-    setSplitting(true);
-    setError("");
-    try {
-      const res = await createPaymentFromTransaction(transaction.id);
-      onSplitAsPayment(res.data);
-    } catch (err) {
-      setError(errorMessage(err));
-      setSplitting(false);
-    }
+    })();
   }
 
   async function handleDeleteTap() {
@@ -213,16 +208,16 @@ export default function MobileTransactionModal({ transaction, onClose, onSaved, 
           </div>
         </div>
 
-        {MONEY_OUT_TYPES.has(form.category) && (
-          <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13.5, color: HOME_MUTED, cursor: "pointer" }}>
-            <input
-              type="checkbox"
-              checked={form.paid_with_cash}
-              onChange={(e) => setForm((f) => ({ ...f, paid_with_cash: e.target.checked }))}
-              style={{ width: 17, height: 17, accentColor: tileColor, cursor: "pointer" }}
+        {form.category === "TIPS" && (
+          <div className="flex flex-col gap-1.5">
+            <p style={labelStyle}>Type</p>
+            <Toggle
+              checked={form.convertToDeposit}
+              onChange={(v) => setForm((f) => ({ ...f, convertToDeposit: v }))}
+              disabled={busy}
+              activeColor={tileColor}
             />
-            Paid with cash on hand
-          </label>
+          </div>
         )}
 
         <div>
@@ -249,21 +244,11 @@ export default function MobileTransactionModal({ transaction, onClose, onSaved, 
               backgroundColor: HOME_INCOME, color: "#fff",
               fontSize: 14, fontWeight: 700, cursor: busy ? "default" : "pointer", opacity: busy ? 0.5 : 1,
             }}
-          >{saving ? "Saving…" : "Save Changes"}</button>
+          >Save Changes</button>
         </div>
 
         {transaction.credit_card_charge_id && (
           <p style={{ fontSize: 11.5, color: HOME_MUTED, margin: 0 }}>Part of a credit card payment — categorized automatically.</p>
-        )}
-
-        {!transaction.credit_card_payment_id && !transaction.credit_card_charge_id && onSplitAsPayment && (
-          <button type="button" onClick={handleSplitTap} disabled={busy || splitting}
-            style={{
-              padding: "9px 0", borderRadius: 10, border: `1px dashed ${HOME_DIVIDER}`, background: "none",
-              color: HOME_INCOME, fontSize: 13, fontWeight: 600, cursor: busy || splitting ? "default" : "pointer",
-              opacity: splitting ? 0.6 : 1,
-            }}
-          >{splitting ? "Starting…" : "Split as credit card payment"}</button>
         )}
 
         <button type="button" onClick={handleDeleteTap} disabled={busy}

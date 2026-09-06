@@ -13,8 +13,9 @@ import {
 } from "../api/transactions";
 import { getSpendableSurplus, getEstimatedSavings } from "../api/paychecks";
 import { getUpcomingRecurringPayments } from "../api/recurringPayments";
-import { getTipDeposits, deleteTipDeposit } from "../api/tipDeposits";
+import { getTipDeposits, deleteTipDeposit, createTipDeposit } from "../api/tipDeposits";
 import CurrencyInput from "../components/shared/CurrencyInput";
+import Toggle from "../components/shared/Toggle";
 import MobileTransactionModal from "../components/mobile/MobileTransactionModal";
 import CreditCardPaymentPanel from "../components/shared/CreditCardPaymentPanel";
 import MobileDepositModal from "../components/mobile/MobileDepositModal";
@@ -355,7 +356,7 @@ export default function MobileDashboard() {
     amount: "",
     transaction_date: getToday(),
     note: "",
-    paid_with_cash: false,
+    deposited: false,
   });
   const [quickLoading, setQuickLoading] = useState(false);
   const [quickError, setQuickError] = useState("");
@@ -394,20 +395,29 @@ export default function MobileDashboard() {
     setQuickError("");
     setQuickLoading(true);
     try {
-      await createTransaction({
-        name: lockedNameFor(quickCat) ?? quickForm.name,
-        amount: parseFloat(quickForm.amount),
-        transaction_date: quickForm.transaction_date,
-        category: quickCat,
-        note: quickForm.note.trim() || null,
-        paid_with_cash: quickForm.paid_with_cash,
-      });
+      // A deposited tip isn't a transaction at all - it's a TipDeposit, its
+      // own amount + date with no link back to any tip (#155). Its amount
+      // doesn't need to match any particular tip or the month's total.
+      if (quickCat === "TIPS" && quickForm.deposited) {
+        await createTipDeposit({
+          amount: parseFloat(quickForm.amount),
+          deposit_date: quickForm.transaction_date,
+        });
+      } else {
+        await createTransaction({
+          name: lockedNameFor(quickCat) ?? quickForm.name,
+          amount: parseFloat(quickForm.amount),
+          transaction_date: quickForm.transaction_date,
+          category: quickCat,
+          note: quickForm.note.trim() || null,
+        });
+      }
       setQuickForm((f) => ({
         ...f,
         name: lockedNameFor(quickCat) ?? "",
         amount: "",
         note: "",
-        paid_with_cash: false,
+        deposited: false,
       }));
       setEntrySheetOpen(false);
       setAddSheetOpen(false);
@@ -742,6 +752,7 @@ export default function MobileDashboard() {
             {categoryView === "TIPS" ? (
               <MobileTips
                 transactions={transactions}
+                deposits={tipDeposits}
                 loading={loading}
                 onBack={() => setCategoryView(null)}
                 onEditTransaction={setEditingTransaction}
@@ -1080,11 +1091,11 @@ export default function MobileDashboard() {
             value={quickCat}
             onChange={(key) => {
               setQuickCat(key);
-              // Cash on hand only applies to spend categories - drop the flag
-              // along with the checkbox once it's switched away from one (#151).
+              // Deposited is Tips-only - drop it along with the toggle once
+              // it's switched away from that category.
               setQuickForm((f) => ({
                 ...f, name: lockedNameFor(key) ?? f.name,
-                paid_with_cash: MONEY_OUT_TYPES.has(key) ? f.paid_with_cash : false,
+                deposited: key === "TIPS" ? f.deposited : false,
               }));
             }}
           />
@@ -1132,26 +1143,24 @@ export default function MobileDashboard() {
                 style={quickFieldStyle}
               />
             </div>
-            <input
-              type="text"
-              placeholder="Note (optional)"
-              value={quickForm.note}
-              onChange={(e) => setQuickForm((f) => ({ ...f, note: e.target.value }))}
-              maxLength={100}
-              className="w-full rounded-xl px-4 py-2.5 text-sm border"
-              style={quickFieldStyle}
-            />
-            {MONEY_OUT_TYPES.has(quickCat) && (
-              <label className="flex items-center gap-2 cursor-pointer" style={{ fontSize: 13.5, color: HOME_MUTED }}>
-                <input
-                  type="checkbox"
-                  checked={quickForm.paid_with_cash}
-                  onChange={(e) => setQuickForm((f) => ({ ...f, paid_with_cash: e.target.checked }))}
-                  style={{ width: 17, height: 17, accentColor: quickTileColor, cursor: "pointer" }}
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                placeholder="Note (optional)"
+                value={quickForm.note}
+                onChange={(e) => setQuickForm((f) => ({ ...f, note: e.target.value }))}
+                maxLength={100}
+                className="flex-1 min-w-0 rounded-xl px-4 py-2.5 text-sm border"
+                style={quickFieldStyle}
+              />
+              {quickCat === "TIPS" && (
+                <Toggle
+                  checked={quickForm.deposited}
+                  onChange={(v) => setQuickForm((f) => ({ ...f, deposited: v }))}
+                  activeColor={quickTileColor}
                 />
-                Paid with cash on hand
-              </label>
-            )}
+              )}
+            </div>
             {quickError && <p className="text-xs text-red-500">{quickError}</p>}
             <button
               type="submit"
@@ -2239,10 +2248,6 @@ export default function MobileDashboard() {
             }}
             onDelete={handleDelete}
             onLocate={handleLocateTransaction}
-            onSplitAsPayment={(payment) => {
-              setEditingTransaction((prev) => prev && { ...prev, credit_card_payment_id: payment.id });
-              refresh();
-            }}
           />
         )
       )}
