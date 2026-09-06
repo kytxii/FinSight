@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { updateTipDeposit, convertTipDepositToTransaction } from "../../api/tipDeposits";
 import { errorMessage } from "../../utils/errors";
 import CurrencyInput from "../shared/CurrencyInput";
@@ -18,47 +18,43 @@ export default function MobileDepositModal({ deposit, onClose, onSaved, onDelete
   const [form, setForm] = useState({
     amount: String(deposit.amount),
     deposit_date: deposit.deposit_date,
+    convertToCash: false,
   });
-  const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [error, setError] = useState("");
-  const [converting, setConverting] = useState(false);
+  const savedRef = useRef(false);
 
-  const busy = saving || deleting;
+  const busy = deleting;
 
-  async function handleSave() {
-    if (busy) return;
+  // Closes the instant the button is tapped - the actual save (and, if the
+  // Type toggle was flipped, the conversion back to a transaction) run in
+  // the background after. #156 + this pass: there's no toast system yet, so
+  // a background failure just leaves the row as the server last had it on
+  // the next refresh - no error is surfaced here since the sheet is gone.
+  function handleSave() {
+    if (savedRef.current || busy) return;
     const amount = parseFloat(form.amount);
     if (isNaN(amount) || amount <= 0) {
       setError("Enter a valid amount");
       return;
     }
-    setSaving(true);
+    savedRef.current = true;
     setError("");
-    try {
-      await updateTipDeposit(deposit.id, { amount, deposit_date: form.deposit_date });
-      onSaved();
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function handleConvertTap() {
-    // #156: a quality-of-life correction for a misentered deposit, not a
-    // persistent link - the deposit is gone once this returns.
-    if (converting) return;
-    setConverting(true);
-    setError("");
-    try {
-      await convertTipDepositToTransaction(deposit.id);
-      onSaved();
-    } catch (err) {
-      setError(errorMessage(err));
-      setConverting(false);
-    }
+    const { convertToCash, deposit_date } = form;
+    onClose();
+    (async () => {
+      try {
+        // Persist any edits first either way - the convert endpoint carries
+        // over whatever amount/date the deposit has server-side.
+        await updateTipDeposit(deposit.id, { amount, deposit_date });
+        if (convertToCash) await convertTipDepositToTransaction(deposit.id);
+      } catch {
+        // Silent - see comment above.
+      } finally {
+        onSaved();
+      }
+    })();
   }
 
   async function handleDeleteTap() {
@@ -130,18 +126,17 @@ export default function MobileDepositModal({ deposit, onClose, onSaved, onDelete
               backgroundColor: TIPS_DEPOSITED, color: "#fff",
               fontSize: 14, fontWeight: 700, cursor: busy ? "default" : "pointer", opacity: busy ? 0.5 : 1,
             }}
-          >{saving ? "Saving…" : "Save Changes"}</button>
+          >Save Changes</button>
         </div>
 
         <div className="flex flex-col gap-1.5">
           <p style={labelStyle}>Type</p>
           <Toggle
-            checked={true}
-            onChange={(v) => { if (!v) handleConvertTap(); }}
-            disabled={busy || converting}
+            checked={!form.convertToCash}
+            onChange={(v) => setForm((f) => ({ ...f, convertToCash: !v }))}
+            disabled={busy}
             activeColor={TIPS_DEPOSITED}
           />
-          {converting && <p style={{ fontSize: 11.5, color: HOME_MUTED, margin: 0 }}>Converting…</p>}
         </div>
 
         <button type="button" onClick={handleDeleteTap} disabled={busy}

@@ -15,6 +15,7 @@ import { getSpendableSurplus, getEstimatedSavings } from "../api/paychecks";
 import { getUpcomingRecurringPayments } from "../api/recurringPayments";
 import { getTipDeposits, deleteTipDeposit, createTipDeposit } from "../api/tipDeposits";
 import CurrencyInput from "../components/shared/CurrencyInput";
+import Toggle from "../components/shared/Toggle";
 import MobileTransactionModal from "../components/mobile/MobileTransactionModal";
 import CreditCardPaymentPanel from "../components/shared/CreditCardPaymentPanel";
 import MobileDepositModal from "../components/mobile/MobileDepositModal";
@@ -1142,25 +1143,24 @@ export default function MobileDashboard() {
                 style={quickFieldStyle}
               />
             </div>
-            <input
-              type="text"
-              placeholder="Note (optional)"
-              value={quickForm.note}
-              onChange={(e) => setQuickForm((f) => ({ ...f, note: e.target.value }))}
-              maxLength={100}
-              className="w-full rounded-xl px-4 py-2.5 text-sm border"
-              style={quickFieldStyle}
-            />
-            {quickCat === "TIPS" && (
-              <div className="flex items-center gap-2.5">
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                placeholder="Note (optional)"
+                value={quickForm.note}
+                onChange={(e) => setQuickForm((f) => ({ ...f, note: e.target.value }))}
+                maxLength={100}
+                className="flex-1 min-w-0 rounded-xl px-4 py-2.5 text-sm border"
+                style={quickFieldStyle}
+              />
+              {quickCat === "TIPS" && (
                 <Toggle
                   checked={quickForm.deposited}
                   onChange={(v) => setQuickForm((f) => ({ ...f, deposited: v }))}
                   activeColor={quickTileColor}
                 />
-                <span style={{ fontSize: 13.5, color: HOME_MUTED }}>Deposited (not cash on hand)</span>
-              </div>
-            )}
+              )}
+            </div>
             {quickError && <p className="text-xs text-red-500">{quickError}</p>}
             <button
               type="submit"

@@ -322,19 +322,17 @@ function SingleForm({ onSaved }) {
         </div>
       </div>
 
-      {form.category === "TIPS" && (
-        <div className="flex items-center gap-2.5" style={{ marginTop: -8 }}>
-          <Toggle
-            checked={form.deposited}
-            onChange={(v) => setForm((f) => ({ ...f, deposited: v }))}
-            activeColor={catColor}
-          />
-          <span style={{ fontSize: 14, color: HOME_MUTED }}>Deposited (not cash on hand)</span>
-        </div>
-      )}
-
       <div>
-        <label className="block text-sm font-medium mb-1.5">Note <span className="font-normal opacity-60">(optional)</span></label>
+        <div className="flex items-center justify-between mb-1.5">
+          <label className="block text-sm font-medium">Note <span className="font-normal opacity-60">(optional)</span></label>
+          {form.category === "TIPS" && (
+            <Toggle
+              checked={form.deposited}
+              onChange={(v) => setForm((f) => ({ ...f, deposited: v }))}
+              activeColor={catColor}
+            />
+          )}
+        </div>
         <input
           type="text"
           name="note"

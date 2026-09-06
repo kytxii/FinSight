@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { CATEGORY_CONFIG, lockedNameFor } from "../../utils/finance";
 import { updateTransaction, convertTransactionToTipDeposit } from "../../api/transactions";
 import { updateRecurringPayment } from "../../api/recurringPayments";
@@ -23,19 +23,16 @@ export default function EditTransactionModal({ transaction, onClose, onSaved, on
     category: transaction.category,
     transaction_date: transaction.transaction_date,
     note: transaction.note ?? "",
+    convertToDeposit: false,
   });
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
   const [cancelHovered, setCancelHovered] = useState(false);
   const [submitHovered, setSubmitHovered] = useState(false);
   const [locateHovered, setLocateHovered] = useState(false);
+  const savedRef = useRef(false);
 
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState("");
-
-  const [converting, setConverting] = useState(false);
-  const [convertError, setConvertError] = useState("");
 
   const [closing, setClosing] = useState(false);
   const requestClose = () => setClosing(true);
@@ -61,27 +58,42 @@ export default function EditTransactionModal({ transaction, onClose, onSaved, on
     }
   };
 
-  const handleSubmit = async (e) => {
+  // Closes the instant the button is clicked - the actual save (and, if the
+  // Type toggle was flipped, the conversion) run in the background after.
+  // #156 + this pass: there's no toast system yet, so a background failure
+  // just leaves the row as the server last had it on the next refresh - no
+  // error is surfaced here since the panel is already gone.
+  const handleSubmit = (e) => {
     e.preventDefault();
-    setError("");
-    setLoading(true);
-    try {
-      await updateTransaction(transaction.id, { ...form, amount: parseFloat(form.amount) });
-      if (transaction.recurring_payment_id) {
-        const day = parseInt(form.transaction_date.split("-")[2], 10);
-        await updateRecurringPayment(transaction.recurring_payment_id, {
-          name: form.name,
-          amount: parseFloat(form.amount),
-          category: form.category,
-          day_of_month: day,
-        });
+    if (savedRef.current) return;
+    savedRef.current = true;
+    const { convertToDeposit, ...rest } = form;
+    requestClose();
+    (async () => {
+      try {
+        if (convertToDeposit) {
+          // Persist any edits first - the convert endpoint carries over
+          // whatever amount/date the transaction has server-side.
+          await updateTransaction(transaction.id, { ...rest, amount: parseFloat(form.amount) });
+          await convertTransactionToTipDeposit(transaction.id);
+        } else {
+          await updateTransaction(transaction.id, { ...rest, amount: parseFloat(form.amount) });
+          if (transaction.recurring_payment_id) {
+            const day = parseInt(form.transaction_date.split("-")[2], 10);
+            await updateRecurringPayment(transaction.recurring_payment_id, {
+              name: form.name,
+              amount: parseFloat(form.amount),
+              category: form.category,
+              day_of_month: day,
+            });
+          }
+        }
+      } catch {
+        // Silent - see comment above.
+      } finally {
+        onSaved();
       }
-      onSaved();
-    } catch (err) {
-      setError(err.response?.data?.detail ?? "Something went wrong");
-    } finally {
-      setLoading(false);
-    }
+    })();
   };
 
   // Tap-again-to-confirm, no dialog - the button's own label swaps for 3s.
@@ -100,21 +112,6 @@ export default function EditTransactionModal({ transaction, onClose, onSaved, on
       setDeleteError(err.response?.data?.detail ?? "Couldn't delete — try again");
       setDeleting(false);
       setDeleteConfirm(false);
-    }
-  }
-
-  async function handleConvertToDeposit() {
-    // #156: a quality-of-life correction for a misentered tip, not a
-    // persistent link - the transaction is gone once this returns.
-    if (converting) return;
-    setConverting(true);
-    setConvertError("");
-    try {
-      await convertTransactionToTipDeposit(transaction.id);
-      onSaved();
-    } catch (err) {
-      setConvertError(err.response?.data?.detail ?? "Couldn't convert to a deposit");
-      setConverting(false);
     }
   }
 
@@ -233,13 +230,10 @@ export default function EditTransactionModal({ transaction, onClose, onSaved, on
             <div className="flex flex-col gap-1.5">
               <label className="block text-sm font-medium">Type</label>
               <Toggle
-                checked={false}
-                onChange={(v) => { if (v) handleConvertToDeposit(); }}
-                disabled={converting}
+                checked={form.convertToDeposit}
+                onChange={(v) => setForm((f) => ({ ...f, convertToDeposit: v }))}
                 activeColor={catColor}
               />
-              {converting && <p style={{ fontSize: 11.5, color: muted, margin: 0 }}>Converting…</p>}
-              {convertError && <p style={{ fontSize: 11, color: HOME_EXPENSE, margin: 0 }}>{convertError}</p>}
             </div>
           )}
 
@@ -256,12 +250,6 @@ export default function EditTransactionModal({ transaction, onClose, onSaved, on
               style={inputStyle}
             />
           </div>
-
-          {error && (
-            <div className="text-sm px-4 py-2.5 rounded-xl border text-red-500" style={{ borderColor: border }}>
-              {error}
-            </div>
-          )}
 
           <div className="flex gap-3 pt-1">
             <button
@@ -280,7 +268,6 @@ export default function EditTransactionModal({ transaction, onClose, onSaved, on
             </button>
             <button
               type="submit"
-              disabled={loading}
               onMouseEnter={() => setSubmitHovered(true)}
               onMouseLeave={() => setSubmitHovered(false)}
               className="flex-1 py-2.5 rounded-xl border text-sm font-medium disabled:opacity-50 transition-all cursor-pointer active:scale-95"
@@ -291,7 +278,7 @@ export default function EditTransactionModal({ transaction, onClose, onSaved, on
                 boxShadow: `0 0 0 2px color-mix(in srgb, ${catColor} 20%, transparent)`,
               }}
             >
-              {loading ? "Saving..." : "Save Changes"}
+              Save Changes
             </button>
           </div>
         </form>

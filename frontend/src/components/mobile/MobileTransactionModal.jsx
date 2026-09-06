@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { updateTransaction, convertTransactionToTipDeposit } from "../../api/transactions";
 import { updateRecurringPayment } from "../../api/recurringPayments";
 import { errorMessage } from "../../utils/errors";
@@ -44,57 +44,56 @@ export default function MobileTransactionModal({ transaction, onClose, onSaved, 
     category: transaction.category,
     transaction_date: transaction.transaction_date,
     note: transaction.note ?? "",
+    convertToDeposit: false,
   });
-  const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [error, setError] = useState("");
-  const [converting, setConverting] = useState(false);
+  const savedRef = useRef(false);
 
   const Icon = CATEGORY_ICON[form.category];
   const tileColor = TILE_COLOR[form.category] ?? HOME_MUTED;
-  const busy = saving || deleting;
+  const busy = deleting;
 
   function setCategory(category) {
     setForm((f) => ({ ...f, category, name: lockedNameFor(category) ?? f.name }));
   }
 
-  async function handleSave() {
-    if (busy) return;
-    setSaving(true);
-    setError("");
-    try {
-      await updateTransaction(transaction.id, { ...form, amount: parseFloat(form.amount) });
-      if (transaction.recurring_payment_id) {
-        const day = parseInt(form.transaction_date.split("-")[2], 10);
-        await updateRecurringPayment(transaction.recurring_payment_id, {
-          name: form.name,
-          amount: parseFloat(form.amount),
-          category: form.category,
-          day_of_month: day,
-        });
+  // Closes the instant the button is tapped - the actual save (and, if the
+  // Type toggle was flipped, the conversion) run in the background after.
+  // #156 + this pass: there's no toast system yet, so a background failure
+  // just leaves the row as the server last had it on the next refresh -
+  // no error is surfaced here since the sheet is already gone.
+  function handleSave() {
+    if (savedRef.current || busy) return;
+    savedRef.current = true;
+    const { convertToDeposit, ...rest } = form;
+    onClose();
+    (async () => {
+      try {
+        if (convertToDeposit) {
+          // Persist any edits first - the convert endpoint carries over
+          // whatever amount/date the transaction has server-side.
+          await updateTransaction(transaction.id, { ...rest, amount: parseFloat(form.amount) });
+          await convertTransactionToTipDeposit(transaction.id);
+        } else {
+          await updateTransaction(transaction.id, { ...rest, amount: parseFloat(form.amount) });
+          if (transaction.recurring_payment_id) {
+            const day = parseInt(form.transaction_date.split("-")[2], 10);
+            await updateRecurringPayment(transaction.recurring_payment_id, {
+              name: form.name,
+              amount: parseFloat(form.amount),
+              category: form.category,
+              day_of_month: day,
+            });
+          }
+        }
+      } catch {
+        // Silent - see comment above.
+      } finally {
+        onSaved();
       }
-      onSaved();
-    } catch (err) {
-      setError(errorMessage(err));
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function handleConvertTap() {
-    // #156: a quality-of-life correction for a misentered tip, not a
-    // persistent link - the transaction is gone once this returns.
-    if (converting) return;
-    setConverting(true);
-    setError("");
-    try {
-      await convertTransactionToTipDeposit(transaction.id);
-      onSaved();
-    } catch (err) {
-      setError(errorMessage(err));
-      setConverting(false);
-    }
+    })();
   }
 
   async function handleDeleteTap() {
@@ -213,12 +212,11 @@ export default function MobileTransactionModal({ transaction, onClose, onSaved, 
           <div className="flex flex-col gap-1.5">
             <p style={labelStyle}>Type</p>
             <Toggle
-              checked={false}
-              onChange={(v) => { if (v) handleConvertTap(); }}
-              disabled={busy || converting}
+              checked={form.convertToDeposit}
+              onChange={(v) => setForm((f) => ({ ...f, convertToDeposit: v }))}
+              disabled={busy}
               activeColor={tileColor}
             />
-            {converting && <p style={{ fontSize: 11.5, color: HOME_MUTED, margin: 0 }}>Converting…</p>}
           </div>
         )}
 
@@ -246,7 +244,7 @@ export default function MobileTransactionModal({ transaction, onClose, onSaved, 
               backgroundColor: HOME_INCOME, color: "#fff",
               fontSize: 14, fontWeight: 700, cursor: busy ? "default" : "pointer", opacity: busy ? 0.5 : 1,
             }}
-          >{saving ? "Saving…" : "Save Changes"}</button>
+          >Save Changes</button>
         </div>
 
         {transaction.credit_card_charge_id && (
