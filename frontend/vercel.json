@@ -1,7 +1,7 @@
 {
   "rewrites": [
-    { "source": "/api/:resource/", "destination": "https://finsight-y7d0.onrender.com/:resource/" },
-    { "source": "/api/:path*", "destination": "https://finsight-y7d0.onrender.com/:path*" },
+    { "source": "/api/:resource/", "destination": "https://finsight-xi7x.onrender.com/:resource/" },
+    { "source": "/api/:path*", "destination": "https://finsight-xi7x.onrender.com/:path*" },
     { "source": "/(.*)", "destination": "/index.html" }
   ],
   "headers": [
