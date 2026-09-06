@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from urllib.parse import quote
+import logging
 import uuid
 from app.schemas.user import RegisterRequest, LoginRequest, UserResponse, TokenResponse
 from app.services.auth_service import register_user, login_user, refresh_session, logout_user, oauth_login, link_oauth_account
@@ -11,6 +12,8 @@ from app.core.limiter import limiter
 from app.core.oauth import oauth, fetch_oauth_userinfo, OAUTH_PROVIDERS
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+logger = logging.getLogger(__name__)
 
 _IS_SECURE = settings.FRONTEND_URL.startswith("https://")
 
@@ -68,6 +71,13 @@ async def oauth_login_redirect(provider: str, request: Request):
         redirect_uri = settings.REDIRECT_URI.format(provider=provider)
         return await client.authorize_redirect(request, redirect_uri)
     except Exception:
+        # A misconfigured provider (missing client id/secret, bad redirect URI) would
+        # otherwise surface as a raw unhandled error instead of ever reaching the
+        # provider's consent screen (#126). Send the user back with a visible message.
+        # The user-facing copy is deliberately vague, so log the real cause - without
+        # this the handler is a black hole and a broken prod sign-in shows nothing at
+        # all in the server logs.
+        logger.exception("OAuth authorize redirect failed for provider=%s", provider)
         return RedirectResponse(url=f"{settings.FRONTEND_URL}/login?error={quote('Something went wrong signing in.')}")
 
 
@@ -87,9 +97,14 @@ async def oauth_callback(provider: str, request: Request, db: AsyncSession = Dep
             return RedirectResponse(url=f"{settings.FRONTEND_URL}/?connected={provider}")
         _, refresh_token_raw = await oauth_login(db, provider, info)
     except HTTPException as exc:
+        logger.warning("OAuth callback rejected for provider=%s: %s", provider, exc.detail)
         redirect_path = "/" if link_user_id else "/login"
         return RedirectResponse(url=f"{settings.FRONTEND_URL}{redirect_path}?error={quote(exc.detail)}")
     except Exception:
+        # Covers state/nonce mismatch, token exchange, the provider's userinfo call and
+        # oauth_login. All of them collapse into the same opaque message for the user,
+        # so the traceback is the only way to tell which one actually failed.
+        logger.exception("OAuth callback failed for provider=%s", provider)
         redirect_path = "/" if link_user_id else "/login"
         message = "Something went wrong connecting that account." if link_user_id else "Something went wrong signing in."
         return RedirectResponse(url=f"{settings.FRONTEND_URL}{redirect_path}?error={quote(message)}")
