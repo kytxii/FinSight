@@ -277,3 +277,46 @@ async def test_allocate_existing_transaction_rejects_amount_exceeding_payment(te
     }, headers=auth_headers(token))
     assert res.status_code == 400
     assert "left on this payment" in res.json()["detail"]
+
+
+async def test_list_payments_matches_detail_and_orders_by_date(test_user: dict, client: AsyncClient, clean_credit_card):
+    """The list view is built in bulk rather than by re-deriving each payment
+    one at a time (#171), so it needs to agree with the single-payment detail
+    endpoint exactly - including payments with no charges at all, which the
+    batched path has to fill in rather than read from a row that isn't there."""
+    token = test_user["token"]
+
+    with_charges = await _create_payment(client, token, amount="250.00")
+    empty = await _create_payment(client, token, amount="80.00")
+
+    for name, amount, charge_date in [("Gas", "55.00", "2026-08-10"), ("Coffee", "20.00", "2026-08-02")]:
+        res = await client.post(f"/credit-card-payments/{with_charges['id']}/allocate", json={
+            "name": name, "total_amount": amount, "category": "EXPENSE", "charge_date": charge_date,
+        }, headers=auth_headers(token))
+        assert res.status_code == 200
+
+    res = await client.get("/credit-card-payments/", headers=auth_headers(token))
+    assert res.status_code == 200
+    listed = res.json()
+    assert len(listed) == 2
+
+    by_id = {p["id"]: p for p in listed}
+
+    # A payment with no allocations still reports zeroed totals, not nulls.
+    assert by_id[empty["id"]]["charges"] == []
+    assert by_id[empty["id"]]["paid"] == "0.00"
+    assert by_id[empty["id"]]["left"] == "80.00"
+
+    funded = by_id[with_charges["id"]]
+    assert funded["paid"] == "75.00"
+    assert funded["left"] == "175.00"
+    # Charges come back oldest-first by charge_date, not allocation order.
+    assert [c["name"] for c in funded["charges"]] == ["Coffee", "Gas"]
+    assert all(c["settled"] is True for c in funded["charges"])
+    assert all(c["settled_transaction_id"] is not None for c in funded["charges"])
+
+    # Every payment in the list is identical to fetching it on its own.
+    for payment in listed:
+        res = await client.get(f"/credit-card-payments/{payment['id']}", headers=auth_headers(token))
+        assert res.status_code == 200
+        assert res.json() == payment
