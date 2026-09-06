@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { Analytics } from "@vercel/analytics/react";
 import { SpeedInsights } from "@vercel/speed-insights/react";
 import { AuthProvider } from "./context/AuthContext";
+import ErrorBoundary from "./components/shared/ErrorBoundary";
 import ProtectedRoute from "./components/shared/ProtectedRoute";
 import Login from "./pages/Login";
 import Register from "./pages/Register";
@@ -27,23 +28,30 @@ function ResponsiveDashboard() {
 export default function App() {
   return (
     <>
-      <AuthProvider>
-        <BrowserRouter>
-          <Routes>
-            <Route path="/login" element={<Login />} />
-            <Route path="/register" element={<Register />} />
-            <Route
-              path="/"
-              element={
-                <ProtectedRoute>
-                  <ResponsiveDashboard />
-                </ProtectedRoute>
-              }
-            />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
-        </BrowserRouter>
-      </AuthProvider>
+      {/* Two levels on purpose: the inner one keeps a dashboard crash from
+          taking the router with it, the outer one catches everything else
+          (auth bootstrap, routing, the login pages). */}
+      <ErrorBoundary>
+        <AuthProvider>
+          <BrowserRouter>
+            <Routes>
+              <Route path="/login" element={<Login />} />
+              <Route path="/register" element={<Register />} />
+              <Route
+                path="/"
+                element={
+                  <ProtectedRoute>
+                    <ErrorBoundary>
+                      <ResponsiveDashboard />
+                    </ErrorBoundary>
+                  </ProtectedRoute>
+                }
+              />
+              <Route path="*" element={<Navigate to="/" replace />} />
+            </Routes>
+          </BrowserRouter>
+        </AuthProvider>
+      </ErrorBoundary>
       <Analytics />
       <SpeedInsights />
     </>
