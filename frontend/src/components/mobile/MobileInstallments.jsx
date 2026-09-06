@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import SwipeableRow from "./SwipeableRow";
 import CurrencyInput from "../shared/CurrencyInput";
 import InstallmentGauge from "../shared/InstallmentGauge";
-import Skel from "../shared/Skel";
+import MobileInstallmentCardSkeleton from "../skeletons/mobile/MobileInstallmentCardSkeleton";
 import { fmt } from "../../utils/finance";
 import { computeTermOptions, computeMonthlyPayment, computeGaugeStatus } from "../../utils/installmentMath";
 import {
@@ -17,6 +17,9 @@ import {
   HOME_TEXT, HOME_MUTED, HOME_SURFACE, HOME_DIVIDER, HOME_EXPENSE, HOME_INCOME, HOME_ACCENT,
   GAUGE_DARK_GREEN, GAUGE_GREEN, GAUGE_YELLOW, GAUGE_ORANGE, GAUGE_RED, TILE_COLOR, ACCENT,
 } from "../shared/categoryVisuals";
+import { getCached, hasCached, setCached } from "../../utils/pageCache";
+
+const CACHE_KEY = "mobile-installments";
 
 const EMPTY_DRAFT = { name: "", total_amount: "", period_months: "", day_of_month: "" };
 
@@ -391,8 +394,11 @@ function ComingSoonSheet({ onClose }) {
 }
 
 export default function MobileInstallments({ onSaved, openAddSignal }) {
-  const [rows, setRows] = useState([]);
-  const [loading, setLoading] = useState(true);
+  // Seeded from the last-known result (#119) so a reopen shows real data
+  // immediately instead of a skeleton, while loadInstallments below still
+  // revalidates in the background.
+  const [rows, setRows] = useState(() => getCached(CACHE_KEY) ?? []);
+  const [loading, setLoading] = useState(() => !hasCached(CACHE_KEY));
   const [loadFailed, setLoadFailed] = useState(false);
   const [deletingIds, setDeletingIds] = useState(new Set());
   const [openId, setOpenId] = useState(null);
@@ -407,10 +413,13 @@ export default function MobileInstallments({ onSaved, openAddSignal }) {
   const prevSignal = useRef(openAddSignal);
 
   function loadInstallments() {
-    setLoading(true);
+    // Only the skeleton-worthy cold load blanks the screen (#119) - a
+    // reopen with a warm cache already has something to show, so this runs
+    // as a silent background revalidation instead.
+    if (!hasCached(CACHE_KEY)) setLoading(true);
     setLoadFailed(false);
     getInstallments()
-      .then(r => setRows(r.data))
+      .then(r => { setRows(r.data); setCached(CACHE_KEY, r.data); })
       .catch(() => setLoadFailed(true))
       .finally(() => setLoading(false));
   }
@@ -536,27 +545,7 @@ export default function MobileInstallments({ onSaved, openAddSignal }) {
       {loading ? (
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {[...Array(3)].map((_, i) => (
-            <div key={i} style={{
-              display: "flex", flexDirection: "column", gap: 10, padding: "12px 14px 14px",
-              backgroundColor: HOME_SURFACE, borderRadius: 18, opacity: 1 - i * 0.15,
-            }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-                <Skel h={44} w={44} style={{ borderRadius: "50%" }} />
-                <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 5 }}>
-                  <Skel h={17} w="50%" />
-                  <Skel h={13} w="35%" />
-                </div>
-                <Skel h={22} w={70} style={{ borderRadius: 999 }} />
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10, paddingTop: 10, borderTop: `1px solid ${HOME_DIVIDER}` }}>
-                {[...Array(6)].map((_, j) => (
-                  <div key={j} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-                    <Skel h={10.5} w="60%" />
-                    <Skel h={13.5} w="80%" />
-                  </div>
-                ))}
-              </div>
-            </div>
+            <MobileInstallmentCardSkeleton key={i} opacity={1 - i * 0.15} />
           ))}
         </div>
       ) : loadFailed ? (

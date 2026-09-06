@@ -4,7 +4,7 @@ import Skel from "../shared/Skel";
 import { CATEGORY_CONFIG, MONEY_IN_TYPES, MONEY_OUT_TYPES, fmt } from "../../utils/finance";
 import { getNow } from "../../utils/time";
 import {
-  HOME_TEXT, HOME_MUTED, HOME_SURFACE, HOME_DIVIDER, HOME_INCOME, HOME_EXPENSE, HOME_ACCENT,
+  HOME_TEXT, HOME_MUTED, HOME_SURFACE, HOME_DIVIDER, HOME_INCOME, HOME_EXPENSE,
   TILE_COLOR, CATEGORY_ICON,
 } from "../shared/categoryVisuals";
 
@@ -16,11 +16,14 @@ function monthKey(dateStr) {
   return dateStr.slice(0, 7);
 }
 
-function lastMonths(n) {
-  const now = getNow();
+// Trailing `n` months ending at (and including) anchorYear/anchorMonth - the
+// selected period, not necessarily today (#152). JS Date normalizes a
+// negative month index by rolling the year back, so this handles the
+// anchor sitting in January (or earlier) correctly with no special-casing.
+function lastMonths(n, anchorYear, anchorMonth) {
   const out = [];
   for (let i = n - 1; i >= 0; i--) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const d = new Date(anchorYear, anchorMonth - i, 1);
     out.push({
       key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`,
       label: d.toLocaleDateString("en-US", { month: "short" }),
@@ -180,12 +183,17 @@ export default function MobileAnalytics({ transactions, deposits = [], loading, 
     return { rows, max };
   }, [transactions, deposits, periodKey]);
 
-  const months = useMemo(() => lastMonths(TREND_MONTHS), []);
-  const extendedMonths = useMemo(() => lastMonths(TREND_MONTHS + 1), []);
+  // Ends at the selected month, not today (#152) - was previously anchored
+  // to getNow() with an empty dependency array, so navigating the month
+  // picker never actually moved this window at all.
+  const months = useMemo(
+    () => lastMonths(TREND_MONTHS, period.year, period.month),
+    [period.year, period.month],
+  );
 
   const monthlyTotals = useMemo(() => {
     const byMonth = {};
-    extendedMonths.forEach((m) => { byMonth[m.key] = { income: 0, expense: 0, savings: 0 }; });
+    months.forEach((m) => { byMonth[m.key] = { income: 0, expense: 0, savings: 0 }; });
     transactions.forEach((t) => {
       const key = monthKey(t.transaction_date);
       const bucket = byMonth[key];
@@ -200,7 +208,7 @@ export default function MobileAnalytics({ transactions, deposits = [], loading, 
       if (bucket) bucket.income += parseFloat(d.amount);
     });
     return byMonth;
-  }, [transactions, deposits, extendedMonths]);
+  }, [transactions, deposits, months]);
 
   const trendMax = useMemo(
     () => Math.max(1, ...months.map((m) => Math.max(monthlyTotals[m.key].income, monthlyTotals[m.key].expense))),
@@ -209,16 +217,12 @@ export default function MobileAnalytics({ transactions, deposits = [], loading, 
 
   const hasTrendData = months.some((m) => monthlyTotals[m.key].income > 0 || monthlyTotals[m.key].expense > 0);
 
-  const savingsSummary = useMemo(() => {
-    return months.map((m, i) => {
-      const prevKey = extendedMonths[i].key; // one slot behind - extendedMonths has the extra lead-in month
-      const prevAmount = monthlyTotals[prevKey]?.savings ?? 0;
-      const amount = monthlyTotals[m.key]?.savings ?? 0;
-      if (prevAmount > 0) return { ...m, amount, change: ((amount - prevAmount) / prevAmount) * 100, isNew: false };
-      if (amount > 0) return { ...m, amount, change: null, isNew: true }; // started from $0 - no meaningful %
-      return { ...m, amount, change: null, isNew: false };
-    });
-  }, [months, extendedMonths, monthlyTotals]);
+  // Plain $ saved per month (#78) - no rate/ratio framing, so there's no
+  // >100% case to fake an answer for. Just the measured amount.
+  const savingsSummary = useMemo(
+    () => months.map((m) => ({ ...m, amount: monthlyTotals[m.key]?.savings ?? 0 })),
+    [months, monthlyTotals],
+  );
 
   const hasSavingsData = savingsSummary.some((m) => m.amount > 0);
   const savingsMax = Math.max(1, ...savingsSummary.map((m) => m.amount));
@@ -267,7 +271,7 @@ export default function MobileAnalytics({ transactions, deposits = [], loading, 
       </div>
 
       <div
-        key={periodKey}
+        key={`category-${periodKey}`}
         style={{
           animation: slideDir ? "mob-month-slide 260ms ease" : undefined,
           "--mob-slide-from": slideDir > 0 ? "24px" : "-24px",
@@ -314,6 +318,7 @@ export default function MobileAnalytics({ transactions, deposits = [], loading, 
       </SectionCard>
       </div>
 
+      <div key={`income-expense-${periodKey}`} style={{ animation: slideDir ? "mob-month-slide 260ms ease" : undefined, "--mob-slide-from": slideDir > 0 ? "24px" : "-24px" }}>
       <SectionCard title="Income vs. Expense">
         {loading ? (
           <TrendChartSkel bars={2} />
@@ -348,43 +353,32 @@ export default function MobileAnalytics({ transactions, deposits = [], loading, 
           </>
         )}
       </SectionCard>
+      </div>
 
-      <SectionCard title="Savings Rate">
+      <div key={`savings-${periodKey}`} style={{ animation: slideDir ? "mob-month-slide 260ms ease" : undefined, "--mob-slide-from": slideDir > 0 ? "24px" : "-24px" }}>
+      <SectionCard title="Savings">
         {loading ? (
           <TrendChartSkel bars={1} />
         ) : !hasSavingsData ? (
           <Empty />
         ) : (
-          <>
-            <div style={{ display: "flex", justifyContent: "space-between", gap: 6, height: 110 }}>
-              {savingsSummary.map((m) => {
-                const h = Math.max(2, (m.amount / savingsMax) * 100);
-                return (
-                  <div key={m.key} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center" }}>
-                    <div style={{ flex: 1, display: "flex", alignItems: "flex-end", width: "100%", justifyContent: "center" }}>
-                      <div title={fmt(m.amount)} style={{ width: 14, height: `${h}%`, borderRadius: "3px 3px 0 0", backgroundColor: HOME_ACCENT }} />
-                    </div>
-                    <span style={{ fontSize: 11, fontWeight: 600, color: HOME_MUTED, marginTop: 4 }}>{m.label}</span>
+          <div style={{ display: "flex", justifyContent: "space-between", gap: 6, height: 110 }}>
+            {savingsSummary.map((m) => {
+              const h = Math.max(2, (m.amount / savingsMax) * 100);
+              return (
+                <div key={m.key} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center" }}>
+                  <div style={{ flex: 1, display: "flex", alignItems: "flex-end", width: "100%", justifyContent: "center" }}>
+                    <div title={fmt(m.amount)} style={{ width: 14, height: `${h}%`, borderRadius: "3px 3px 0 0", backgroundColor: TILE_COLOR.SAVINGS }} />
                   </div>
-                );
-              })}
-            </div>
-            <div style={{ display: "flex", marginTop: 10 }}>
-              {savingsSummary.map((m) => (
-                <div key={m.key} style={{ flex: 1, textAlign: "center" }}>
-                  <p style={{ margin: 0, fontSize: 11.5, fontWeight: 700, color: HOME_TEXT }}>{fmtShort(m.amount)}</p>
-                  <p style={{
-                    margin: "2px 0 0", fontSize: 10.5, fontWeight: 700,
-                    color: m.isNew ? HOME_ACCENT : m.change == null ? HOME_MUTED : m.change >= 0 ? HOME_INCOME : HOME_EXPENSE,
-                  }}>
-                    {m.isNew ? "New" : m.change == null ? "—" : `${m.change >= 0 ? "+" : "-"}${Math.abs(m.change).toFixed(0)}%`}
-                  </p>
+                  <p style={{ margin: "6px 0 0", fontSize: 11.5, fontWeight: 700, color: HOME_TEXT }}>{fmtShort(m.amount)}</p>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: HOME_MUTED, marginTop: 1 }}>{m.label}</span>
                 </div>
-              ))}
-            </div>
-          </>
+              );
+            })}
+          </div>
         )}
       </SectionCard>
+      </div>
 
       <MobileActivity
         transactions={transactions}

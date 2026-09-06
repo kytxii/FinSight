@@ -1,7 +1,9 @@
 import { useState, useRef, useLayoutEffect } from "react";
 import { CATEGORY_CONFIG, lockedNameFor } from "../../utils/finance";
 import { createTransaction } from "../../api/transactions";
+import { createTipDeposit } from "../../api/tipDeposits";
 import { getToday } from "../../utils/time";
+import Toggle from "../shared/Toggle";
 import { HOME_SURFACE, HOME_DIVIDER, HOME_TEXT, HOME_MUTED, HOME_INCOME, HOME_EXPENSE, HOME_ACCENT, ACCENT, CATEGORY_ACCENT } from "../shared/categoryVisuals";
 import CurrencyInput from "../shared/CurrencyInput";
 import BatchAddPanel from "./BatchAddPanel";
@@ -206,14 +208,19 @@ function SingleForm({ onSaved }) {
   const border = HOME_DIVIDER;
   const text   = HOME_TEXT;
 
-  const [form, setForm] = useState({ name: "", amount: "", category: "EXPENSE", transaction_date: getToday(), note: "" });
+  const [form, setForm] = useState({ name: "", amount: "", category: "EXPENSE", transaction_date: getToday(), note: "", deposited: false });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
   const handleChange = (e) => {
     const { name, value } = e.target;
     if (name === "category") {
-      setForm((f) => ({ ...f, category: value, name: lockedNameFor(value) ?? f.name }));
+      // Deposited is Tips-only - drop it along with the toggle once it's
+      // switched away from that category.
+      setForm((f) => ({
+        ...f, category: value, name: lockedNameFor(value) ?? f.name,
+        deposited: value === "TIPS" ? f.deposited : false,
+      }));
     } else {
       setForm((f) => ({ ...f, [name]: value }));
     }
@@ -224,8 +231,16 @@ function SingleForm({ onSaved }) {
     setError("");
     setLoading(true);
     try {
-      await createTransaction({ ...form, amount: parseFloat(form.amount) });
-      setForm((f) => ({ name: "", amount: "", category: f.category, transaction_date: getToday(), note: "" }));
+      const { deposited, ...rest } = form;
+      // A deposited tip isn't a transaction at all - it's a TipDeposit, its
+      // own amount + date with no link back to any tip (#155). Its amount
+      // doesn't need to match any particular tip or the month's total.
+      if (form.category === "TIPS" && deposited) {
+        await createTipDeposit({ amount: parseFloat(form.amount), deposit_date: form.transaction_date });
+      } else {
+        await createTransaction({ ...rest, amount: parseFloat(form.amount) });
+      }
+      setForm((f) => ({ name: "", amount: "", category: f.category, transaction_date: getToday(), note: "", deposited: false }));
       onSaved();
     } catch (err) {
       setError(err.response?.data?.detail ?? "Something went wrong");
@@ -308,7 +323,16 @@ function SingleForm({ onSaved }) {
       </div>
 
       <div>
-        <label className="block text-sm font-medium mb-1.5">Note <span className="font-normal opacity-60">(optional)</span></label>
+        <div className="flex items-center justify-between mb-1.5">
+          <label className="block text-sm font-medium">Note <span className="font-normal opacity-60">(optional)</span></label>
+          {form.category === "TIPS" && (
+            <Toggle
+              checked={form.deposited}
+              onChange={(v) => setForm((f) => ({ ...f, deposited: v }))}
+              activeColor={catColor}
+            />
+          )}
+        </div>
         <input
           type="text"
           name="note"

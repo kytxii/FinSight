@@ -19,8 +19,10 @@ import {
   ACCENT_TEXT,
   CATEGORY_ACCENT,
   CATEGORY_ICON,
+  TIPS_DEPOSITED,
 } from "../components/shared/categoryVisuals";
 import Skel from "../components/shared/Skel";
+import OverviewPanelSkeleton from "../components/skeletons/desktop/OverviewPanelSkeleton";
 import {
   Cell,
   Tooltip,
@@ -37,7 +39,7 @@ import { useAuth } from "../context/AuthContext";
 import { getTransactions, deleteTransaction } from "../api/transactions";
 import { deleteRecurringPayment } from "../api/recurringPayments";
 import { getSpendableSurplus, getEstimatedSavings } from "../api/paychecks";
-import { getTipDeposits } from "../api/tipDeposits";
+import { getTipDeposits, getCashOnHand } from "../api/tipDeposits";
 import {
   CATEGORIES,
   CATEGORY_CONFIG,
@@ -48,7 +50,7 @@ import {
   fmt,
   fmtWhole,
 } from "../utils/finance";
-import { getNow } from "../utils/time";
+import { getNow, getToday } from "../utils/time";
 import Navbar from "../components/desktop/Navbar";
 import AddTransactionPage from "../components/desktop/AddTransactionPage";
 import PaychecksPanel from "../components/desktop/PaychecksPanel";
@@ -57,10 +59,13 @@ import InstallmentsPanel from "../components/desktop/InstallmentsPanel";
 import SummaryCard from "../components/desktop/SummaryCard";
 import ChartCard from "../components/shared/ChartCard";
 import TransactionTable from "../components/desktop/TransactionTable";
+import TipsTransactionsCard from "../components/desktop/TipsTransactionsCard";
 import CategoryTrendPanel from "../components/desktop/CategoryTrendPanel";
 import CategoryDetailPanel from "../components/desktop/CategoryDetailPanel";
 import CategoryUpcomingPanel from "../components/desktop/CategoryUpcomingPanel";
 import EditTransactionModal from "../components/desktop/EditTransactionModal";
+import CreditCardPaymentPanel from "../components/shared/CreditCardPaymentPanel";
+import CreditCardsPanel from "../components/desktop/CreditCardsPanel";
 import {
   BalanceBody,
   BillsBody,
@@ -211,26 +216,37 @@ function StackedFraction({ num, den, color }) {
   );
 }
 
-function OverviewPanelSkeleton({ surface, border }) {
+// Small icon tile for the TIPS TOTAL sub-headings, matching MobileTips's
+// hero tiles at a size that fits inside a quarter-width overview column.
+function tipsStatTile(color, outline) {
+  return {
+    width: 20, height: 20, borderRadius: "50%", flexShrink: 0,
+    background: outline ? "transparent" : color,
+    border: outline ? `1.5px solid ${color}` : "none",
+    display: "flex", alignItems: "center", justifyContent: "center",
+  };
+}
+
+// Cash-in-hand icon, white strokes on a filled teal circle - same as MobileTips.
+function IconHandCash({ size = 12 }) {
   return (
-    <div
-      className="grid grid-cols-4 rounded-2xl overflow-hidden"
-      style={{ backgroundColor: surface }}
-    >
-      {[...Array(4)].map((_, i) => (
-        <div
-          key={i}
-          style={{
-            padding: "16px 20px",
-            borderLeft: i === 0 ? "none" : `1px solid ${border}`,
-          }}
-        >
-          <Skel h={14} w="55%" />
-          <Skel h={28} w="70%" style={{ marginTop: 8 }} />
-          <Skel h={12} w="62%" style={{ marginTop: 7 }} />
-        </div>
-      ))}
-    </div>
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M11 15h2a2 2 0 1 0 0-4h-3c-.6 0-1.1.2-1.4.6L3 17" />
+      <path d="m7 21 1.6-1.4c.3-.4.8-.6 1.4-.6h4c1.1 0 2.1-.4 2.8-1.2l4.6-4.4a2 2 0 0 0-2.75-2.91l-4.2 3.9" />
+      <path d="m2 16 6 6" />
+      <circle cx="16" cy="9" r="2.9" />
+      <circle cx="6" cy="5" r="3" />
+    </svg>
+  );
+}
+
+function IconBank({ color, size = 11 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 21h18" />
+      <path d="M12 3 3 8h18z" />
+      <path d="M5 8v10M9.5 8v10M14.5 8v10M19 8v10" />
+    </svg>
   );
 }
 
@@ -257,6 +273,7 @@ function OverviewColumn({
       onMouseLeave={interactive ? () => setHovered(false) : undefined}
       className={`text-left transition-all duration-150 ${interactive ? "cursor-pointer active:scale-[0.98]" : ""}`}
       style={{
+        position: "relative",
         flex: 1,
         minWidth: 0,
         padding: "16px 20px",
@@ -401,6 +418,7 @@ const TOOL_TITLES = {
   paychecks: "Paychecks",
   recurring: "Recurring Payments",
   installments: "Installments",
+  creditCards: "Credit Cards",
   add: "Add Transaction",
 };
 const TOOL_TRANSITION_MS = 280;
@@ -424,6 +442,7 @@ export default function Dashboard() {
   const { isDemo } = useAuth();
   const [transactions, setTransactions] = useState([]);
   const [tipDeposits, setTipDeposits] = useState([]);
+  const [tipsCashOnHand, setTipsCashOnHand] = useState(0);
 
   const [dateRange, setDateRange] = useState(() => {
     const now = getNow();
@@ -583,6 +602,34 @@ export default function Dashboard() {
   });
   const [recurringAddSignal, setRecurringAddSignal] = useState(0);
   const [installmentsAddSignal, setInstallmentsAddSignal] = useState(0);
+  const [creditCardsAddSignal, setCreditCardsAddSignal] = useState(0);
+  const [creditCardsEditState, setCreditCardsEditState] = useState({
+    editMode: false,
+    hasRows: false,
+    toggleEdit: () => {},
+    hasSelection: false,
+    selectionCount: 0,
+    deleteSelected: () => {},
+  });
+  // Hold-to-delete on the Credit Cards header button: press and hold fills
+  // the ring around the trash icon; releasing early cancels, holding the
+  // full duration commits the delete.
+  const HOLD_DELETE_MS = 1200;
+  const HOLD_DELETE_RING_R = 16;
+  const HOLD_DELETE_RING_C = 2 * Math.PI * HOLD_DELETE_RING_R;
+  const [holdingDelete, setHoldingDelete] = useState(false);
+  function startDeleteHold() {
+    if (!(creditCardsEditState.editMode && creditCardsEditState.hasSelection)) return;
+    setHoldingDelete(true);
+  }
+  function cancelDeleteHold() {
+    setHoldingDelete(false);
+  }
+  function onDeleteRingTransitionEnd(e) {
+    if (e.propertyName !== "stroke-dashoffset" || !holdingDelete) return;
+    setHoldingDelete(false);
+    creditCardsEditState.deleteSelected();
+  }
   function openTool(mode) {
     clearTimeout(toolCloseTimer.current);
     setToolClosing(false);
@@ -703,6 +750,14 @@ export default function Dashboard() {
       .catch(() => setTipDeposits([]));
   }
 
+  // Mirrors MobileTips (#157): a server-computed, calendar-month-scoped
+  // aggregate, independent of the dashboard's own date range picker.
+  function loadCashOnHand() {
+    getCashOnHand()
+      .then((res) => setTipsCashOnHand(parseFloat(res.data.cash_on_hand)))
+      .catch(() => setTipsCashOnHand(0));
+  }
+
   function loadSafeToSpend() {
     getSpendableSurplus()
       .then((res) => {
@@ -743,6 +798,7 @@ export default function Dashboard() {
     loadSafeToSpend();
     loadSavings();
     loadTipDeposits();
+    loadCashOnHand();
   }, []);
   useEffect(
     () => () => {
@@ -764,6 +820,7 @@ export default function Dashboard() {
     loadSafeToSpend();
     loadSavings();
     loadTipDeposits();
+    loadCashOnHand();
   }
 
   async function handleDelete(t) {
@@ -848,6 +905,28 @@ export default function Dashboard() {
     () => depositsInRange(dateRange.from, dateRange.to),
     [depositsInRange, dateRange],
   );
+
+  // The actual deposit rows for the Tips category page's second table
+  // (#155/#156), not just their sum - same date-range filter as
+  // depositsInRange above.
+  const tipDepositsInRange = useMemo(() => {
+    return tipDeposits.filter((d) => {
+      const dt = new Date(d.deposit_date + "T00:00:00");
+      if (dateRange.from && dt < dateRange.from) return false;
+      if (dateRange.to && dt > dateRange.to) return false;
+      return true;
+    });
+  }, [tipDeposits, dateRange]);
+
+  // Calendar-month total, not date-range-scoped - pairs with tipsCashOnHand
+  // (also month-scoped) as the sub-headings on the TIPS TOTAL tile, mirroring
+  // MobileTips's hero regardless of whatever range is picked above.
+  const tipsMonthDepositedTotal = useMemo(() => {
+    const thisMonth = getToday().slice(0, 7);
+    return tipDeposits
+      .filter((d) => d.deposit_date.slice(0, 7) === thisMonth)
+      .reduce((s, d) => s + parseFloat(d.amount), 0);
+  }, [tipDeposits]);
 
   // Totals per category for the Income and Expenses drawers (#67). Deposits
   // aren't transactions, so they're added separately there.
@@ -975,7 +1054,16 @@ export default function Dashboard() {
 
   const trendData = useMemo(() => {
     const now = getNow();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const realToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    // Ends at the month selected via the chevrons/date-range picker up top,
+    // not always real "today" - otherwise switching months there never moves
+    // this chart at all (the same bug #152 fixed on mobile's Analytics tab,
+    // just here on desktop). Clamped so a range that reaches into the future
+    // can't push the window past today.
+    const selectedEnd = dateRange.to
+      ? new Date(dateRange.to.getFullYear(), dateRange.to.getMonth(), dateRange.to.getDate())
+      : realToday;
+    const today = selectedEnd > realToday ? realToday : selectedEnd;
     let start;
     if (trendMonths === "all") {
       start =
@@ -1031,7 +1119,7 @@ export default function Dashboard() {
       });
       return rounded;
     });
-  }, [transactions, trendMonths]);
+  }, [transactions, trendMonths, dateRange]);
 
   const trendTotals = useMemo(() => {
     const totals = {};
@@ -1130,6 +1218,12 @@ export default function Dashboard() {
 
   const totalPages = Math.max(1, Math.ceil(sorted.length / perPage));
   const paginated = sorted.slice((page - 1) * perPage, page * perPage);
+  // Deposited Tips shares the Tips page's page/perPage rather than owning
+  // separate pagination (#155/#156) - paged the same way, off the same state.
+  const paginatedDeposits = tipDepositsInRange
+    .slice()
+    .sort((a, b) => b.deposit_date.localeCompare(a.deposit_date))
+    .slice((page - 1) * perPage, page * perPage);
 
   useEffect(() => {
     setPage(1);
@@ -1414,9 +1508,7 @@ export default function Dashboard() {
       <Navbar
         transactions={transactions}
         onSelectTransaction={handleSelectTransaction}
-        onDeleteRecurringPayment={refreshTransactions}
-        onSaveRecurringPayment={refreshTransactions}
-        onPaycheckSaved={refreshTransactions}
+        onOpenTool={openTool}
         onCommand={(cmd, val) => {
           if (cmd === "devtools") setDevMenuOpen(val);
         }}
@@ -1611,6 +1703,16 @@ export default function Dashboard() {
                       </>
                     ),
                   },
+                  {
+                    key: "creditCards",
+                    label: "Credit Cards",
+                    icon: (
+                      <>
+                        <rect x="2" y="5" width="20" height="14" rx="2.2" />
+                        <line x1="2" y1="10" x2="22" y2="10" />
+                      </>
+                    ),
+                  },
                 ].map((tool) => {
                   const isActive = toolMode === tool.key;
                   const isHov = toolHov === tool.key;
@@ -1663,7 +1765,12 @@ export default function Dashboard() {
               className="px-6 py-6 flex-1"
               style={{
                 opacity: toolClosing ? 0 : 1,
-                transform: toolClosing ? "translateX(-32px)" : "translateX(0)",
+                // Only set a transform while actually animating - any value
+                // here (even translateX(0)) makes this the containing block
+                // for position:fixed descendants, breaking them out of true
+                // viewport-fixed positioning (panels like the credit card
+                // "+" picker would size/scroll against this div instead).
+                transform: toolClosing ? "translateX(-32px)" : undefined,
                 transition: `opacity ${TOOL_TRANSITION_MS}ms ease, transform ${TOOL_TRANSITION_MS}ms ease`,
                 animation: toolClosing
                   ? undefined
@@ -1702,13 +1809,13 @@ export default function Dashboard() {
                 >
                   {TOOL_TITLES[toolMode]}
                 </h1>
-                {(toolMode === "recurring" || toolMode === "installments") && (
+                {(toolMode === "recurring" || toolMode === "installments" || toolMode === "creditCards") && (
                   <div
                     style={{
                       marginLeft: "auto",
                       display: "flex",
                       alignItems: "center",
-                      gap: 10,
+                      gap: 14,
                     }}
                   >
                     {toolMode === "recurring" &&
@@ -1748,17 +1855,142 @@ export default function Dashboard() {
                         {recurringSaveState.isSaving ? "Saving…" : "Save"}
                       </button>
                     )}
+                    {toolMode === "creditCards" && (() => {
+                      const showDelete = creditCardsEditState.editMode && creditCardsEditState.hasSelection;
+                      return (
+                        <button
+                          onMouseDown={startDeleteHold}
+                          onMouseUp={cancelDeleteHold}
+                          onMouseLeave={cancelDeleteHold}
+                          onTouchStart={startDeleteHold}
+                          onTouchEnd={cancelDeleteHold}
+                          aria-label={`Hold to delete ${creditCardsEditState.selectionCount} selected`}
+                          tabIndex={showDelete ? 0 : -1}
+                          style={{
+                            width: showDelete ? 36 : 0,
+                            height: 36,
+                            borderRadius: "50%",
+                            flexShrink: 0,
+                            overflow: "hidden",
+                            cursor: showDelete ? "pointer" : "default",
+                            background: `color-mix(in srgb, ${HOME_EXPENSE} 16%, ${surface})`,
+                            border: `1px solid ${HOME_EXPENSE}`,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            position: "relative",
+                            color: HOME_EXPENSE,
+                            opacity: showDelete ? 1 : 0,
+                            transform: showDelete ? "scale(1)" : "scale(0.5)",
+                            marginLeft: showDelete ? 0 : -10,
+                            marginRight: showDelete ? 0 : -10,
+                            pointerEvents: showDelete ? "auto" : "none",
+                            userSelect: "none",
+                            transition:
+                              "width 220ms ease, margin 220ms ease, opacity 180ms ease, transform 220ms ease",
+                          }}
+                        >
+                          {/* Ring and icon share one 36x36 coordinate space so they're
+                              guaranteed to center on the same point - two separate
+                              overlapping SVGs left room for the two boxes to drift
+                              apart from each other. */}
+                          <svg
+                            width="36" height="36" viewBox="0 0 36 36"
+                            style={{ position: "absolute", inset: 0, pointerEvents: "none" }}
+                          >
+                            <g transform="translate(-1 -1)">
+                              <circle
+                                cx="18" cy="18" r={HOLD_DELETE_RING_R} fill="none" stroke={HOME_EXPENSE} strokeWidth="2.5"
+                                strokeLinecap="round"
+                                strokeDasharray={HOLD_DELETE_RING_C}
+                                strokeDashoffset={holdingDelete ? 0 : HOLD_DELETE_RING_C}
+                                transform="rotate(-90 18 18)"
+                                onTransitionEnd={onDeleteRingTransitionEnd}
+                                style={{
+                                  transition: holdingDelete
+                                    ? `stroke-dashoffset ${HOLD_DELETE_MS}ms linear`
+                                    : "stroke-dashoffset 150ms ease",
+                                }}
+                              />
+                              {/* Nested SVG viewport, not a hand-computed transform - x/y/width/height
+                                  place a 16x16 box at (10,10)-(26,26), i.e. centered in this 36x36
+                                  space ((36-16)/2 = 10 on each side), and its own viewBox handles
+                                  scaling the 24x24-authored icon down to fit. */}
+                              <svg x="10" y="10" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M3 6h18M19 6l-1 14H6L5 6M10 11v6M14 11v6M9 6V4h6v2" />
+                              </svg>
+                            </g>
+                          </svg>
+                        </button>
+                      );
+                    })()}
+                    {toolMode === "creditCards" && (
+                      <button
+                        onClick={creditCardsEditState.toggleEdit}
+                        aria-label={creditCardsEditState.editMode ? "Done editing" : "Edit credit card balances"}
+                        tabIndex={creditCardsEditState.hasRows ? 0 : -1}
+                        style={{
+                          width: creditCardsEditState.hasRows ? 36 : 0,
+                          height: 36,
+                          borderRadius: "50%",
+                          flexShrink: 0,
+                          overflow: "hidden",
+                          cursor: creditCardsEditState.hasRows ? "pointer" : "default",
+                          background: creditCardsEditState.editMode
+                            ? `color-mix(in srgb, ${HOME_INCOME} 18%, ${surface})`
+                            : surface,
+                          border: `1px solid ${creditCardsEditState.editMode ? HOME_INCOME : "rgba(255,255,255,0.07)"}`,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          position: "relative",
+                          color: creditCardsEditState.editMode ? HOME_INCOME : "#fff",
+                          opacity: creditCardsEditState.hasRows ? 1 : 0,
+                          transform: creditCardsEditState.hasRows ? "scale(1)" : "scale(0.5)",
+                          marginLeft: creditCardsEditState.hasRows ? 0 : -10,
+                          marginRight: creditCardsEditState.hasRows ? 0 : -10,
+                          pointerEvents: creditCardsEditState.hasRows ? "auto" : "none",
+                          transition:
+                            "width 220ms ease, margin 220ms ease, opacity 180ms ease, transform 220ms ease, background 200ms ease, border-color 200ms ease, color 200ms ease",
+                        }}
+                      >
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+                          style={{
+                            position: "absolute",
+                            opacity: creditCardsEditState.editMode ? 1 : 0,
+                            transform: creditCardsEditState.editMode ? "scale(1) rotate(0deg)" : "scale(0.4) rotate(-45deg)",
+                            transition: "opacity 200ms ease, transform 200ms ease",
+                          }}
+                        >
+                          <path d="M20 6 9 17l-5-5" />
+                        </svg>
+                        <svg
+                          xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                          style={{
+                            position: "absolute",
+                            opacity: creditCardsEditState.editMode ? 0 : 1,
+                            transform: creditCardsEditState.editMode ? "scale(0.4) rotate(45deg)" : "scale(1) rotate(0deg)",
+                            transition: "opacity 200ms ease, transform 200ms ease",
+                          }}
+                        >
+                          <path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                        </svg>
+                      </button>
+                    )}
                     {/* Same circular "+" mobile uses; the add UI lives in the panel. */}
                     <button
-                      onClick={() =>
-                        toolMode === "recurring"
-                          ? setRecurringAddSignal((n) => n + 1)
-                          : setInstallmentsAddSignal((n) => n + 1)
-                      }
+                      onClick={() => {
+                        if (toolMode === "recurring") setRecurringAddSignal((n) => n + 1);
+                        else if (toolMode === "installments") setInstallmentsAddSignal((n) => n + 1);
+                        else setCreditCardsAddSignal((n) => n + 1);
+                      }}
                       aria-label={
                         toolMode === "recurring"
                           ? "Add recurring payment"
-                          : "Add installment"
+                          : toolMode === "installments"
+                          ? "Add installment"
+                          : "Split a transaction as a credit card payment"
                       }
                       style={{
                         width: 36,
@@ -1827,6 +2059,19 @@ export default function Dashboard() {
                     desktop
                     addSignal={installmentsAddSignal}
                     onSaved={refreshTransactions}
+                  />
+                </div>
+              )}
+              {openedTools.has("creditCards") && (
+                <div
+                  style={{
+                    display: toolMode === "creditCards" ? "block" : "none",
+                  }}
+                >
+                  <CreditCardsPanel
+                    addSignal={creditCardsAddSignal}
+                    onChanged={refreshTransactions}
+                    onEditStateChange={setCreditCardsEditState}
                   />
                 </div>
               )}
@@ -2356,6 +2601,37 @@ export default function Dashboard() {
                       label={`${CATEGORY_CONFIG[activeTab].label.toUpperCase()} TOTAL`}
                       value={fmt(summary.categoryTotal)}
                       color={activeColor}
+                      valueNode={
+                        activeTab === "TIPS" ? (
+                          <>
+                            <p
+                              style={{
+                                fontSize: 22,
+                                fontWeight: 700,
+                                color: activeColor,
+                                margin: "6px 0 0",
+                                fontVariantNumeric: "tabular-nums",
+                              }}
+                            >
+                              {fmt(summary.categoryTotal)}
+                            </p>
+                            <div className="flex items-center gap-2" style={{ marginTop: 8 }}>
+                              <div style={tipsStatTile(activeColor)}><IconHandCash /></div>
+                              <div>
+                                <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: text, fontVariantNumeric: "tabular-nums" }}>{fmt(tipsCashOnHand)}</p>
+                                <p style={{ margin: "1px 0 0", fontSize: 11, fontWeight: 500, color: muted }}>cash on hand</p>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2" style={{ position: "absolute", right: 20, bottom: 14 }}>
+                              <div style={tipsStatTile(TIPS_DEPOSITED, true)}><IconBank color={TIPS_DEPOSITED} /></div>
+                              <div>
+                                <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: TIPS_DEPOSITED, fontVariantNumeric: "tabular-nums" }}>{fmt(tipsMonthDepositedTotal)}</p>
+                                <p style={{ margin: "1px 0 0", fontSize: 11, fontWeight: 500, color: muted }}>deposited</p>
+                              </div>
+                            </div>
+                          </>
+                        ) : undefined
+                      }
                     />
                     {INCOME_TYPES.has(activeTab) ? (
                       <OverviewColumn
@@ -3127,26 +3403,47 @@ export default function Dashboard() {
                     style={{ gridTemplateColumns: "2fr 1fr" }}
                   >
                     <div ref={tableRef}>
-                      <TransactionTable
-                        rows={paginated}
-                        page={page}
-                        perPage={perPage}
-                        total={sorted.length}
-                        onPageChange={setPage}
-                        onPerPageChange={setPerPage}
-                        onEdit={(t) => {
-                          setEditingTransaction(t);
-                          setEditingFromSearch(false);
-                        }}
-                        onDelete={handleDelete}
-                        activeColor={activeColor}
-                        highlightId={highlightId}
-                        sortColumn={sortColumn}
-                        sortDir={sortDir}
-                        onSort={handleSort}
-                        query={tableQuery}
-                        onQueryChange={setTableQuery}
-                      />
+                      {activeTab === "TIPS" ? (
+                        <TipsTransactionsCard
+                          tipsRows={paginated}
+                          tipsTotal={sorted.length}
+                          depositRows={paginatedDeposits}
+                          page={page}
+                          perPage={perPage}
+                          onPageChange={setPage}
+                          onPerPageChange={setPerPage}
+                          query={tableQuery}
+                          onQueryChange={setTableQuery}
+                          onEditTransaction={(t) => {
+                            setEditingTransaction(t);
+                            setEditingFromSearch(false);
+                          }}
+                          onDeleteTransaction={handleDelete}
+                          onSaved={refreshTransactions}
+                          activeColor={activeColor}
+                        />
+                      ) : (
+                        <TransactionTable
+                          rows={paginated}
+                          page={page}
+                          perPage={perPage}
+                          total={sorted.length}
+                          onPageChange={setPage}
+                          onPerPageChange={setPerPage}
+                          onEdit={(t) => {
+                            setEditingTransaction(t);
+                            setEditingFromSearch(false);
+                          }}
+                          onDelete={handleDelete}
+                          activeColor={activeColor}
+                          highlightId={highlightId}
+                          sortColumn={sortColumn}
+                          sortDir={sortDir}
+                          onSort={handleSort}
+                          query={tableQuery}
+                          onQueryChange={setTableQuery}
+                        />
+                      )}
                     </div>
                     {activeTab === "ALL" ? (
                       <CategoryTrendPanel
@@ -3436,22 +3733,35 @@ export default function Dashboard() {
       )}
 
       {editingTransaction && (
-        <EditTransactionModal
-          // Keyed by id, or switching rows keeps the previous form values (#81).
-          key={editingTransaction.id}
-          transaction={editingTransaction}
-          onClose={() => {
-            setEditingTransaction(null);
-            setEditingFromSearch(false);
-          }}
-          onSaved={() => {
-            setEditingTransaction(null);
-            setEditingFromSearch(false);
-            refreshTransactions();
-          }}
-          onDelete={handleDelete}
-          onLocate={editingFromSearch ? handleLocateTransaction : undefined}
-        />
+        editingTransaction.credit_card_payment_id ? (
+          <CreditCardPaymentPanel
+            key={editingTransaction.id}
+            desktop
+            paymentId={editingTransaction.credit_card_payment_id}
+            onClose={() => {
+              setEditingTransaction(null);
+              setEditingFromSearch(false);
+            }}
+            onChanged={refreshTransactions}
+          />
+        ) : (
+          <EditTransactionModal
+            // Keyed by id, or switching rows keeps the previous form values (#81).
+            key={editingTransaction.id}
+            transaction={editingTransaction}
+            onClose={() => {
+              setEditingTransaction(null);
+              setEditingFromSearch(false);
+            }}
+            onSaved={() => {
+              setEditingTransaction(null);
+              setEditingFromSearch(false);
+              refreshTransactions();
+            }}
+            onDelete={handleDelete}
+            onLocate={editingFromSearch ? handleLocateTransaction : undefined}
+          />
+        )
       )}
     </div>
   );
