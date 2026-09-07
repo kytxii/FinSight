@@ -74,8 +74,22 @@ import {
   ExpensesBody,
 } from "../components/desktop/OverviewBreakdownSheet";
 import Footer from "../components/shared/Footer";
+import IconToolTile from "../components/desktop/IconToolTile";
+import TrendPill from "../components/desktop/TrendPill";
+import StackedFraction from "../components/desktop/StackedFraction";
+import OverviewColumn from "../components/desktop/OverviewColumn";
+import EmptyChartState from "../components/desktop/EmptyChartState";
+import {
+  DevMenuSection,
+  DevMenuInfo,
+  DevMenuButton,
+  DevMenuRow,
+} from "../components/desktop/DevMenuControls";
+import { IconHandCash, IconBank } from "../components/shared/TipsIcons";
 import { useDevMenu } from "../hooks/shared/useDevMenu";
 import { useDashboardData } from "../hooks/shared/useDashboardData";
+import { useToolPanels } from "../hooks/desktop/useToolPanels";
+import { useTransactionFilters } from "../hooks/desktop/useTransactionFilters";
 
 // Shows the month title with arrows when the range is a single month.
 function isSingleMonthRange(range) {
@@ -98,125 +112,6 @@ function isSingleMonthRange(range) {
   );
 }
 
-function IconToolTile({ children }) {
-  return (
-    <div
-      style={{
-        width: 30,
-        height: 30,
-        borderRadius: 9,
-        flexShrink: 0,
-        background: "#2a2a2e",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.12)",
-      }}
-    >
-      <svg
-        width="16"
-        height="16"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="#c7c7cc"
-        strokeWidth="1.7"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        {children}
-      </svg>
-    </div>
-  );
-}
-
-function TrendPill({ label, value, color }) {
-  return (
-    <div
-      style={{
-        flex: "0 0 auto",
-        display: "flex",
-        alignItems: "center",
-        gap: 6,
-        padding: "6px 11px",
-        borderRadius: 999,
-        backgroundColor: "rgba(255,255,255,0.05)",
-      }}
-    >
-      <span
-        style={{
-          width: 8,
-          height: 8,
-          borderRadius: "50%",
-          backgroundColor: color,
-          flexShrink: 0,
-        }}
-      />
-      <span
-        style={{
-          whiteSpace: "nowrap",
-          fontSize: 13,
-          fontWeight: 600,
-          color: HOME_MUTED,
-        }}
-      >
-        {label}
-      </span>
-      <span
-        style={{
-          whiteSpace: "nowrap",
-          fontSize: 13,
-          fontWeight: 700,
-          color: HOME_TEXT,
-          fontVariantNumeric: "tabular-nums",
-        }}
-      >
-        {value}
-      </span>
-    </div>
-  );
-}
-
-function StackedFraction({ num, den, color }) {
-  return (
-    <span
-      style={{
-        display: "inline-flex",
-        flexDirection: "column",
-        alignItems: "flex-start",
-        lineHeight: 1.2,
-      }}
-    >
-      <span
-        style={{
-          fontSize: 20,
-          fontWeight: 700,
-          color,
-          fontVariantNumeric: "tabular-nums",
-        }}
-      >
-        {num}
-      </span>
-      <span
-        style={{
-          width: "100%",
-          borderTop: `1.5px solid color-mix(in srgb, ${color} 45%, transparent)`,
-          margin: "3px 0",
-        }}
-      />
-      <span
-        style={{
-          fontSize: 13,
-          fontWeight: 600,
-          color: HOME_MUTED,
-          fontVariantNumeric: "tabular-nums",
-        }}
-      >
-        {den}
-      </span>
-    </span>
-  );
-}
-
 // Small icon tile for the TIPS TOTAL sub-headings, matching MobileTips's
 // hero tiles at a size that fits inside a quarter-width overview column.
 function tipsStatTile(color, outline) {
@@ -226,132 +121,6 @@ function tipsStatTile(color, outline) {
     border: outline ? `1.5px solid ${color}` : "none",
     display: "flex", alignItems: "center", justifyContent: "center",
   };
-}
-
-// Cash-in-hand icon, white strokes on a filled teal circle - same as MobileTips.
-function IconHandCash({ size = 12 }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M11 15h2a2 2 0 1 0 0-4h-3c-.6 0-1.1.2-1.4.6L3 17" />
-      <path d="m7 21 1.6-1.4c.3-.4.8-.6 1.4-.6h4c1.1 0 2.1-.4 2.8-1.2l4.6-4.4a2 2 0 0 0-2.75-2.91l-4.2 3.9" />
-      <path d="m2 16 6 6" />
-      <circle cx="16" cy="9" r="2.9" />
-      <circle cx="6" cy="5" r="3" />
-    </svg>
-  );
-}
-
-function IconBank({ color, size = 11 }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M3 21h18" />
-      <path d="M12 3 3 8h18z" />
-      <path d="M5 8v10M9.5 8v10M14.5 8v10M19 8v10" />
-    </svg>
-  );
-}
-
-// One column of the unified overview panel (#123).
-function OverviewColumn({
-  label,
-  value,
-  valueNode,
-  color,
-  caption,
-  onClick,
-  active,
-  first,
-}) {
-  const [hovered, setHovered] = useState(false);
-  const tint = color ?? HOME_TEXT;
-  const interactive = onClick != null;
-  const Tag = interactive ? "button" : "div";
-  return (
-    <Tag
-      type={interactive ? "button" : undefined}
-      onClick={onClick}
-      onMouseEnter={interactive ? () => setHovered(true) : undefined}
-      onMouseLeave={interactive ? () => setHovered(false) : undefined}
-      className={`text-left transition-all duration-150 ${interactive ? "cursor-pointer active:scale-[0.98]" : ""}`}
-      style={{
-        position: "relative",
-        flex: 1,
-        minWidth: 0,
-        padding: "16px 20px",
-        border: "none",
-        borderRadius: 0,
-        borderLeft: first ? "none" : `1px solid ${HOME_DIVIDER}`,
-        backgroundColor: active
-          ? `color-mix(in srgb, ${tint} 12%, transparent)`
-          : hovered
-            ? `color-mix(in srgb, ${tint} 7%, transparent)`
-            : "transparent",
-        font: "inherit",
-        color: "inherit",
-      }}
-    >
-      <div className="flex items-center justify-between gap-2">
-        <p
-          style={{
-            fontSize: 11,
-            fontWeight: 700,
-            letterSpacing: "0.06em",
-            textTransform: "uppercase",
-            color: HOME_MUTED,
-            margin: 0,
-          }}
-        >
-          {label}
-        </p>
-        {interactive && (
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="13"
-            height="13"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            style={{
-              color: active || hovered ? tint : HOME_MUTED,
-              flexShrink: 0,
-              transform: active ? "rotate(180deg)" : "none",
-              transition: "transform 200ms ease, color 150ms ease",
-            }}
-          >
-            <path d="M6 9l6 6 6-6" />
-          </svg>
-        )}
-      </div>
-      {valueNode ?? (
-        <p
-          style={{
-            fontSize: 22,
-            fontWeight: 700,
-            color,
-            margin: "6px 0 0",
-            fontVariantNumeric: "tabular-nums",
-          }}
-        >
-          {value}
-        </p>
-      )}
-      {caption != null && (
-        <p
-          style={{
-            fontSize: 11,
-            fontWeight: 600,
-            color: HOME_MUTED,
-            margin: "5px 0 0",
-          }}
-        >
-          {caption}
-        </p>
-      )}
-    </Tag>
-  );
 }
 
 // Steps from the month being viewed, not from today.
@@ -488,16 +257,32 @@ export default function Dashboard() {
     refresh: refreshTransactions,
   } = useDashboardData(devFetch, [loadCashOnHand]);
 
-  const [dateRange, setDateRange] = useState(() => {
-    const now = getNow();
-    const from = new Date(now);
-    from.setDate(1);
-    from.setHours(0, 0, 0, 0);
-    const to = new Date(now);
-    to.setMonth(to.getMonth() + 1, 0);
-    to.setHours(23, 59, 59, 999);
-    return { from, to };
-  });
+  // #177: desktop-only category-tab/date-range/search/sort/pagination
+  // cluster - see hooks/desktop/useTransactionFilters. Declared here (before
+  // trackedYears/trackedMonthsByYear below) since dateRange feeds a later
+  // effect's deps array - same TDZ reasoning as useDashboardData above.
+  const {
+    activeTab,
+    setActiveTab,
+    categoryClosing,
+    setCategoryClosing,
+    categoryCloseTimer,
+    dateRange,
+    setDateRange,
+    activePreset,
+    setActivePreset,
+    page,
+    setPage,
+    perPage,
+    setPerPage,
+    typeFilter,
+    setTypeFilter,
+    tableQuery,
+    setTableQuery,
+    sortColumn,
+    sortDir,
+    handleSort,
+  } = useTransactionFilters();
 
   // Only years that have transactions show in the year picker (#124).
   const trackedYears = useMemo(() => {
@@ -523,9 +308,6 @@ export default function Dashboard() {
   const [outgoingCell, setOutgoingCell] = useState(null);
   const outgoingTimer = useRef(null);
   const breakdownCloseTimer = useRef(null);
-  const [activeTab, setActiveTab] = useState("ALL"); // "ALL" | any category
-  const [categoryClosing, setCategoryClosing] = useState(false);
-  const categoryCloseTimer = useRef(null);
   const [trendMonths, setTrendMonths] = useState(1); // 1 | 3 | 6 | 12 | "all"
   const trendRangeRef = useRef(null);
   const [rangeIndicator, setRangeIndicator] = useState(null);
@@ -623,10 +405,18 @@ export default function Dashboard() {
       setPickerOpen(true);
     }
   }, [renderPicker, datePicker, pickerWidth]);
-  const [toolMode, setToolMode] = useState(null); // null | "paychecks" | "recurring" | "installments" | "add"
-  const [toolClosing, setToolClosing] = useState(false);
-  const toolCloseTimer = useRef(null);
-  const [openedTools, setOpenedTools] = useState(new Set());
+  // #177: desktop-only "which tool panel is open" cluster - see
+  // hooks/desktop/useToolPanels.
+  const {
+    toolMode,
+    setToolMode,
+    toolClosing,
+    setToolClosing,
+    toolCloseTimer,
+    openedTools,
+    openTool,
+    closeTool,
+  } = useToolPanels(TOOL_TRANSITION_MS);
   const [recurringSaveState, setRecurringSaveState] = useState({
     isDirty: false,
     isSaving: false,
@@ -663,24 +453,6 @@ export default function Dashboard() {
     setHoldingDelete(false);
     creditCardsEditState.deleteSelected();
   }
-  function openTool(mode) {
-    clearTimeout(toolCloseTimer.current);
-    setToolClosing(false);
-    setToolMode(mode);
-    setOpenedTools((prev) => (prev.has(mode) ? prev : new Set(prev).add(mode)));
-  }
-  function closeTool() {
-    // Setting toolClosing with no tool open remounts the page, which looks
-    // like a full refresh.
-    if (toolMode == null) return;
-    clearTimeout(toolCloseTimer.current);
-    setToolClosing(true);
-    toolCloseTimer.current = setTimeout(() => {
-      setToolMode(null);
-      setToolClosing(false);
-    }, TOOL_TRANSITION_MS);
-  }
-
   // Opens the same way Tools do, but keyed to `activeTab`. "ALL" means closed.
   function openCategory(cat) {
     clearTimeout(categoryCloseTimer.current);
@@ -701,34 +473,7 @@ export default function Dashboard() {
   }
   const [editingTransaction, setEditingTransaction] = useState(null);
   const [editingFromSearch, setEditingFromSearch] = useState(false);
-  const [page, setPage] = useState(1);
-  const [perPage, setPerPage] = useState(10);
-  const [typeFilter, setTypeFilter] = useState(null);
-  const [tableQuery, setTableQuery] = useState("");
-  const [sortColumn, setSortColumn] = useState("date");
-  const [sortDir, setSortDir] = useState("desc");
-
-  function handleSort(col) {
-    if (col === "date") {
-      if (sortColumn === "date")
-        setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-      else {
-        setSortColumn("date");
-        setSortDir("desc");
-      }
-    } else {
-      if (sortColumn !== col) {
-        setSortColumn(col);
-        setSortDir("asc");
-      } else if (sortDir === "asc") setSortDir("desc");
-      else {
-        setSortColumn("date");
-        setSortDir("desc");
-      }
-    }
-  }
   const [highlightId, setHighlightId] = useState(null);
-  const [activePreset, setActivePreset] = useState("Current Month");
   const [catHov, setCatHov] = useState(null);
   const [toolHov, setToolHov] = useState(null);
 
@@ -762,7 +507,11 @@ export default function Dashboard() {
       clearTimeout(toolCloseTimer.current);
       clearTimeout(categoryCloseTimer.current);
     },
-    [],
+    // toolCloseTimer/categoryCloseTimer come from custom hooks rather than a
+    // local useRef, so eslint can't statically see they're stable across
+    // renders (they are - refs always are) - listed explicitly instead of
+    // disabling the rule.
+    [toolCloseTimer, categoryCloseTimer],
   );
 
   async function handleDelete(t) {
@@ -808,7 +557,11 @@ export default function Dashboard() {
         50,
       );
     },
-    [transactions, perPage],
+    // categoryCloseTimer/setActiveTab/setCategoryClosing/setDateRange/setPage
+    // come from custom hooks (useTransactionFilters) rather than local
+    // useState/useRef, so eslint can't statically see they're stable across
+    // renders (they are) - listed explicitly instead of disabling the rule.
+    [transactions, perPage, categoryCloseTimer, setActiveTab, setCategoryClosing, setDateRange, setPage],
   );
 
   const filtered = useMemo(() => {
@@ -1169,7 +922,10 @@ export default function Dashboard() {
 
   useEffect(() => {
     setPage(1);
-  }, [filtered, perPage, tableQuery, typeFilter, sortColumn, sortDir]);
+    // setPage comes from useTransactionFilters rather than local useState,
+    // so eslint can't statically see it's stable across renders (it is) -
+    // listed explicitly instead of disabling the rule.
+  }, [filtered, perPage, tableQuery, typeFilter, sortColumn, sortDir, setPage]);
 
   useEffect(() => {
     if (!categoriesOpen) return;
@@ -2558,14 +2314,14 @@ export default function Dashboard() {
                               {fmt(summary.categoryTotal)}
                             </p>
                             <div className="flex items-center gap-2" style={{ marginTop: 8 }}>
-                              <div style={tipsStatTile(activeColor)}><IconHandCash /></div>
+                              <div style={tipsStatTile(activeColor)}><IconHandCash size={12} /></div>
                               <div>
                                 <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: text, fontVariantNumeric: "tabular-nums" }}>{fmt(tipsCashOnHand)}</p>
                                 <p style={{ margin: "1px 0 0", fontSize: 11, fontWeight: 500, color: muted }}>cash on hand</p>
                               </div>
                             </div>
                             <div className="flex items-center gap-2" style={{ position: "absolute", right: 20, bottom: 14 }}>
-                              <div style={tipsStatTile(TIPS_DEPOSITED, true)}><IconBank color={TIPS_DEPOSITED} /></div>
+                              <div style={tipsStatTile(TIPS_DEPOSITED, true)}><IconBank color={TIPS_DEPOSITED} size={11} /></div>
                               <div>
                                 <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: TIPS_DEPOSITED, fontVariantNumeric: "tabular-nums" }}>{fmt(tipsMonthDepositedTotal)}</p>
                                 <p style={{ margin: "1px 0 0", fontSize: 11, fontWeight: 500, color: muted }}>deposited</p>
@@ -3047,7 +2803,7 @@ export default function Dashboard() {
                         </ResponsiveContainer>
                       </div>
                     ) : (
-                      <Empty />
+                      <EmptyChartState />
                     )}
                   </div>
                 ) : (
@@ -3163,7 +2919,7 @@ export default function Dashboard() {
                           </AreaChart>
                         </ResponsiveContainer>
                       ) : (
-                        <Empty />
+                        <EmptyChartState />
                       )}
                     </ChartCard>
 
@@ -3232,7 +2988,7 @@ export default function Dashboard() {
                           </BarChart>
                         </ResponsiveContainer>
                       ) : (
-                        <Empty />
+                        <EmptyChartState />
                       )}
                     </ChartCard>
                   </div>
@@ -3705,164 +3461,3 @@ export default function Dashboard() {
   );
 }
 
-function DevMenuSection({ label, border, muted }) {
-  return (
-    <div
-      style={{
-        padding: "8px 14px 4px",
-        borderTop: `1px solid ${border}`,
-        marginTop: 4,
-      }}
-    >
-      <span
-        style={{
-          fontSize: 9,
-          fontWeight: 700,
-          letterSpacing: "0.1em",
-          color: muted,
-        }}
-      >
-        {label}
-      </span>
-    </div>
-  );
-}
-
-function DevMenuInfo({ label, value, muted, text }) {
-  return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        padding: "4px 14px",
-        gap: 12,
-      }}
-    >
-      <span style={{ fontSize: 12, color: muted }}>{label}</span>
-      <span
-        style={{
-          fontSize: 11,
-          fontWeight: 600,
-          color: text,
-          fontFamily: "monospace",
-          textAlign: "right",
-          maxWidth: 140,
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-        }}
-      >
-        {value}
-      </span>
-    </div>
-  );
-}
-
-function DevMenuButton({
-  label,
-  description,
-  onClick,
-  muted,
-  text,
-  border,
-  danger,
-}) {
-  return (
-    <div style={{ padding: "3px 14px" }}>
-      <button
-        onClick={onClick}
-        style={{
-          width: "100%",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          padding: "5px 8px",
-          borderRadius: 8,
-          border: `1px solid ${border}`,
-          background: "transparent",
-          cursor: "pointer",
-          transition: "background-color 150ms ease",
-        }}
-        onMouseEnter={(e) =>
-          (e.currentTarget.style.backgroundColor = danger
-            ? `color-mix(in srgb, ${HOME_EXPENSE} 8%, transparent)`
-            : `color-mix(in srgb, ${text} 6%, transparent)`)
-        }
-        onMouseLeave={(e) =>
-          (e.currentTarget.style.backgroundColor = "transparent")
-        }
-      >
-        <span
-          style={{
-            fontSize: 12,
-            fontWeight: 500,
-            color: danger ? HOME_EXPENSE : text,
-          }}
-        >
-          {label}
-        </span>
-        <span style={{ fontSize: 10, color: muted }}>{description}</span>
-      </button>
-    </div>
-  );
-}
-
-function DevMenuRow({ label, active, onToggle, muted, text, border }) {
-  return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        padding: "6px 14px",
-        gap: 12,
-      }}
-    >
-      <span style={{ fontSize: 12, fontWeight: 500, color: text }}>
-        {label}
-      </span>
-      <button
-        onClick={onToggle}
-        style={{
-          width: 38,
-          height: 22,
-          borderRadius: 999,
-          border: "none",
-          cursor: "pointer",
-          flexShrink: 0,
-          backgroundColor: active
-            ? HOME_INCOME
-            : `color-mix(in srgb, ${text} 18%, transparent)`,
-          position: "relative",
-          transition: "background-color 180ms ease",
-        }}
-      >
-        <div
-          style={{
-            position: "absolute",
-            top: 3,
-            left: active ? "calc(100% - 19px)" : 3,
-            width: 16,
-            height: 16,
-            borderRadius: "50%",
-            backgroundColor: "#fff",
-            transition: "left 180ms ease",
-            boxShadow: "0 1px 3px rgba(0,0,0,0.25)",
-          }}
-        />
-      </button>
-    </div>
-  );
-}
-
-function Empty() {
-  return (
-    <div
-      className="h-70 flex items-center justify-center text-base"
-      style={{ color: HOME_TEXT }}
-    >
-      No data yet
-    </div>
-  );
-}
