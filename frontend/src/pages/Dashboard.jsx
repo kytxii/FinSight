@@ -38,8 +38,7 @@ import {
 import { useAuth } from "../context/AuthContext";
 import { getTransactions, deleteTransaction } from "../api/transactions";
 import { deleteRecurringPayment } from "../api/recurringPayments";
-import { getSpendableSurplus, getEstimatedSavings } from "../api/paychecks";
-import { getTipDeposits, getCashOnHand } from "../api/tipDeposits";
+import { getCashOnHand } from "../api/tipDeposits";
 import {
   CATEGORIES,
   CATEGORY_CONFIG,
@@ -76,6 +75,7 @@ import {
 } from "../components/desktop/OverviewBreakdownSheet";
 import Footer from "../components/shared/Footer";
 import { useDevMenu } from "../hooks/shared/useDevMenu";
+import { useDashboardData } from "../hooks/shared/useDashboardData";
 
 // Shows the month title with arrows when the range is a single month.
 function isSingleMonthRange(range) {
@@ -441,9 +441,52 @@ function loadTrendCategories() {
 
 export default function Dashboard() {
   const { isDemo } = useAuth();
-  const [transactions, setTransactions] = useState([]);
-  const [tipDeposits, setTipDeposits] = useState([]);
   const [tipsCashOnHand, setTipsCashOnHand] = useState(0);
+
+  // #177/#190: identical state + forced-fetch logic used to be duplicated
+  // here and in MobileDashboard - see hooks/shared/useDevMenu. Declared
+  // above everything else in this component because devFetch/transactions
+  // below feed useMemos (trackedYears, etc.) that run during this same
+  // render - referencing them before they're assigned throws a TDZ error.
+  const devMenu = useDevMenu();
+  const {
+    open: devMenuOpen,
+    setOpen: setDevMenuOpen,
+    forceEmpty: devForceEmpty,
+    setForceEmpty: setDevForceEmpty,
+    delay: devDelay,
+    setDelay: setDevDelay,
+    forceError: devForceError,
+    toggleForceError: toggleDevForceError,
+    lastFetch: devLastFetch,
+  } = devMenu;
+
+  function devFetch() {
+    return devMenu.devFetch(getTransactions);
+  }
+
+  // Mirrors MobileTips (#157): a server-computed, calendar-month-scoped
+  // aggregate, independent of the dashboard's own date range picker. Passed
+  // to useDashboardData as an extra loader since it's desktop-only - the
+  // shared hook doesn't hardcode either platform's platform-only fetches.
+  function loadCashOnHand() {
+    getCashOnHand()
+      .then((res) => setTipsCashOnHand(parseFloat(res.data.cash_on_hand)))
+      .catch(() => setTipsCashOnHand(0));
+  }
+
+  const {
+    transactions,
+    setTransactions,
+    loading,
+    setLoading,
+    tipDeposits,
+    safeToSpend,
+    safeToSpendStatus,
+    savings,
+    savingsStatus,
+    refresh: refreshTransactions,
+  } = useDashboardData(devFetch, [loadCashOnHand]);
 
   const [dateRange, setDateRange] = useState(() => {
     const now = getNow();
@@ -475,30 +518,11 @@ export default function Dashboard() {
     return map;
   }, [transactions]);
 
-  const [loading, setLoading] = useState(true);
-  const [safeToSpend, setSafeToSpend] = useState(null);
-  const [safeToSpendStatus, setSafeToSpendStatus] = useState("loading"); // loading | ok | no-balance | no-schedule | error
-  const [savings, setSavings] = useState(null);
-  const [savingsStatus, setSavingsStatus] = useState("loading"); // loading | ok | no-schedule | no-amounts | no-history | error
   const [breakdownCell, setBreakdownCell] = useState(null); // null | balance | bills | cash | savings | income | expenses
   const [breakdownClosing, setBreakdownClosing] = useState(false);
   const [outgoingCell, setOutgoingCell] = useState(null);
   const outgoingTimer = useRef(null);
   const breakdownCloseTimer = useRef(null);
-  // #177/#190: identical state + forced-fetch logic used to be duplicated
-  // here and in MobileDashboard - see hooks/shared/useDevMenu.
-  const devMenu = useDevMenu();
-  const {
-    open: devMenuOpen,
-    setOpen: setDevMenuOpen,
-    forceEmpty: devForceEmpty,
-    setForceEmpty: setDevForceEmpty,
-    delay: devDelay,
-    setDelay: setDevDelay,
-    forceError: devForceError,
-    toggleForceError: toggleDevForceError,
-    lastFetch: devLastFetch,
-  } = devMenu;
   const [activeTab, setActiveTab] = useState("ALL"); // "ALL" | any category
   const [categoryClosing, setCategoryClosing] = useState(false);
   const categoryCloseTimer = useRef(null);
@@ -731,77 +755,6 @@ export default function Dashboard() {
 
   const tableRef = useRef(null);
 
-  function devFetch() {
-    return devMenu.devFetch(getTransactions);
-  }
-
-  useEffect(() => {
-    devFetch()
-      .then((res) => {
-        setTransactions(res.data);
-        setLoading(false);
-      })
-      .catch(() => {
-        setLoading(false);
-      });
-  }, []);
-
-  function loadTipDeposits() {
-    getTipDeposits()
-      .then((res) => setTipDeposits(res.data))
-      .catch(() => setTipDeposits([]));
-  }
-
-  // Mirrors MobileTips (#157): a server-computed, calendar-month-scoped
-  // aggregate, independent of the dashboard's own date range picker.
-  function loadCashOnHand() {
-    getCashOnHand()
-      .then((res) => setTipsCashOnHand(parseFloat(res.data.cash_on_hand)))
-      .catch(() => setTipsCashOnHand(0));
-  }
-
-  function loadSafeToSpend() {
-    getSpendableSurplus()
-      .then((res) => {
-        setSafeToSpend(res.data);
-        setSafeToSpendStatus("ok");
-      })
-      .catch((err) => {
-        const detail = err.response?.data?.detail;
-        setSafeToSpend(null);
-        if (detail === "No starting balance set")
-          setSafeToSpendStatus("no-balance");
-        else if (detail === "No active paycheck schedule found")
-          setSafeToSpendStatus("no-schedule");
-        else setSafeToSpendStatus("error");
-      });
-  }
-
-  function loadSavings() {
-    getEstimatedSavings()
-      .then((res) => {
-        setSavings(res.data);
-        setSavingsStatus("ok");
-      })
-      .catch((err) => {
-        const detail = err.response?.data?.detail;
-        setSavings(null);
-        if (detail === "No active paycheck schedule found")
-          setSavingsStatus("no-schedule");
-        else if (detail === "No paycheck amounts yet")
-          setSavingsStatus("no-amounts");
-        else if (detail === "Not enough spending history")
-          setSavingsStatus("no-history");
-        else setSavingsStatus("error");
-      });
-  }
-
-  useEffect(() => {
-    loadSafeToSpend();
-    loadSavings();
-    loadTipDeposits();
-    loadCashOnHand();
-  }, []);
   useEffect(
     () => () => {
       clearTimeout(breakdownCloseTimer.current);
@@ -811,18 +764,6 @@ export default function Dashboard() {
     },
     [],
   );
-
-  function refreshTransactions() {
-    devFetch()
-      .then((res) => {
-        setTransactions(res.data);
-      })
-      .catch(() => {});
-    loadSafeToSpend();
-    loadSavings();
-    loadTipDeposits();
-    loadCashOnHand();
-  }
 
   async function handleDelete(t) {
     if (t.recurring_payment_id) {
