@@ -34,6 +34,12 @@ import MobileScreen from "../components/mobile/MobileScreen";
 import { useSheetDrag } from "../hooks/shared/useSheetDrag";
 import { useDevMenu } from "../hooks/shared/useDevMenu";
 import { useDashboardData } from "../hooks/shared/useDashboardData";
+import {
+  useHoldToDelete,
+  HOLD_DELETE_MS,
+  HOLD_DELETE_RING_R,
+  HOLD_DELETE_RING_C,
+} from "../hooks/shared/useHoldToDelete";
 import Footer from "../components/shared/Footer";
 import AccountPanel from "../components/shared/AccountPanel";
 import OverviewBreakdownSheet from "../components/desktop/OverviewBreakdownSheet";
@@ -226,25 +232,14 @@ export default function MobileDashboard() {
     selectionCount: 0,
     deleteSelected: () => {},
   });
-  // Hold-to-delete on the Credit Cards header button: press and hold fills
-  // the ring around the trash icon; releasing early cancels, holding the
-  // full duration commits the delete. Mirrors the desktop header button.
-  const HOLD_DELETE_MS = 1200;
-  const HOLD_DELETE_RING_R = 16;
-  const HOLD_DELETE_RING_C = 2 * Math.PI * HOLD_DELETE_RING_R;
-  const [holdingDelete, setHoldingDelete] = useState(false);
-  function startDeleteHold() {
-    if (!(creditCardsEditState.editMode && creditCardsEditState.hasSelection)) return;
-    setHoldingDelete(true);
-  }
-  function cancelDeleteHold() {
-    setHoldingDelete(false);
-  }
-  function onDeleteRingTransitionEnd(e) {
-    if (e.propertyName !== "stroke-dashoffset" || !holdingDelete) return;
-    setHoldingDelete(false);
-    creditCardsEditState.deleteSelected();
-  }
+  // #190: was byte-identical here and in Dashboard.jsx - see
+  // hooks/shared/useHoldToDelete.
+  const {
+    holding: holdingDelete,
+    start: startDeleteHold,
+    cancel: cancelDeleteHold,
+    onRingTransitionEnd: onDeleteRingTransitionEnd,
+  } = useHoldToDelete(creditCardsEditState);
   const [installmentsAddSignal, setInstallmentsAddSignal] = useState(0);
   const [recurringAddSignal, setRecurringAddSignal] = useState(0);
   const [paychecksOpen, setPaychecksOpen] = useState(false);
