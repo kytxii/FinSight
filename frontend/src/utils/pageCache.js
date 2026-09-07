@@ -25,3 +25,11 @@ export function setCached(key, value) {
 export function clearCached(key) {
   store.delete(key);
 }
+
+// Called on every session boundary (login, logout, demo mode entry) - the
+// store is keyed by static per-page strings, not per-user, so a stale entry
+// left behind would otherwise seed the next account's session with the
+// previous user's cached data on a shared device.
+export function clearAllCached() {
+  store.clear();
+}

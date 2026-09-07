@@ -63,30 +63,98 @@ class PaymentDetail(NamedTuple):
     charges: list[ChargeInfo]
 
 
-async def _charge_info(charge: CreditCardCharge, db: AsyncSession) -> ChargeInfo:
-    return ChargeInfo(
-        charge=charge,
-        paid=await _paid_on_charge(charge.id, db),
-        settled_transaction_id=await _settled_transaction_id(charge.id, db),
-    )
+async def _build_payment_details(
+    payments: list[CreditCardPayment], db: AsyncSession
+) -> list[PaymentDetail]:
+    """Assemble PaymentDetail for any number of payments in a fixed number of
+    queries.
+
+    The obvious shape - loop the payments, and inside that loop the charges,
+    querying as it goes - cost 1 + P*(3 + 3C) round trips, so rendering the
+    Credit Cards list with 20 payments of 5 charges fired ~360 queries at a
+    hosted database for one page (#171). Batching means the query count is the
+    same whether there's one payment or fifty.
+    """
+    if not payments:
+        return []
+
+    payment_ids = [p.id for p in payments]
+
+    # Allocations against these payments: gives both what's been paid on each
+    # payment and which charges it touches.
+    allocation_rows = (await db.execute(
+        select(
+            CreditCardChargeAllocation.payment_id,
+            CreditCardChargeAllocation.charge_id,
+            CreditCardChargeAllocation.amount_applied,
+        ).where(CreditCardChargeAllocation.payment_id.in_(payment_ids))
+    )).all()
+
+    paid_by_payment: dict[UUID, Decimal] = {}
+    charge_ids_by_payment: dict[UUID, list[UUID]] = {}
+    for payment_id, charge_id, amount in allocation_rows:
+        paid_by_payment[payment_id] = paid_by_payment.get(payment_id, Decimal(0)) + amount
+        touched = charge_ids_by_payment.setdefault(payment_id, [])
+        if charge_id not in touched:
+            touched.append(charge_id)
+
+    charge_ids = {charge_id for _, charge_id, _ in allocation_rows}
+    charges_by_id: dict[UUID, CreditCardCharge] = {}
+    paid_by_charge: dict[UUID, Decimal] = {}
+    settled_by_charge: dict[UUID, UUID] = {}
+
+    if charge_ids:
+        charges_by_id = {
+            charge.id: charge
+            for charge in (await db.scalars(
+                select(CreditCardCharge).where(CreditCardCharge.id.in_(charge_ids))
+            )).all()
+        }
+
+        # Deliberately a second pass over allocations rather than reusing the
+        # rows above: a charge can be split across several payments, so its
+        # paid total has to count every allocation against it, including ones
+        # belonging to payments outside this set.
+        for charge_id, amount in (await db.execute(
+            select(
+                CreditCardChargeAllocation.charge_id,
+                CreditCardChargeAllocation.amount_applied,
+            ).where(CreditCardChargeAllocation.charge_id.in_(charge_ids))
+        )).all():
+            paid_by_charge[charge_id] = paid_by_charge.get(charge_id, Decimal(0)) + amount
+
+        settled_by_charge = dict((await db.execute(
+            select(Transaction.credit_card_charge_id, Transaction.id)
+            .where(Transaction.credit_card_charge_id.in_(charge_ids))
+        )).all())
+
+    details: list[PaymentDetail] = []
+    for payment in payments:
+        paid = _cents(paid_by_payment.get(payment.id, Decimal(0)))
+        charges = [
+            ChargeInfo(
+                charge=charges_by_id[charge_id],
+                paid=_cents(paid_by_charge.get(charge_id, Decimal(0))),
+                settled_transaction_id=settled_by_charge.get(charge_id),
+            )
+            for charge_id in charge_ids_by_payment.get(payment.id, [])
+            if charge_id in charges_by_id
+        ]
+        charges.sort(key=lambda c: (c.charge.charge_date, c.charge.created_at))
+        details.append(
+            PaymentDetail(
+                payment=payment,
+                paid=paid,
+                left=payment.total_amount - paid,
+                charges=charges,
+            )
+        )
+    return details
 
 
 async def get_payment_detail(payment_id: UUID, current_user: UUID, db: AsyncSession) -> PaymentDetail:
     payment = await _get_owned_payment(payment_id, current_user, db)
-    paid = await _paid_on_payment(payment_id, db)
-
-    charge_ids = (await db.execute(
-        select(CreditCardChargeAllocation.charge_id).where(CreditCardChargeAllocation.payment_id == payment_id).distinct()
-    )).scalars().all()
-
-    charges: list[ChargeInfo] = []
-    for charge_id in charge_ids:
-        charge = await db.scalar(select(CreditCardCharge).where(CreditCardCharge.id == charge_id))
-        if charge is not None:
-            charges.append(await _charge_info(charge, db))
-    charges.sort(key=lambda c: (c.charge.charge_date, c.charge.created_at))
-
-    return PaymentDetail(payment=payment, paid=paid, left=payment.total_amount - paid, charges=charges)
+    return (await _build_payment_details([payment], db))[0]
 
 
 async def create_payment(
@@ -152,7 +220,7 @@ async def get_payments(current_user: UUID, db: AsyncSession) -> list[PaymentDeta
         .where(CreditCardPayment.created_by == current_user)
         .order_by(CreditCardPayment.payment_date.desc())
     )).all()
-    return [await get_payment_detail(payment.id, current_user, db) for payment in payments]
+    return await _build_payment_details(list(payments), db)
 
 
 async def delete_payment(payment_id: UUID, current_user: UUID, db: AsyncSession) -> None:
@@ -236,10 +304,6 @@ async def remove_charge_from_payment(payment_id: UUID, charge_id: UUID, current_
 
     await db.commit()
     return await get_payment_detail(payment_id, current_user, db)
-
-
-async def _settled_transaction_id(charge_id: UUID, db: AsyncSession) -> UUID | None:
-    return await db.scalar(select(Transaction.id).where(Transaction.credit_card_charge_id == charge_id))
 
 
 async def _promote_if_settled(charge: CreditCardCharge, current_user: UUID, db: AsyncSession) -> None:
