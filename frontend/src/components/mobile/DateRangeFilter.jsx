@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useTheme } from "../../hooks/useTheme";
+import { useTheme } from "../../hooks/mobile/useTheme";
 import { getNow } from "../../utils/time";
 
 export const PRESETS = ["Current Month", "Last Month", "3m", "6m", "1y", "All"];

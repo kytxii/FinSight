@@ -121,7 +121,12 @@ function ActivityRow({ t, first, last, openId, setOpenId, onEditTransaction, onD
         <div style={{
           display: "flex", alignItems: "center", gap: 14, padding: "11px 14px",
           backgroundColor: highlightId === t.id ? `color-mix(in srgb, ${HOME_ACCENT} 18%, ${HOME_SURFACE})` : HOME_SURFACE,
-          transition: "background-color 0.4s ease",
+          // The wrapping SwipeableRow clips to rounded corners (overflow:
+          // hidden), so this box-shadow ring follows the row's actual shape
+          // even on the first/last row of a card - matches desktop's
+          // TransactionTable highlight.
+          boxShadow: highlightId === t.id ? "inset 0 0 0 1px #fff" : undefined,
+          transition: "background-color 0.4s ease, box-shadow 0.4s ease",
         }}>
           <div style={{
             flex: "0 0 auto", width: 40, height: 40, borderRadius: "50%",
@@ -152,7 +157,7 @@ function ActivityRow({ t, first, last, openId, setOpenId, onEditTransaction, onD
   );
 }
 
-export default function MobileActivity({ transactions, deposits = [], loading, onEditTransaction, onDeleteTransaction, onEditDeposit, onDeleteDeposit, jump }) {
+export default function MobileActivity({ transactions, deposits = [], loading, onEditTransaction, onDeleteTransaction, onEditDeposit, onDeleteDeposit, jump, onJumpHandled }) {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("ALL");
   const [sortField, setSortField] = useState(null); // null | "amount" | "name" | "date"
@@ -264,22 +269,38 @@ export default function MobileActivity({ transactions, deposits = [], loading, o
     const targetTxn = transactions.find((t) => t.id === jump.id);
     const monthIdx = targetTxn ? jumpMonths.indexOf(monthKey(targetTxn.transaction_date)) : -1;
     if (monthIdx !== -1) setVisibleMonthCount((c) => Math.max(c, MONTHS_PER_PAGE, monthIdx + 1));
-    // Expands the target's month if it's collapsed, or the scroll below fails.
+    // Collapse every month above the target's, not just expand the target's
+    // if it happened to be collapsed - loading months up to the target only
+    // to leave them all expanded meant scrolling past the full row list of
+    // every month in between to reach it. Only the target month's rows
+    // actually render; the rest are just their (still-visible) headers.
     if (targetTxn) {
-      const jumpMonth = monthLabel(targetTxn.transaction_date);
-      setCollapsedMonths((prev) => {
-        if (!prev.has(jumpMonth)) return prev;
-        const next = new Set(prev);
-        next.delete(jumpMonth);
-        return next;
-      });
+      const monthsAbove = jumpMonths.slice(0, monthIdx).map((mk) => monthLabel(mk + "-01"));
+      setCollapsedMonths(new Set(monthsAbove));
     }
     setHighlightId(jump.id);
-    const clearHighlight = setTimeout(() => setHighlightId(null), 2500);
+    // Scroll is delayed past the 0.2s collapse transition above - starting
+    // it while other months are still animating shut moves the target's
+    // position mid-scroll.
     const scrollTimer = setTimeout(() => {
       rowRefs.current[jump.id]?.scrollIntoView({ behavior: "smooth", block: "center" });
-    }, 50);
-    return () => { clearTimeout(clearHighlight); clearTimeout(scrollTimer); };
+    }, 260);
+    const clearHighlight = setTimeout(() => {
+      setHighlightId(null);
+      // Tells the parent this jump was consumed so it clears its own jump
+      // state - otherwise leaving this tab and coming back remounts this
+      // component with the same stale jump prop and replays the whole
+      // thing (highlight + scroll) every single time, indefinitely.
+      onJumpHandled?.();
+    }, 2500);
+    return () => {
+      clearTimeout(clearHighlight);
+      clearTimeout(scrollTimer);
+      // Also consumed on early unmount (navigating away before the timers
+      // above fire) - otherwise a quick tab-away-and-back within that
+      // window still replays it once.
+      onJumpHandled?.();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-run on a new jump request, not every transactions change
   }, [jump]);
 
