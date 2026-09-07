@@ -12,7 +12,7 @@ import {
   deleteInstallment,
 } from "../../api/installments";
 import { getSpendableSurplus } from "../../api/paychecks";
-import { useSheetDrag, SHEET_EASE } from "../../hooks/useSheetDrag";
+import { useSheetDrag, SHEET_EASE } from "../../hooks/shared/useSheetDrag";
 import {
   HOME_TEXT, HOME_MUTED, HOME_SURFACE, HOME_DIVIDER, HOME_EXPENSE, HOME_INCOME, HOME_ACCENT,
   GAUGE_DARK_GREEN, GAUGE_GREEN, GAUGE_YELLOW, GAUGE_ORANGE, GAUGE_RED, TILE_COLOR, ACCENT,

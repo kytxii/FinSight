@@ -75,6 +75,7 @@ import {
   ExpensesBody,
 } from "../components/desktop/OverviewBreakdownSheet";
 import Footer from "../components/shared/Footer";
+import { useDevMenu } from "../hooks/shared/useDevMenu";
 
 // Shows the month title with arrows when the range is a single month.
 function isSingleMonthRange(range) {
@@ -484,12 +485,20 @@ export default function Dashboard() {
   const [outgoingCell, setOutgoingCell] = useState(null);
   const outgoingTimer = useRef(null);
   const breakdownCloseTimer = useRef(null);
-  const [devMenuOpen, setDevMenuOpen] = useState(false);
-  const [devForceEmpty, setDevForceEmpty] = useState(false);
-  const [devDelay, setDevDelay] = useState(0);
-  const [devForceError, setDevForceError] = useState(false);
-  const [devLastFetch, setDevLastFetch] = useState(null);
-  const devForceErrorRef = useRef(false);
+  // #177/#190: identical state + forced-fetch logic used to be duplicated
+  // here and in MobileDashboard - see hooks/shared/useDevMenu.
+  const devMenu = useDevMenu();
+  const {
+    open: devMenuOpen,
+    setOpen: setDevMenuOpen,
+    forceEmpty: devForceEmpty,
+    setForceEmpty: setDevForceEmpty,
+    delay: devDelay,
+    setDelay: setDevDelay,
+    forceError: devForceError,
+    toggleForceError: toggleDevForceError,
+    lastFetch: devLastFetch,
+  } = devMenu;
   const [activeTab, setActiveTab] = useState("ALL"); // "ALL" | any category
   const [categoryClosing, setCategoryClosing] = useState(false);
   const categoryCloseTimer = useRef(null);
@@ -722,14 +731,8 @@ export default function Dashboard() {
 
   const tableRef = useRef(null);
 
-  async function devFetch() {
-    if (devForceErrorRef.current) {
-      devForceErrorRef.current = false;
-      setDevForceError(false);
-      throw new Error("Forced error");
-    }
-    if (devDelay > 0) await new Promise((r) => setTimeout(r, devDelay));
-    return getTransactions();
+  function devFetch() {
+    return devMenu.devFetch(getTransactions);
   }
 
   useEffect(() => {
@@ -737,7 +740,6 @@ export default function Dashboard() {
       .then((res) => {
         setTransactions(res.data);
         setLoading(false);
-        setDevLastFetch(new Date());
       })
       .catch(() => {
         setLoading(false);
@@ -814,7 +816,6 @@ export default function Dashboard() {
     devFetch()
       .then((res) => {
         setTransactions(res.data);
-        setDevLastFetch(new Date());
       })
       .catch(() => {});
     loadSafeToSpend();
@@ -3561,11 +3562,7 @@ export default function Dashboard() {
             <DevMenuRow
               label="Force next error"
               active={devForceError}
-              onToggle={() => {
-                const next = !devForceError;
-                setDevForceError(next);
-                devForceErrorRef.current = next;
-              }}
+              onToggle={toggleDevForceError}
               muted={muted}
               text={text}
               border={border}

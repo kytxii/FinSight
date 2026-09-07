@@ -25,14 +25,15 @@ import {
   MONEY_OUT_TYPES,
   lockedNameFor,
 } from "../utils/finance";
-import { useTheme } from "../hooks/useTheme";
+import { useTheme } from "../hooks/mobile/useTheme";
 import { useAuth } from "../context/AuthContext";
 import { getPresetRange } from "../components/mobile/DateRangeFilter";
 import { getToday, getNow } from "../utils/time";
 import { errorMessage } from "../utils/errors";
 import MobilePageSlide from "../components/mobile/MobilePageSlide";
 import MobileScreen from "../components/mobile/MobileScreen";
-import { useSheetDrag } from "../hooks/useSheetDrag";
+import { useSheetDrag } from "../hooks/shared/useSheetDrag";
+import { useDevMenu } from "../hooks/shared/useDevMenu";
 import Footer from "../components/shared/Footer";
 import AccountPanel from "../components/shared/AccountPanel";
 import OverviewBreakdownSheet from "../components/desktop/OverviewBreakdownSheet";
@@ -199,12 +200,20 @@ export default function MobileDashboard() {
   const [entrySheetOpen, setEntrySheetOpen] = useState(false);
 
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [devOpen, setDevOpen] = useState(false);
-  const [devForceEmpty, setDevForceEmpty] = useState(false);
-  const [devDelay, setDevDelay] = useState(0);
-  const [devForceError, setDevForceError] = useState(false);
-  const [devLastFetch, setDevLastFetch] = useState(null);
-  const devForceErrorRef = useRef(false);
+  // #177/#190: identical state + forced-fetch logic used to be duplicated
+  // here and in Dashboard.jsx - see hooks/shared/useDevMenu.
+  const devMenu = useDevMenu();
+  const {
+    open: devOpen,
+    setOpen: setDevOpen,
+    forceEmpty: devForceEmpty,
+    setForceEmpty: setDevForceEmpty,
+    delay: devDelay,
+    setDelay: setDevDelay,
+    forceError: devForceError,
+    toggleForceError: toggleDevForceError,
+    lastFetch: devLastFetch,
+  } = devMenu;
   const [recurringOpen, setRecurringOpen] = useState(false);
   const [installmentsOpen, setInstallmentsOpen] = useState(false);
   const [creditCardsOpen, setCreditCardsOpen] = useState(false);
@@ -266,14 +275,8 @@ export default function MobileDashboard() {
   const [savingsStatus, setSavingsStatus] = useState("loading"); // loading | ok | no-schedule | no-amounts | no-history | error
   const [upcomingItems, setUpcomingItems] = useState([]);
 
-  async function devFetch() {
-    if (devForceErrorRef.current) {
-      devForceErrorRef.current = false;
-      setDevForceError(false);
-      throw new Error("Forced error");
-    }
-    if (devDelay > 0) await new Promise(r => setTimeout(r, devDelay));
-    return getTransactions();
+  function devFetch() {
+    return devMenu.devFetch(getTransactions);
   }
 
   function loadSafeToSpend() {
@@ -315,7 +318,6 @@ export default function MobileDashboard() {
     devFetch().then((res) => {
       setTransactions(res.data);
       setLoading(false);
-      setDevLastFetch(new Date());
     }).catch(() => {
     });
     loadSafeToSpend();
@@ -329,7 +331,6 @@ export default function MobileDashboard() {
     devFetch().then((res) => {
       setTransactions(res.data);
       setLoading(false);
-      setDevLastFetch(new Date());
     }).catch(() => {});
     loadSafeToSpend();
     loadSavings();
@@ -2188,7 +2189,7 @@ export default function MobileDashboard() {
                 <DevToggle active={devForceEmpty} onToggle={() => setDevForceEmpty(v => !v)} />
               </DevRow>
               <DevRow label="Force next error" description="Next fetch throws">
-                <DevToggle active={devForceError} onToggle={() => { const n = !devForceError; setDevForceError(n); devForceErrorRef.current = n; }} />
+                <DevToggle active={devForceError} onToggle={toggleDevForceError} />
               </DevRow>
               <DevRow label="Re-fetch" description="Reload transactions">
                 <button onClick={() => { setLoading(true); refresh(); }} className="px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer border" style={{ color: HOME_TEXT, borderColor: HOME_DIVIDER, backgroundColor: "rgba(255,255,255,0.06)" }}>Run</button>
