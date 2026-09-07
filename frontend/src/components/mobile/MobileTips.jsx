@@ -10,6 +10,7 @@ import { periodLabel } from "../../utils/mobileFormat";
 import { updateTipDeposit, deleteTipDeposit, getCashOnHand, convertTipDepositToTransaction } from "../../api/tipDeposits";
 import { HOME_TEXT, HOME_MUTED, HOME_SURFACE, HOME_DIVIDER, HOME_EXPENSE, HOME_INCOME, HOME_ACCENT, TILE_COLOR } from "../shared/categoryVisuals";
 import { IconTipsTile } from "../shared/categoryIcons";
+import { IconHandCash, IconBank } from "../shared/TipsIcons";
 
 const TIPS = TILE_COLOR.TIPS;        // #26a69a
 const TIPS_DEPOSITED = "#5ccfc0";    // lighter teal for the deposit state
@@ -29,29 +30,6 @@ function IconBack() {
   return (
     <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke={HOME_TEXT} strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
       <path d="M15 18l-6-6 6-6" />
-    </svg>
-  );
-}
-
-// Cash-in-hand icon, white strokes on a filled teal circle like the others.
-function IconHandCash({ size = 20 }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M11 15h2a2 2 0 1 0 0-4h-3c-.6 0-1.1.2-1.4.6L3 17" />
-      <path d="m7 21 1.6-1.4c.3-.4.8-.6 1.4-.6h4c1.1 0 2.1-.4 2.8-1.2l4.6-4.4a2 2 0 0 0-2.75-2.91l-4.2 3.9" />
-      <path d="m2 16 6 6" />
-      <circle cx="16" cy="9" r="2.9" />
-      <circle cx="6" cy="5" r="3" />
-    </svg>
-  );
-}
-
-function IconBank({ color, size = 18 }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M3 21h18" />
-      <path d="M12 3 3 8h18z" />
-      <path d="M5 8v10M9.5 8v10M14.5 8v10M19 8v10" />
     </svg>
   );
 }
@@ -317,7 +295,7 @@ export default function MobileTips({ transactions, deposits, loading, onBack, on
                 deleteColor="#fff"
               >
                 <div style={{ display: "flex", alignItems: "center", gap: 14, padding: "11px 14px", backgroundColor: HOME_SURFACE }}>
-                  <div style={tile("transparent", TIPS_DEPOSITED)}><IconBank color={TIPS_DEPOSITED} /></div>
+                  <div style={tile("transparent", TIPS_DEPOSITED)}><IconBank color={TIPS_DEPOSITED} size={18} /></div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <p style={{ margin: 0, fontSize: 16.5, fontWeight: 600, letterSpacing: "-0.2px", color: HOME_TEXT, fontVariantNumeric: "tabular-nums" }}>{fmt(d.amount)}</p>
                     <p style={{ margin: "2px 0 0", fontSize: 13, fontWeight: 600, color: TIPS_DEPOSITED }}>Deposited {shortDate(d.deposit_date)}</p>

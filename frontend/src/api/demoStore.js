@@ -7,6 +7,19 @@ import {
   computeMonthlyPayment,
   computeGaugeStatus,
 } from "../utils/installmentMath";
+import { computeCashOnHand } from "../utils/cashOnHand";
+import { computeRunningBalance } from "../utils/runningBalance";
+import {
+  toDateStr,
+  nextMonthStart,
+  addMonthsClamped,
+  iterPayDates,
+  generatePayDatesThrough,
+  averageRecentAmounts,
+  committedItems,
+  computeSpendableSurplus,
+  computeEstimatedSavings,
+} from "../utils/paycheckMath";
 
 const TX_KEY = "demo_transactions";
 const RP_KEY = "demo_recurring";
@@ -2737,8 +2750,6 @@ const PAYCHECK_EXPENSE_CATEGORIES = new Set([
   "SAVINGS",
   "DEBT",
 ]);
-const PAYCHECK_INCOME_CATEGORIES = new Set(["INCOME", "REIMBURSEMENT", "TIPS"]);
-
 // Excludes SAVINGS - moving money into savings isn't spending it.
 const NON_SAVINGS_EXPENSE_CATEGORIES = new Set([
   "EXPENSE",
@@ -2749,96 +2760,6 @@ const NON_SAVINGS_EXPENSE_CATEGORIES = new Set([
 // Money that's actually arrived. Cash tips don't count until deposited (#131).
 const MONEY_IN_CATEGORIES = new Set(["INCOME", "REIMBURSEMENT"]);
 const SAVINGS_HISTORY_MONTHS = 3;
-
-function toDateStr(d) {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
-// Adds months to a date, clamping the day if the target month is shorter
-// (Jan 31 + 1 month -> Feb 28). Mirrors _add_months.
-function addMonthsClamped(base, months) {
-  const year = base.getFullYear();
-  const month = base.getMonth();
-  const day = base.getDate();
-  const targetIndex = month + months;
-  const targetYear = year + Math.floor(targetIndex / 12);
-  const targetMonth = ((targetIndex % 12) + 12) % 12;
-  const lastDay = new Date(targetYear, targetMonth + 1, 0).getDate();
-  return new Date(targetYear, targetMonth, Math.min(day, lastDay));
-}
-
-// Yields a schedule's pay dates going forward. SEMI_MONTHLY produces two dates
-// 15 days apart each month.
-function* iterPayDates(schedule) {
-  const start = new Date(schedule.start_date + "T00:00:00");
-
-  if (schedule.frequency === "WEEKLY" || schedule.frequency === "BIWEEKLY") {
-    const stepDays = schedule.frequency === "WEEKLY" ? 7 : 14;
-    let current = start;
-    while (true) {
-      yield current;
-      current = new Date(current);
-      current.setDate(current.getDate() + stepDays);
-    }
-  } else if (schedule.frequency === "MONTHLY") {
-    let months = 0;
-    while (true) {
-      yield addMonthsClamped(start, months);
-      months += 1;
-    }
-  } else if (schedule.frequency === "SEMI_MONTHLY") {
-    let months = 0;
-    while (true) {
-      const anchor = addMonthsClamped(start, months);
-      yield anchor;
-      const second = new Date(anchor);
-      second.setDate(second.getDate() + 15);
-      yield second;
-      months += 1;
-    }
-  }
-}
-
-function generatePayDatesThrough(schedule, through) {
-  const dates = [];
-  for (const d of iterPayDates(schedule)) {
-    dates.push(d);
-    if (d > through) break;
-  }
-  return dates;
-}
-
-function nextOccurrence(dayOfMonth, fromDate) {
-  const lastDay = new Date(
-    fromDate.getFullYear(),
-    fromDate.getMonth() + 1,
-    0,
-  ).getDate();
-  const candidate = new Date(
-    fromDate.getFullYear(),
-    fromDate.getMonth(),
-    Math.min(dayOfMonth, lastDay),
-  );
-  if (candidate >= fromDate) return candidate;
-
-  const nextMonth = addMonthsClamped(
-    new Date(fromDate.getFullYear(), fromDate.getMonth(), 1),
-    1,
-  );
-  const nextLastDay = new Date(
-    nextMonth.getFullYear(),
-    nextMonth.getMonth() + 1,
-    0,
-  ).getDate();
-  return new Date(
-    nextMonth.getFullYear(),
-    nextMonth.getMonth(),
-    Math.min(dayOfMonth, nextLastDay),
-  );
-}
 
 function backfillPaychecks(through) {
   const schedules = getAll(PS_KEY);
@@ -3017,39 +2938,12 @@ export const setBalanceAnchor = (data) => {
   return respond(anchor);
 };
 
-function balanceDelta(t) {
-  const amt = parseFloat(t.amount);
-  // A settled credit card charge (#54) already had its cash counted once via
-  // its payment's own transaction - counting it again here would double it.
-  // An expense paid_with_cash never touched checking either, same reasoning
-  // from the other direction - the cash tips that funded it were never
-  // counted as income here (#131), so counting the expense side without the
-  // income side would be the asymmetry #151 fixes.
-  if (t.category === "TIPS" || t.credit_card_charge_id || t.paid_with_cash) return 0;
-  return PAYCHECK_INCOME_CATEGORIES.has(t.category) ? amt : -amt;
-}
-
-function computeRunningBalance() {
+// See utils/runningBalance.js for the actual rule (#176).
+function computeRunningBalanceFromStore() {
   const raw = localStorage.getItem(BA_KEY);
   if (!raw) return null;
   const anchor = JSON.parse(raw);
-
-  const net = getAll(TX_KEY)
-    .filter(
-      (t) =>
-        t.transaction_date >= anchor.as_of_date &&
-        t.transaction_date <= DEMO_TODAY,
-    )
-    .reduce((sum, t) => sum + balanceDelta(t), 0);
-
-  const depositTotal = getAll(TD_KEY)
-    .filter(
-      (d) =>
-        d.deposit_date >= anchor.as_of_date && d.deposit_date <= DEMO_TODAY,
-    )
-    .reduce((sum, d) => sum + parseFloat(d.amount), 0);
-
-  return parseFloat(anchor.current_balance) + net + depositTotal;
+  return computeRunningBalance(anchor, getAll(TX_KEY), getAll(TD_KEY), DEMO_TODAY);
 }
 
 export const getRunningBalance = () => {
@@ -3061,61 +2955,11 @@ export const getRunningBalance = () => {
   }
   const anchor = JSON.parse(raw);
   return respond({
-    balance: computeRunningBalance().toFixed(2),
+    balance: computeRunningBalanceFromStore().toFixed(2),
     as_of_date: anchor.as_of_date,
   });
 };
 
-function nextMonthStart(today) {
-  const month = today.getMonth();
-  const year = today.getFullYear();
-  return month === 11 ? new Date(year + 1, 0, 1) : new Date(year, month + 1, 1);
-}
-
-function averageRecentAmounts(scheduleId, allPaychecks, limit = 3) {
-  const amounts = allPaychecks
-    .filter((p) => p.schedule_id === scheduleId && p.amount != null)
-    .sort((a, b) => b.pay_date.localeCompare(a.pay_date))
-    .slice(0, limit)
-    .map((p) => parseFloat(p.amount));
-  if (amounts.length === 0) return null;
-  return amounts.reduce((a, b) => a + b, 0) / amounts.length;
-}
-
-function committedItems(recurring, today, horizon) {
-  let total = 0;
-  const items = [];
-  recurring.forEach((rp) => {
-    if (rp.day_of_month == null) {
-      total += parseFloat(rp.amount);
-      items.push({
-        name: rp.name,
-        amount: parseFloat(rp.amount).toFixed(2),
-        day_of_month: null,
-        due_date: null,
-        category: rp.category,
-      });
-    } else {
-      const occurrence = nextOccurrence(rp.day_of_month, today);
-      if (occurrence <= horizon) {
-        total += parseFloat(rp.amount);
-        items.push({
-          name: rp.name,
-          amount: parseFloat(rp.amount).toFixed(2),
-          day_of_month: rp.day_of_month,
-          due_date: toDateStr(occurrence),
-          category: rp.category,
-        });
-      }
-    }
-  });
-  items.sort(
-    (a, b) =>
-      (a.due_date == null) - (b.due_date == null) ||
-      (a.due_date ?? "").localeCompare(b.due_date ?? ""),
-  );
-  return { total, items };
-}
 
 export const getSpendingReserve = () => {
   const raw = localStorage.getItem(RES_KEY);
@@ -3136,7 +2980,7 @@ function getSpendingReserveValue() {
 }
 
 export const getSpendableSurplus = () => {
-  const runningBalance = computeRunningBalance();
+  const runningBalance = computeRunningBalanceFromStore();
   if (runningBalance == null) {
     return Promise.reject({
       response: { status: 404, data: { detail: "No starting balance set" } },
@@ -3188,9 +3032,12 @@ export const getSpendableSurplus = () => {
   const { total: billsBeforeNextPayday, items: billsBreakdown } =
     committedItems(recurring, today, nextPayday);
 
-  const spendableSurplus =
-    runningBalance + (nextPaydayEstimate ?? 0) - billsBeforeNextPayday;
-  const freeToAllocate = spendableSurplus - getSpendingReserveValue();
+  const { spendableSurplus, freeToAllocate } = computeSpendableSurplus(
+    runningBalance,
+    nextPaydayEstimate,
+    billsBeforeNextPayday,
+    getSpendingReserveValue(),
+  );
 
   return respond({
     next_payday: nextPaydayStr,
@@ -3371,21 +3218,14 @@ export const getEstimatedSavings = () => {
     )
     .reduce((sum, t) => sum + parseFloat(t.amount), 0);
 
-  // Whatever's left of the historical average once actual spend is netted
-  // out, floored at 0 - not a full remaining-days share of the average
-  // stacked on top of actual spend unconditionally, which double-billed a
-  // front-loaded month (#133), same fix as the real backend.
-  const discretionaryProjectedRemaining = Math.max(
-    monthlyDiscretionaryAvg - discretionarySpentSoFar,
-    0,
+  // See utils/paycheckMath.js's computeEstimatedSavings for the actual rule
+  // (#133, #130).
+  const { estimatedSavings, discretionaryProjectedRemaining } = computeEstimatedSavings(
+    wholeMonthIncome,
+    committedRecurring,
+    discretionarySpentSoFar,
+    monthlyDiscretionaryAvg,
   );
-
-  const rawCeiling =
-    wholeMonthIncome -
-    committedRecurring -
-    discretionarySpentSoFar -
-    discretionaryProjectedRemaining;
-  const estimatedSavings = Math.max(rawCeiling, 0);
 
   return respond({
     month_start: monthStartStr,
@@ -3474,25 +3314,11 @@ export const convertTipDepositToTransaction = (id) => {
   return respond(transaction);
 };
 
-// Scoped to a calendar month (default: the current demo month) to match the
-// backend fix in #157 - this used to sum all-time, which read as wrong sitting
-// next to the this-month figures beside it. cash_on_hand is this month's
-// earned cash tips, not earned minus deposited - a deposit isn't tied to the
-// month its cash was earned, so netting the two would go negative whenever a
-// prior month's undeposited cash gets deposited this month.
+// See utils/cashOnHand.js for the actual rule (#176) - scoped to a calendar
+// month (default: the current demo month) to match the backend fix in #157.
 export const getCashOnHand = (year, month) => {
   const period = year && month ? `${year}-${String(month).padStart(2, "0")}` : demoCurrentMonth();
-  const tipsEarned = getAll(TX_KEY)
-    .filter((t) => t.category === "TIPS" && t.transaction_date.slice(0, 7) === period)
-    .reduce((s, t) => s + parseFloat(t.amount), 0);
-  const tipsDeposited = getAll(TD_KEY)
-    .filter((d) => d.deposit_date.slice(0, 7) === period)
-    .reduce((s, d) => s + parseFloat(d.amount), 0);
-  return respond({
-    cash_on_hand: tipsEarned.toFixed(2),
-    tips_earned: tipsEarned.toFixed(2),
-    tips_deposited: tipsDeposited.toFixed(2),
-  });
+  return respond(computeCashOnHand(getAll(TX_KEY), getAll(TD_KEY), period));
 };
 
 // Installments

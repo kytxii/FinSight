@@ -12,8 +12,21 @@ from app.models import User
 TEST_EMAIL = "test@finsight.dev"
 TEST_PASSWORD = "TestPassword1!"
 
+if not settings.TEST_DATABASE_URL:
+    raise RuntimeError(
+        "TEST_DATABASE_URL is not set. Point it at a database dedicated to "
+        "the test suite (e.g. a separate Neon branch) - refusing to fall "
+        "back to DATABASE_URL."
+    )
+if settings.TEST_DATABASE_URL == settings.DATABASE_URL:
+    raise RuntimeError(
+        "TEST_DATABASE_URL must not be the same as DATABASE_URL - this "
+        "suite mutates and deletes data, and must not run against whatever "
+        "database local dev or production is pointed at."
+    )
+
 test_engine = create_async_engine(
-    settings.DATABASE_URL,
+    settings.TEST_DATABASE_URL,
     connect_args={"ssl": True},
     poolclass=NullPool,
 )

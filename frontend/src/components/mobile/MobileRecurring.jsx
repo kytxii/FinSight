@@ -10,7 +10,7 @@ import {
   updateRecurringPayment,
   deleteRecurringPayment,
 } from "../../api/recurringPayments";
-import { useSheetDrag, SHEET_EASE } from "../../hooks/useSheetDrag";
+import { useSheetDrag, SHEET_EASE } from "../../hooks/shared/useSheetDrag";
 import { HOME_TEXT, HOME_MUTED, HOME_SURFACE, HOME_DIVIDER, HOME_EXPENSE, HOME_INCOME, HOME_ACCENT, TILE_COLOR, CATEGORY_ICON } from "../shared/categoryVisuals";
 import { getCached, hasCached, setCached } from "../../utils/pageCache";
 

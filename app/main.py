@@ -24,7 +24,12 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler) # pyr
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex=r"https://finsight-.*\.vercel\.app",
+    # Anchored to the -kytxii Vercel account scope, not just the finsight-
+    # prefix - any Vercel user could otherwise name their own project
+    # finsight-anything and get an origin that satisfied the old pattern
+    # (#173). Covers both git-branch previews (finsight-git-<branch>-kytxii)
+    # and per-deployment hash previews (finsight-<hash>-kytxii).
+    allow_origin_regex=r"https://finsight-[\w-]+-kytxii\.vercel\.app",
     allow_origins=[settings.FRONTEND_URL] if settings.FRONTEND_URL else [],
     allow_credentials=True,
     allow_methods=["*"],

@@ -11,9 +11,8 @@ import {
   createTransaction,
   deleteTransaction,
 } from "../api/transactions";
-import { getSpendableSurplus, getEstimatedSavings } from "../api/paychecks";
 import { getUpcomingRecurringPayments } from "../api/recurringPayments";
-import { getTipDeposits, deleteTipDeposit, createTipDeposit } from "../api/tipDeposits";
+import { deleteTipDeposit, createTipDeposit } from "../api/tipDeposits";
 import CurrencyInput from "../components/shared/CurrencyInput";
 import Toggle from "../components/shared/Toggle";
 import MobileTransactionModal from "../components/mobile/MobileTransactionModal";
@@ -25,14 +24,22 @@ import {
   MONEY_OUT_TYPES,
   lockedNameFor,
 } from "../utils/finance";
-import { useTheme } from "../hooks/useTheme";
+import { useTheme } from "../hooks/mobile/useTheme";
 import { useAuth } from "../context/AuthContext";
 import { getPresetRange } from "../components/mobile/DateRangeFilter";
 import { getToday, getNow } from "../utils/time";
 import { errorMessage } from "../utils/errors";
 import MobilePageSlide from "../components/mobile/MobilePageSlide";
 import MobileScreen from "../components/mobile/MobileScreen";
-import { useSheetDrag } from "../hooks/useSheetDrag";
+import { useSheetDrag } from "../hooks/shared/useSheetDrag";
+import { useDevMenu } from "../hooks/shared/useDevMenu";
+import { useDashboardData } from "../hooks/shared/useDashboardData";
+import {
+  useHoldToDelete,
+  HOLD_DELETE_MS,
+  HOLD_DELETE_RING_R,
+  HOLD_DELETE_RING_C,
+} from "../hooks/shared/useHoldToDelete";
 import Footer from "../components/shared/Footer";
 import AccountPanel from "../components/shared/AccountPanel";
 import OverviewBreakdownSheet from "../components/desktop/OverviewBreakdownSheet";
@@ -199,12 +206,20 @@ export default function MobileDashboard() {
   const [entrySheetOpen, setEntrySheetOpen] = useState(false);
 
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [devOpen, setDevOpen] = useState(false);
-  const [devForceEmpty, setDevForceEmpty] = useState(false);
-  const [devDelay, setDevDelay] = useState(0);
-  const [devForceError, setDevForceError] = useState(false);
-  const [devLastFetch, setDevLastFetch] = useState(null);
-  const devForceErrorRef = useRef(false);
+  // #177/#190: identical state + forced-fetch logic used to be duplicated
+  // here and in Dashboard.jsx - see hooks/shared/useDevMenu.
+  const devMenu = useDevMenu();
+  const {
+    open: devOpen,
+    setOpen: setDevOpen,
+    forceEmpty: devForceEmpty,
+    setForceEmpty: setDevForceEmpty,
+    delay: devDelay,
+    setDelay: setDevDelay,
+    forceError: devForceError,
+    toggleForceError: toggleDevForceError,
+    lastFetch: devLastFetch,
+  } = devMenu;
   const [recurringOpen, setRecurringOpen] = useState(false);
   const [installmentsOpen, setInstallmentsOpen] = useState(false);
   const [creditCardsOpen, setCreditCardsOpen] = useState(false);
@@ -217,25 +232,14 @@ export default function MobileDashboard() {
     selectionCount: 0,
     deleteSelected: () => {},
   });
-  // Hold-to-delete on the Credit Cards header button: press and hold fills
-  // the ring around the trash icon; releasing early cancels, holding the
-  // full duration commits the delete. Mirrors the desktop header button.
-  const HOLD_DELETE_MS = 1200;
-  const HOLD_DELETE_RING_R = 16;
-  const HOLD_DELETE_RING_C = 2 * Math.PI * HOLD_DELETE_RING_R;
-  const [holdingDelete, setHoldingDelete] = useState(false);
-  function startDeleteHold() {
-    if (!(creditCardsEditState.editMode && creditCardsEditState.hasSelection)) return;
-    setHoldingDelete(true);
-  }
-  function cancelDeleteHold() {
-    setHoldingDelete(false);
-  }
-  function onDeleteRingTransitionEnd(e) {
-    if (e.propertyName !== "stroke-dashoffset" || !holdingDelete) return;
-    setHoldingDelete(false);
-    creditCardsEditState.deleteSelected();
-  }
+  // #190: was byte-identical here and in Dashboard.jsx - see
+  // hooks/shared/useHoldToDelete.
+  const {
+    holding: holdingDelete,
+    start: startDeleteHold,
+    cancel: cancelDeleteHold,
+    onRingTransitionEnd: onDeleteRingTransitionEnd,
+  } = useHoldToDelete(creditCardsEditState);
   const [installmentsAddSignal, setInstallmentsAddSignal] = useState(0);
   const [recurringAddSignal, setRecurringAddSignal] = useState(0);
   const [paychecksOpen, setPaychecksOpen] = useState(false);
@@ -257,85 +261,31 @@ export default function MobileDashboard() {
     onSave: null,
   });
 
-  const [transactions, setTransactions] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [tipDeposits, setTipDeposits] = useState([]);
-  const [safeToSpend, setSafeToSpend] = useState(null);
-  const [safeToSpendStatus, setSafeToSpendStatus] = useState("loading"); // loading | ok | no-balance | no-schedule | error
-  const [savings, setSavings] = useState(null);
-  const [savingsStatus, setSavingsStatus] = useState("loading"); // loading | ok | no-schedule | no-amounts | no-history | error
   const [upcomingItems, setUpcomingItems] = useState([]);
 
-  async function devFetch() {
-    if (devForceErrorRef.current) {
-      devForceErrorRef.current = false;
-      setDevForceError(false);
-      throw new Error("Forced error");
-    }
-    if (devDelay > 0) await new Promise(r => setTimeout(r, devDelay));
-    return getTransactions();
+  function devFetch() {
+    return devMenu.devFetch(getTransactions);
   }
 
-  function loadSafeToSpend() {
-    getSpendableSurplus().then((res) => {
-      setSafeToSpend(res.data);
-      setSafeToSpendStatus("ok");
-    }).catch((err) => {
-      const detail = err.response?.data?.detail;
-      setSafeToSpend(null);
-      if (detail === "No starting balance set") setSafeToSpendStatus("no-balance");
-      else if (detail === "No active paycheck schedule found") setSafeToSpendStatus("no-schedule");
-      else setSafeToSpendStatus("error");
-    });
-  }
-
-  function loadSavings() {
-    getEstimatedSavings().then((res) => {
-      setSavings(res.data);
-      setSavingsStatus("ok");
-    }).catch((err) => {
-      const detail = err.response?.data?.detail;
-      setSavings(null);
-      if (detail === "No active paycheck schedule found") setSavingsStatus("no-schedule");
-      else if (detail === "No paycheck amounts yet") setSavingsStatus("no-amounts");
-      else if (detail === "Not enough spending history") setSavingsStatus("no-history");
-      else setSavingsStatus("error");
-    });
-  }
-
-  function loadTipDeposits() {
-    getTipDeposits().then((res) => setTipDeposits(res.data)).catch(() => {});
-  }
-
+  // Mobile-only, so passed to useDashboardData as an extra loader rather
+  // than living in the shared hook (desktop's Upcoming panel fetches its
+  // own data per-category instead of at the dashboard level).
   function loadUpcoming() {
     getUpcomingRecurringPayments().then((res) => setUpcomingItems(res.data)).catch(() => {});
   }
 
-  useEffect(() => {
-    devFetch().then((res) => {
-      setTransactions(res.data);
-      setLoading(false);
-      setDevLastFetch(new Date());
-    }).catch(() => {
-    });
-    loadSafeToSpend();
-    loadSavings();
-    loadTipDeposits();
-    loadUpcoming();
-  }, []);
-
-  function refresh() {
-    // A no-op on a normal refresh - only matters for Dev Tools' Re-fetch.
-    devFetch().then((res) => {
-      setTransactions(res.data);
-      setLoading(false);
-      setDevLastFetch(new Date());
-    }).catch(() => {});
-    loadSafeToSpend();
-    loadSavings();
-    loadTipDeposits();
-    loadUpcoming();
-  }
+  const {
+    transactions,
+    setTransactions,
+    loading,
+    setLoading,
+    tipDeposits,
+    safeToSpend,
+    safeToSpendStatus,
+    savings,
+    savingsStatus,
+    refresh,
+  } = useDashboardData(devFetch, [loadUpcoming]);
 
   const [editingTransaction, setEditingTransaction] = useState(null);
   const [editingDeposit, setEditingDeposit] = useState(null);
@@ -810,6 +760,7 @@ export default function MobileDashboard() {
             onEditDeposit={setEditingDeposit}
             onDeleteDeposit={handleDeleteDeposit}
             jump={activityJump}
+            onJumpHandled={() => setActivityJump(null)}
           />
         )}
 
@@ -2188,10 +2139,10 @@ export default function MobileDashboard() {
                 <DevToggle active={devForceEmpty} onToggle={() => setDevForceEmpty(v => !v)} />
               </DevRow>
               <DevRow label="Force next error" description="Next fetch throws">
-                <DevToggle active={devForceError} onToggle={() => { const n = !devForceError; setDevForceError(n); devForceErrorRef.current = n; }} />
+                <DevToggle active={devForceError} onToggle={toggleDevForceError} />
               </DevRow>
               <DevRow label="Re-fetch" description="Reload transactions">
-                <button onClick={() => { setLoading(true); refresh(); }} className="px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer border" style={{ color: HOME_TEXT, borderColor: HOME_DIVIDER, backgroundColor: "rgba(255,255,255,0.06)" }}>Run</button>
+                <button onClick={() => { setLoading(true); refresh(); setTimeout(() => setLoading(false), devDelay + 200); }} className="px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer border" style={{ color: HOME_TEXT, borderColor: HOME_DIVIDER, backgroundColor: "rgba(255,255,255,0.06)" }}>Run</button>
               </DevRow>
 
               <MDevSection label="NETWORK" border={HOME_DIVIDER} muted={HOME_MUTED} />
