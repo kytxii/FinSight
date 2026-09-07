@@ -402,9 +402,11 @@ export default function Dashboard() {
     if (renderPicker && pickerContentRef.current) {
       setPickerWidth(pickerContentRef.current.scrollWidth);
     }
-    // Re-measures whenever the number of choices can change.
+    // Re-measures whenever the number of choices can change. dateRange.from
+    // can be null (handleLocateTransaction sets it to mean "all time"), so
+    // this is optional-chained rather than assuming a Date.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [renderPicker, trackedYears.length, dateRange.from.getFullYear()]);
+  }, [renderPicker, trackedYears.length, dateRange.from?.getFullYear()]);
 
   useEffect(() => {
     if (renderPicker && renderPicker === datePicker) {
@@ -469,6 +471,23 @@ export default function Dashboard() {
   const [editingTransaction, setEditingTransaction] = useState(null);
   const [editingFromSearch, setEditingFromSearch] = useState(false);
   const [highlightId, setHighlightId] = useState(null);
+  // Holds until any click on the page, rather than auto-clearing on a timer.
+  // Attached after the click that sets highlightId has already finished
+  // dispatching (effects run post-commit), so that same click never
+  // immediately clears the highlight it just set.
+  useEffect(() => {
+    if (highlightId == null) return;
+    const clear = () => setHighlightId(null);
+    // Deferred by a tick - attaching synchronously in this effect still
+    // catches the very same click that set highlightId (confirmed via
+    // logging: the click that opens this effect's listener also fires it,
+    // same tick). Standard fix for this exact "click outside" pitfall.
+    const timer = setTimeout(() => document.addEventListener("click", clear), 0);
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener("click", clear);
+    };
+  }, [highlightId]);
   const [catHov, setCatHov] = useState(null);
   const [toolHov, setToolHov] = useState(null);
 
@@ -494,6 +513,11 @@ export default function Dashboard() {
   }
 
   const tableRef = useRef(null);
+  // Locate computes and sets the exact page a transaction lands on - the
+  // filters-changed effect below would otherwise immediately stomp that back
+  // to page 1 on the very next render (it fires whenever dateRange/tableQuery
+  // change, which locate's own filter reset also triggers).
+  const skipPageResetRef = useRef(false);
 
   useEffect(
     () => () => {
@@ -535,28 +559,87 @@ export default function Dashboard() {
       clearTimeout(categoryCloseTimer.current);
       setCategoryClosing(false);
       setActiveTab("ALL");
-      setDateRange({ from: null, to: null });
-      const allSorted = [...transactions].sort(
-        (a, b) => new Date(b.transaction_date) - new Date(a.transaction_date),
-      );
-      const idx = allSorted.findIndex((tx) => tx.id === t.id);
+      // This locate is about to set the exact target page itself - stop the
+      // filters-changed effect from immediately resetting it back to 1.
+      skipPageResetRef.current = true;
+      // A stale table search/type filter would hide the row outright - clear
+      // both so the transaction can actually surface, same as a person
+      // manually hunting for it would need to.
+      setTableQuery("");
+      setTypeFilter(null);
+
+      // Only move the date range if the transaction actually falls outside
+      // it - jumping to "all time" (the old behavior) blew away whatever
+      // month/range the user was looking at for no reason when the row was
+      // already in view. When it does need to move, land on the same single
+      // month a person clicking the month arrows to it would land on -
+      // nothing custom, just the normal state change and whatever motion
+      // that already produces (the trend chart's own transition).
+      const txDate = new Date(t.transaction_date + "T00:00:00");
+      const inCurrentRange =
+        (!dateRange.from || txDate >= dateRange.from) &&
+        (!dateRange.to || txDate <= dateRange.to);
+      const targetRange = inCurrentRange
+        ? dateRange
+        : monthRangeFor(txDate.getFullYear(), txDate.getMonth());
+      if (!inCurrentRange) {
+        setActivePreset(null);
+        setDateRange(targetRange);
+      }
+
+      // Mirrors the `filtered`/`sorted` pipeline above, computed against the
+      // range this is about to land on (not the current render's memoized
+      // values, which still reflect state from before this update) and the
+      // current sort - the same page a person paging through by hand would
+      // land on.
+      const rangeFiltered = transactions.filter((tx) => {
+        const d = new Date(tx.transaction_date + "T00:00:00");
+        if (targetRange.from && d < targetRange.from) return false;
+        if (targetRange.to && d > targetRange.to) return false;
+        return true;
+      });
+      const dir = sortDir === "asc" ? 1 : -1;
+      const rangeSorted = [...rangeFiltered].sort((a, b) => {
+        if (sortColumn === "name") return dir * a.name.localeCompare(b.name);
+        if (sortColumn === "amount")
+          return dir * (parseFloat(a.amount) - parseFloat(b.amount));
+        return dir * (new Date(a.transaction_date) - new Date(b.transaction_date));
+      });
+      const idx = rangeSorted.findIndex((tx) => tx.id === t.id);
       if (idx !== -1) setPage(Math.ceil((idx + 1) / perPage));
+
+      // Holds until something else takes focus (editing/selecting another
+      // row overwrites it) rather than auto-clearing after a few seconds.
       setHighlightId(t.id);
-      setTimeout(() => setHighlightId(null), 2500);
       setTimeout(
         () =>
           tableRef.current?.scrollIntoView({
             behavior: "smooth",
-            block: "start",
+            block: "center",
           }),
         50,
       );
     },
-    // categoryCloseTimer/setActiveTab/setCategoryClosing/setDateRange/setPage
+    // categoryCloseTimer/setActiveTab/setCategoryClosing/setDateRange/setPage/
+    // setTableQuery/setTypeFilter/setActivePreset
     // come from custom hooks (useTransactionFilters) rather than local
     // useState/useRef, so eslint can't statically see they're stable across
     // renders (they are) - listed explicitly instead of disabling the rule.
-    [transactions, perPage, categoryCloseTimer, setActiveTab, setCategoryClosing, setDateRange, setPage],
+    [
+      transactions,
+      perPage,
+      dateRange,
+      sortColumn,
+      sortDir,
+      categoryCloseTimer,
+      setActiveTab,
+      setCategoryClosing,
+      setDateRange,
+      setPage,
+      setTableQuery,
+      setTypeFilter,
+      setActivePreset,
+    ],
   );
 
   const filtered = useMemo(() => {
@@ -916,6 +999,10 @@ export default function Dashboard() {
     .slice((page - 1) * perPage, page * perPage);
 
   useEffect(() => {
+    if (skipPageResetRef.current) {
+      skipPageResetRef.current = false;
+      return;
+    }
     setPage(1);
     // setPage comes from useTransactionFilters rather than local useState,
     // so eslint can't statically see it's stable across renders (it is) -

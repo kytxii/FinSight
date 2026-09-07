@@ -130,7 +130,7 @@ function PickerList({ options, onSelect, onClose }) {
   );
 }
 
-export default function MobileAnalytics({ transactions, deposits = [], loading, onEditTransaction, onDeleteTransaction, onEditDeposit, onDeleteDeposit, jump }) {
+export default function MobileAnalytics({ transactions, deposits = [], loading, onEditTransaction, onDeleteTransaction, onEditDeposit, onDeleteDeposit, jump, onJumpHandled }) {
   const now = getNow();
 
   const [period, setPeriod] = useState({ year: now.getFullYear(), month: now.getMonth() }); // month: 0-11
@@ -389,6 +389,7 @@ export default function MobileAnalytics({ transactions, deposits = [], loading, 
         onEditDeposit={onEditDeposit}
         onDeleteDeposit={onDeleteDeposit}
         jump={jump}
+        onJumpHandled={onJumpHandled}
       />
     </>
   );

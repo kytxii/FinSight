@@ -760,6 +760,7 @@ export default function MobileDashboard() {
             onEditDeposit={setEditingDeposit}
             onDeleteDeposit={handleDeleteDeposit}
             jump={activityJump}
+            onJumpHandled={() => setActivityJump(null)}
           />
         )}
 

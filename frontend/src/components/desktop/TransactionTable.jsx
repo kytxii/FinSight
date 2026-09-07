@@ -381,11 +381,17 @@ export default function TransactionTable({ rows, onAdd, onEdit, onDelete, active
                 key={t.id}
                 className="border-t"
                 style={{
-                  borderColor: border,
+                  // The row already has a real border-top (border-t) - adding
+                  // a white box-shadow ring on top of that doubled up the top
+                  // edge's thickness versus the other three sides. Making the
+                  // real border transparent when highlighted, so the
+                  // box-shadow ring is the only thing drawing that edge too.
+                  borderColor: t.id === highlightId && !deleting.has(t.id) ? "transparent" : border,
+                  boxShadow: t.id === highlightId && !deleting.has(t.id) ? "inset 0 0 0 1px #fff" : undefined,
                   backgroundColor: t.id === highlightId && !deleting.has(t.id)
                     ? `color-mix(in srgb, ${CATEGORY_ACCENT[t.category]} 12%, transparent)`
                     : undefined,
-                  transition: "background-color 0.6s ease",
+                  transition: "background-color 0.6s ease, border-color 0.6s ease, box-shadow 0.6s ease",
                   pointerEvents: deleting.has(t.id) ? "none" : undefined,
                 }}
               >
