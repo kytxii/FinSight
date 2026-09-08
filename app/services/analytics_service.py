@@ -8,7 +8,18 @@ import calendar
 
 from app.models import Installment, RecurringPayment, Transaction, User
 from app.models.category import Category
-from app.schemas.analytics import GroupBy
+from app.schemas.analytics import (
+    GroupBy,
+    SpendingSummaryResponse,
+    SummaryGroup,
+    ComparisonResponse,
+    PeriodTotals,
+    TransactionSearchResponse,
+    MatchedTransaction,
+    SnapshotResponse,
+    CommitmentsResponse,
+    CommitmentItem,
+)
 from app.services import paycheck_service, tip_deposit_service
 from app.services.paycheck_service import (
     MONEY_IN_CATEGORIES,
@@ -468,4 +479,63 @@ async def get_commitments(current_user: UUID, db: AsyncSession) -> CommitmentsRe
         monthly_installment_total=installment_total,
         monthly_committed_total=recurring_total + installment_total,
         items=items,
+    )
+
+def spending_summary_to_response(result: SpendingSummaryResult) -> SpendingSummaryResponse:
+    return SpendingSummaryResponse(
+        start_date=result.start_date,
+        end_date=result.end_date,
+        group_by=result.group_by,
+        category=result.category.value if result.category else None,
+        total_spending=result.total_spending,
+        total_income=result.total_income,
+        total_saved=result.total_saved,
+        transaction_count=result.transaction_count,
+        groups=[SummaryGroup(key=g.key, total=g.total, transaction_count=g.transaction_count) for g in result.groups],
+    )
+
+
+def comparison_to_response(result: ComparisonResult) -> ComparisonResponse:
+    return ComparisonResponse(
+        current=PeriodTotals(**result.current._asdict()),
+        prior=PeriodTotals(**result.prior._asdict()),
+        spending_change=result.spending_change,
+        income_change=result.income_change,
+    )
+
+
+def transaction_search_to_response(result: TransactionSearchResult) -> TransactionSearchResponse:
+    return TransactionSearchResponse(
+        start_date=result.start_date,
+        end_date=result.end_date,
+        query=result.query,
+        category=result.category.value if result.category else None,
+        match_count=result.match_count,
+        match_total=result.match_total,
+        limit=result.limit,
+        offset=result.offset,
+        items=[MatchedTransaction.model_validate(t) for t in result.items],
+    )
+
+
+def snapshot_to_response(result: SnapshotResult) -> SnapshotResponse:
+    return SnapshotResponse(**result._asdict())
+
+
+def commitments_to_response(result: CommitmentsResult) -> CommitmentsResponse:
+    return CommitmentsResponse(
+        monthly_recurring_total=result.monthly_recurring_total,
+        monthly_installment_total=result.monthly_installment_total,
+        monthly_committed_total=result.monthly_committed_total,
+        items=[
+            CommitmentItem(
+                name=i.name,
+                amount=i.amount,
+                category=i.category.value,
+                day_of_month=i.day_of_month,
+                kind=i.kind,
+                remaining_payments=i.remaining_payments,
+            )
+            for i in result.items
+        ],
     )
