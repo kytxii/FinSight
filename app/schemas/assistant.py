@@ -20,3 +20,9 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     reply: str
     requests_remaining_today: int
+    requests_remaining_this_minute: int
+
+
+class UsageResponse(BaseModel):
+    requests_remaining_today: int
+    requests_remaining_this_minute: int

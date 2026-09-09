@@ -51,6 +51,7 @@ import {
 } from "../utils/finance";
 import { getNow, getToday } from "../utils/time";
 import Navbar from "../components/desktop/Navbar";
+import AssistantPanel from "../components/desktop/AssistantPanel";
 import AddTransactionPage from "../components/desktop/AddTransactionPage";
 import PaychecksPanel from "../components/desktop/PaychecksPanel";
 import RecurringPaymentsModal from "../components/desktop/RecurringPaymentsModal";
@@ -122,10 +123,15 @@ function isSingleMonthRange(range) {
 // hero tiles at a size that fits inside a quarter-width overview column.
 function tipsStatTile(color, outline) {
   return {
-    width: 20, height: 20, borderRadius: "50%", flexShrink: 0,
+    width: 20,
+    height: 20,
+    borderRadius: "50%",
+    flexShrink: 0,
     background: outline ? "transparent" : color,
     border: outline ? `1.5px solid ${color}` : "none",
-    display: "flex", alignItems: "center", justifyContent: "center",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
   };
 }
 
@@ -218,11 +224,6 @@ export default function Dashboard() {
   const { isDemo } = useAuth();
   const [tipsCashOnHand, setTipsCashOnHand] = useState(0);
 
-  // #177/#190: identical state + forced-fetch logic used to be duplicated
-  // here and in MobileDashboard - see hooks/shared/useDevMenu. Declared
-  // above everything else in this component because devFetch/transactions
-  // below feed useMemos (trackedYears, etc.) that run during this same
-  // render - referencing them before they're assigned throws a TDZ error.
   const devMenu = useDevMenu();
   const {
     open: devMenuOpen,
@@ -240,10 +241,6 @@ export default function Dashboard() {
     return devMenu.devFetch(getTransactions);
   }
 
-  // Mirrors MobileTips (#157): a server-computed, calendar-month-scoped
-  // aggregate, independent of the dashboard's own date range picker. Passed
-  // to useDashboardData as an extra loader since it's desktop-only - the
-  // shared hook doesn't hardcode either platform's platform-only fetches.
   function loadCashOnHand() {
     getCashOnHand()
       .then((res) => setTipsCashOnHand(parseFloat(res.data.cash_on_hand)))
@@ -263,10 +260,6 @@ export default function Dashboard() {
     refresh: refreshTransactions,
   } = useDashboardData(devFetch, [loadCashOnHand]);
 
-  // #177: desktop-only category-tab/date-range/search/sort/pagination
-  // cluster - see hooks/desktop/useTransactionFilters. Declared here (before
-  // trackedYears/trackedMonthsByYear below) since dateRange feeds a later
-  // effect's deps array - same TDZ reasoning as useDashboardData above.
   const {
     activeTab,
     setActiveTab,
@@ -386,8 +379,6 @@ export default function Dashboard() {
         PICKER_TRANSITION_MS,
       );
     }
-    // renderPicker is set by this effect, so watching it would loop.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [datePicker]);
 
   useEffect(
@@ -402,10 +393,6 @@ export default function Dashboard() {
     if (renderPicker && pickerContentRef.current) {
       setPickerWidth(pickerContentRef.current.scrollWidth);
     }
-    // Re-measures whenever the number of choices can change. dateRange.from
-    // can be null (handleLocateTransaction sets it to mean "all time"), so
-    // this is optional-chained rather than assuming a Date.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [renderPicker, trackedYears.length, dateRange.from?.getFullYear()]);
 
   useEffect(() => {
@@ -413,8 +400,6 @@ export default function Dashboard() {
       setPickerOpen(true);
     }
   }, [renderPicker, datePicker, pickerWidth]);
-  // #177: desktop-only "which tool panel is open" cluster - see
-  // hooks/desktop/useToolPanels.
   const {
     toolMode,
     setToolMode,
@@ -442,8 +427,6 @@ export default function Dashboard() {
     selectionCount: 0,
     deleteSelected: () => {},
   });
-  // #190: was byte-identical here and in MobileDashboard - see
-  // hooks/shared/useHoldToDelete.
   const {
     holding: holdingDelete,
     start: startDeleteHold,
@@ -482,7 +465,10 @@ export default function Dashboard() {
     // catches the very same click that set highlightId (confirmed via
     // logging: the click that opens this effect's listener also fires it,
     // same tick). Standard fix for this exact "click outside" pitfall.
-    const timer = setTimeout(() => document.addEventListener("click", clear), 0);
+    const timer = setTimeout(
+      () => document.addEventListener("click", clear),
+      0,
+    );
     return () => {
       clearTimeout(timer);
       document.removeEventListener("click", clear);
@@ -603,7 +589,9 @@ export default function Dashboard() {
         if (sortColumn === "name") return dir * a.name.localeCompare(b.name);
         if (sortColumn === "amount")
           return dir * (parseFloat(a.amount) - parseFloat(b.amount));
-        return dir * (new Date(a.transaction_date) - new Date(b.transaction_date));
+        return (
+          dir * (new Date(a.transaction_date) - new Date(b.transaction_date))
+        );
       });
       const idx = rangeSorted.findIndex((tx) => tx.id === t.id);
       if (idx !== -1) setPage(Math.ceil((idx + 1) / perPage));
@@ -827,14 +815,22 @@ export default function Dashboard() {
 
   const trendData = useMemo(() => {
     const now = getNow();
-    const realToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const realToday = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate(),
+    );
     // Ends at the month selected via the chevrons/date-range picker up top,
     // not always real "today" - otherwise switching months there never moves
     // this chart at all (the same bug #152 fixed on mobile's Analytics tab,
     // just here on desktop). Clamped so a range that reaches into the future
     // can't push the window past today.
     const selectedEnd = dateRange.to
-      ? new Date(dateRange.to.getFullYear(), dateRange.to.getMonth(), dateRange.to.getDate())
+      ? new Date(
+          dateRange.to.getFullYear(),
+          dateRange.to.getMonth(),
+          dateRange.to.getDate(),
+        )
       : realToday;
     const today = selectedEnd > realToday ? realToday : selectedEnd;
     let start;
@@ -1294,6 +1290,11 @@ export default function Dashboard() {
         }}
       />
 
+      {/* Own floating trigger + panel, bottom-right - independent of
+          Navbar's own drawer (top-right) and of useToolPanels' full-page
+          takeovers (#177 desktop-only). */}
+      <AssistantPanel />
+
       <div className="flex-1 flex min-h-0">
         <aside
           style={{
@@ -1589,7 +1590,9 @@ export default function Dashboard() {
                 >
                   {TOOL_TITLES[toolMode]}
                 </h1>
-                {(toolMode === "recurring" || toolMode === "installments" || toolMode === "creditCards") && (
+                {(toolMode === "recurring" ||
+                  toolMode === "installments" ||
+                  toolMode === "creditCards") && (
                   <div
                     style={{
                       marginLeft: "auto",
@@ -1635,79 +1638,110 @@ export default function Dashboard() {
                         {recurringSaveState.isSaving ? "Saving…" : "Save"}
                       </button>
                     )}
-                    {toolMode === "creditCards" && (() => {
-                      const showDelete = creditCardsEditState.editMode && creditCardsEditState.hasSelection;
-                      return (
-                        <button
-                          onMouseDown={startDeleteHold}
-                          onMouseUp={cancelDeleteHold}
-                          onMouseLeave={cancelDeleteHold}
-                          onTouchStart={startDeleteHold}
-                          onTouchEnd={cancelDeleteHold}
-                          aria-label={`Hold to delete ${creditCardsEditState.selectionCount} selected`}
-                          tabIndex={showDelete ? 0 : -1}
-                          style={{
-                            width: showDelete ? 36 : 0,
-                            height: 36,
-                            borderRadius: "50%",
-                            flexShrink: 0,
-                            overflow: "hidden",
-                            cursor: showDelete ? "pointer" : "default",
-                            background: `color-mix(in srgb, ${HOME_EXPENSE} 16%, ${surface})`,
-                            border: `1px solid ${HOME_EXPENSE}`,
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            position: "relative",
-                            color: HOME_EXPENSE,
-                            opacity: showDelete ? 1 : 0,
-                            transform: showDelete ? "scale(1)" : "scale(0.5)",
-                            marginLeft: showDelete ? 0 : -10,
-                            marginRight: showDelete ? 0 : -10,
-                            pointerEvents: showDelete ? "auto" : "none",
-                            userSelect: "none",
-                            transition:
-                              "width 220ms ease, margin 220ms ease, opacity 180ms ease, transform 220ms ease",
-                          }}
-                        >
-                          {/* Ring and icon share one 36x36 coordinate space so they're
+                    {toolMode === "creditCards" &&
+                      (() => {
+                        const showDelete =
+                          creditCardsEditState.editMode &&
+                          creditCardsEditState.hasSelection;
+                        return (
+                          <button
+                            onMouseDown={startDeleteHold}
+                            onMouseUp={cancelDeleteHold}
+                            onMouseLeave={cancelDeleteHold}
+                            onTouchStart={startDeleteHold}
+                            onTouchEnd={cancelDeleteHold}
+                            aria-label={`Hold to delete ${creditCardsEditState.selectionCount} selected`}
+                            tabIndex={showDelete ? 0 : -1}
+                            style={{
+                              width: showDelete ? 36 : 0,
+                              height: 36,
+                              borderRadius: "50%",
+                              flexShrink: 0,
+                              overflow: "hidden",
+                              cursor: showDelete ? "pointer" : "default",
+                              background: `color-mix(in srgb, ${HOME_EXPENSE} 16%, ${surface})`,
+                              border: `1px solid ${HOME_EXPENSE}`,
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              position: "relative",
+                              color: HOME_EXPENSE,
+                              opacity: showDelete ? 1 : 0,
+                              transform: showDelete ? "scale(1)" : "scale(0.5)",
+                              marginLeft: showDelete ? 0 : -10,
+                              marginRight: showDelete ? 0 : -10,
+                              pointerEvents: showDelete ? "auto" : "none",
+                              userSelect: "none",
+                              transition:
+                                "width 220ms ease, margin 220ms ease, opacity 180ms ease, transform 220ms ease",
+                            }}
+                          >
+                            {/* Ring and icon share one 36x36 coordinate space so they're
                               guaranteed to center on the same point - two separate
                               overlapping SVGs left room for the two boxes to drift
                               apart from each other. */}
-                          <svg
-                            width="36" height="36" viewBox="0 0 36 36"
-                            style={{ position: "absolute", inset: 0, pointerEvents: "none" }}
-                          >
-                            <g transform="translate(-1 -1)">
-                              <circle
-                                cx="18" cy="18" r={HOLD_DELETE_RING_R} fill="none" stroke={HOME_EXPENSE} strokeWidth="2.5"
-                                strokeLinecap="round"
-                                strokeDasharray={HOLD_DELETE_RING_C}
-                                strokeDashoffset={holdingDelete ? 0 : HOLD_DELETE_RING_C}
-                                transform="rotate(-90 18 18)"
-                                onTransitionEnd={onDeleteRingTransitionEnd}
-                                style={{
-                                  transition: holdingDelete
-                                    ? `stroke-dashoffset ${HOLD_DELETE_MS}ms linear`
-                                    : "stroke-dashoffset 150ms ease",
-                                }}
-                              />
-                              {/* Nested SVG viewport, not a hand-computed transform - x/y/width/height
+                            <svg
+                              width="36"
+                              height="36"
+                              viewBox="0 0 36 36"
+                              style={{
+                                position: "absolute",
+                                inset: 0,
+                                pointerEvents: "none",
+                              }}
+                            >
+                              <g transform="translate(-1 -1)">
+                                <circle
+                                  cx="18"
+                                  cy="18"
+                                  r={HOLD_DELETE_RING_R}
+                                  fill="none"
+                                  stroke={HOME_EXPENSE}
+                                  strokeWidth="2.5"
+                                  strokeLinecap="round"
+                                  strokeDasharray={HOLD_DELETE_RING_C}
+                                  strokeDashoffset={
+                                    holdingDelete ? 0 : HOLD_DELETE_RING_C
+                                  }
+                                  transform="rotate(-90 18 18)"
+                                  onTransitionEnd={onDeleteRingTransitionEnd}
+                                  style={{
+                                    transition: holdingDelete
+                                      ? `stroke-dashoffset ${HOLD_DELETE_MS}ms linear`
+                                      : "stroke-dashoffset 150ms ease",
+                                  }}
+                                />
+                                {/* Nested SVG viewport, not a hand-computed transform - x/y/width/height
                                   place a 16x16 box at (10,10)-(26,26), i.e. centered in this 36x36
                                   space ((36-16)/2 = 10 on each side), and its own viewBox handles
                                   scaling the 24x24-authored icon down to fit. */}
-                              <svg x="10" y="10" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <path d="M3 6h18M19 6l-1 14H6L5 6M10 11v6M14 11v6M9 6V4h6v2" />
-                              </svg>
-                            </g>
-                          </svg>
-                        </button>
-                      );
-                    })()}
+                                <svg
+                                  x="10"
+                                  y="10"
+                                  width="16"
+                                  height="16"
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="2"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                >
+                                  <path d="M3 6h18M19 6l-1 14H6L5 6M10 11v6M14 11v6M9 6V4h6v2" />
+                                </svg>
+                              </g>
+                            </svg>
+                          </button>
+                        );
+                      })()}
                     {toolMode === "creditCards" && (
                       <button
                         onClick={creditCardsEditState.toggleEdit}
-                        aria-label={creditCardsEditState.editMode ? "Done editing" : "Edit credit card balances"}
+                        aria-label={
+                          creditCardsEditState.editMode
+                            ? "Done editing"
+                            : "Edit credit card balances"
+                        }
                         tabIndex={creditCardsEditState.hasRows ? 0 : -1}
                         style={{
                           width: creditCardsEditState.hasRows ? 36 : 0,
@@ -1715,7 +1749,9 @@ export default function Dashboard() {
                           borderRadius: "50%",
                           flexShrink: 0,
                           overflow: "hidden",
-                          cursor: creditCardsEditState.hasRows ? "pointer" : "default",
+                          cursor: creditCardsEditState.hasRows
+                            ? "pointer"
+                            : "default",
                           background: creditCardsEditState.editMode
                             ? `color-mix(in srgb, ${HOME_INCOME} 18%, ${surface})`
                             : surface,
@@ -1724,34 +1760,62 @@ export default function Dashboard() {
                           alignItems: "center",
                           justifyContent: "center",
                           position: "relative",
-                          color: creditCardsEditState.editMode ? HOME_INCOME : "#fff",
+                          color: creditCardsEditState.editMode
+                            ? HOME_INCOME
+                            : "#fff",
                           opacity: creditCardsEditState.hasRows ? 1 : 0,
-                          transform: creditCardsEditState.hasRows ? "scale(1)" : "scale(0.5)",
+                          transform: creditCardsEditState.hasRows
+                            ? "scale(1)"
+                            : "scale(0.5)",
                           marginLeft: creditCardsEditState.hasRows ? 0 : -10,
                           marginRight: creditCardsEditState.hasRows ? 0 : -10,
-                          pointerEvents: creditCardsEditState.hasRows ? "auto" : "none",
+                          pointerEvents: creditCardsEditState.hasRows
+                            ? "auto"
+                            : "none",
                           transition:
                             "width 220ms ease, margin 220ms ease, opacity 180ms ease, transform 220ms ease, background 200ms ease, border-color 200ms ease, color 200ms ease",
                         }}
                       >
                         <svg
-                          xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+                          xmlns="http://www.w3.org/2000/svg"
+                          width="18"
+                          height="18"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2.5"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
                           style={{
                             position: "absolute",
                             opacity: creditCardsEditState.editMode ? 1 : 0,
-                            transform: creditCardsEditState.editMode ? "scale(1) rotate(0deg)" : "scale(0.4) rotate(-45deg)",
-                            transition: "opacity 200ms ease, transform 200ms ease",
+                            transform: creditCardsEditState.editMode
+                              ? "scale(1) rotate(0deg)"
+                              : "scale(0.4) rotate(-45deg)",
+                            transition:
+                              "opacity 200ms ease, transform 200ms ease",
                           }}
                         >
                           <path d="M20 6 9 17l-5-5" />
                         </svg>
                         <svg
-                          xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                          xmlns="http://www.w3.org/2000/svg"
+                          width="17"
+                          height="17"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
                           style={{
                             position: "absolute",
                             opacity: creditCardsEditState.editMode ? 0 : 1,
-                            transform: creditCardsEditState.editMode ? "scale(0.4) rotate(45deg)" : "scale(1) rotate(0deg)",
-                            transition: "opacity 200ms ease, transform 200ms ease",
+                            transform: creditCardsEditState.editMode
+                              ? "scale(0.4) rotate(45deg)"
+                              : "scale(1) rotate(0deg)",
+                            transition:
+                              "opacity 200ms ease, transform 200ms ease",
                           }}
                         >
                           <path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
@@ -1761,16 +1825,18 @@ export default function Dashboard() {
                     {/* Same circular "+" mobile uses; the add UI lives in the panel. */}
                     <button
                       onClick={() => {
-                        if (toolMode === "recurring") setRecurringAddSignal((n) => n + 1);
-                        else if (toolMode === "installments") setInstallmentsAddSignal((n) => n + 1);
+                        if (toolMode === "recurring")
+                          setRecurringAddSignal((n) => n + 1);
+                        else if (toolMode === "installments")
+                          setInstallmentsAddSignal((n) => n + 1);
                         else setCreditCardsAddSignal((n) => n + 1);
                       }}
                       aria-label={
                         toolMode === "recurring"
                           ? "Add recurring payment"
                           : toolMode === "installments"
-                          ? "Add installment"
-                          : "Split a transaction as a credit card payment"
+                            ? "Add installment"
+                            : "Split a transaction as a credit card payment"
                       }
                       style={{
                         width: 36,
@@ -2395,18 +2461,70 @@ export default function Dashboard() {
                             >
                               {fmt(summary.categoryTotal)}
                             </p>
-                            <div className="flex items-center gap-2" style={{ marginTop: 8 }}>
-                              <div style={tipsStatTile(activeColor)}><IconHandCash size={12} /></div>
+                            <div
+                              className="flex items-center gap-2"
+                              style={{ marginTop: 8 }}
+                            >
+                              <div style={tipsStatTile(activeColor)}>
+                                <IconHandCash size={12} />
+                              </div>
                               <div>
-                                <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: text, fontVariantNumeric: "tabular-nums" }}>{fmt(tipsCashOnHand)}</p>
-                                <p style={{ margin: "1px 0 0", fontSize: 11, fontWeight: 500, color: muted }}>cash on hand</p>
+                                <p
+                                  style={{
+                                    margin: 0,
+                                    fontSize: 14,
+                                    fontWeight: 700,
+                                    color: text,
+                                    fontVariantNumeric: "tabular-nums",
+                                  }}
+                                >
+                                  {fmt(tipsCashOnHand)}
+                                </p>
+                                <p
+                                  style={{
+                                    margin: "1px 0 0",
+                                    fontSize: 11,
+                                    fontWeight: 500,
+                                    color: muted,
+                                  }}
+                                >
+                                  cash on hand
+                                </p>
                               </div>
                             </div>
-                            <div className="flex items-center gap-2" style={{ position: "absolute", right: 20, bottom: 14 }}>
-                              <div style={tipsStatTile(TIPS_DEPOSITED, true)}><IconBank color={TIPS_DEPOSITED} size={11} /></div>
+                            <div
+                              className="flex items-center gap-2"
+                              style={{
+                                position: "absolute",
+                                right: 20,
+                                bottom: 14,
+                              }}
+                            >
+                              <div style={tipsStatTile(TIPS_DEPOSITED, true)}>
+                                <IconBank color={TIPS_DEPOSITED} size={11} />
+                              </div>
                               <div>
-                                <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: TIPS_DEPOSITED, fontVariantNumeric: "tabular-nums" }}>{fmt(tipsMonthDepositedTotal)}</p>
-                                <p style={{ margin: "1px 0 0", fontSize: 11, fontWeight: 500, color: muted }}>deposited</p>
+                                <p
+                                  style={{
+                                    margin: 0,
+                                    fontSize: 14,
+                                    fontWeight: 700,
+                                    color: TIPS_DEPOSITED,
+                                    fontVariantNumeric: "tabular-nums",
+                                  }}
+                                >
+                                  {fmt(tipsMonthDepositedTotal)}
+                                </p>
+                                <p
+                                  style={{
+                                    margin: "1px 0 0",
+                                    fontSize: 11,
+                                    fontWeight: 500,
+                                    color: muted,
+                                  }}
+                                >
+                                  deposited
+                                </p>
                               </div>
                             </div>
                           </>
@@ -3508,8 +3626,8 @@ export default function Dashboard() {
         </div>
       )}
 
-      {editingTransaction && (
-        editingTransaction.credit_card_payment_id ? (
+      {editingTransaction &&
+        (editingTransaction.credit_card_payment_id ? (
           <CreditCardPaymentPanel
             key={editingTransaction.id}
             desktop
@@ -3537,9 +3655,7 @@ export default function Dashboard() {
             onDelete={handleDelete}
             onLocate={editingFromSearch ? handleLocateTransaction : undefined}
           />
-        )
-      )}
+        ))}
     </div>
   );
 }
-
