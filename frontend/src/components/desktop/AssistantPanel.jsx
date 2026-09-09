@@ -12,13 +12,12 @@ import {
   HOME_EXPENSE,
   FIELD,
 } from "../shared/categoryVisuals";
+import { DAILY_REQUEST_LIMIT, MINUTE_REQUEST_LIMIT, parseAssistantBlocks } from "../../utils/assistantMessages";
 
 const MAX_HISTORY_SENT = 10;
 const TRIGGER_OFFSET = 64;
 const TRIGGER_SIZE = 52;
 const PANEL_GAP = 12;
-const DAILY_REQUEST_LIMIT = 500;
-const MINUTE_REQUEST_LIMIT = 15;
 const SUGGESTIONS = [
   "Am I spending more this month than last?",
   "How much do my bills and subscriptions add up to each month?",
@@ -31,37 +30,6 @@ function SparkleIcon({ size = 16 }) {
       <path d="M12 2.5c.3 3.4 1 5.6 2.1 6.7 1.1 1.1 3.3 1.8 6.7 2.1-3.4.3-5.6 1-6.7 2.1-1.1 1.1-1.8 3.3-2.1 6.7-.3-3.4-1-5.6-2.1-6.7-1.1-1.1-3.3-1.8-6.7-2.1 3.4-.3 5.6-1 6.7-2.1 1.1-1.1 1.8-3.3 2.1-6.7z" />
     </svg>
   );
-}
-
-const LIST_LINE_RE = /^-\s*(.+?):\s*(\$[\d,]+\.\d{2})\s*(\(.+\))?$/;
-
-function parseAssistantBlocks(content) {
-  const lines = content.split("\n");
-  const blocks = [];
-  let list = null;
-  for (const raw of lines) {
-    const line = raw.trim();
-    if (line.startsWith("- ")) {
-      const match = line.match(LIST_LINE_RE);
-      if (!list) {
-        list = [];
-        blocks.push({ type: "list", items: list });
-      }
-      list.push(
-        match
-          ? {
-              label: match[1].trim(),
-              amount: match[2],
-              detail: match[3]?.slice(1, -1),
-            }
-          : { label: line.slice(2).trim(), amount: null, detail: null },
-      );
-    } else {
-      list = null;
-      if (line) blocks.push({ type: "text", text: line });
-    }
-  }
-  return blocks;
 }
 
 function AssistantMessageContent({ content, text, muted }) {
