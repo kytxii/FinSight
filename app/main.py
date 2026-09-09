@@ -5,13 +5,10 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
-from app.routes import transaction, users, auth, recurring_payment, paycheck, tip_deposit, import_, installment, credit_card
+from app.routes import transaction, users, auth, recurring_payment, paycheck, tip_deposit, import_, installment, credit_card, analytics, assistant
 from app.core.config import settings
 from app.core.limiter import limiter
 
-# Without an explicit handler, app-level loggers fall back to logging.lastResort,
-# which emits a bare message with no timestamp or logger name - hard to correlate
-# against uvicorn's access log when debugging from the hosted logs.
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
@@ -24,11 +21,6 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler) # pyr
 
 app.add_middleware(
     CORSMiddleware,
-    # Anchored to the -kytxii Vercel account scope, not just the finsight-
-    # prefix - any Vercel user could otherwise name their own project
-    # finsight-anything and get an origin that satisfied the old pattern
-    # (#173). Covers both git-branch previews (finsight-git-<branch>-kytxii)
-    # and per-deployment hash previews (finsight-<hash>-kytxii).
     allow_origin_regex=r"https://finsight-[\w-]+-kytxii\.vercel\.app",
     allow_origins=[settings.FRONTEND_URL] if settings.FRONTEND_URL else [],
     allow_credentials=True,
@@ -52,3 +44,5 @@ app.include_router(tip_deposit.router)
 app.include_router(import_.router)
 app.include_router(installment.router)
 app.include_router(credit_card.router)
+app.include_router(analytics.router)
+app.include_router(assistant.router)

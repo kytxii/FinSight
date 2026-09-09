@@ -52,6 +52,7 @@ import MobileRecurring from "../components/mobile/MobileRecurring";
 import MobileInstallments from "../components/mobile/MobileInstallments";
 import MobileCreditCards from "../components/mobile/MobileCreditCards";
 import MobileAnalytics from "../components/mobile/MobileAnalytics";
+import MobileAssistant from "../components/mobile/MobileAssistant";
 import ImportPanel from "../components/desktop/ImportPanel";
 import { HOME_BG, HOME_TEXT, HOME_MUTED, HOME_DIVIDER, HOME_SURFACE, HOME_INCOME, HOME_EXPENSE, ACCENT, TILE_COLOR } from "../components/shared/categoryVisuals";
 import CategoryPicker from "../components/mobile/CategoryPicker";
@@ -114,19 +115,12 @@ function IconPlus({ size = 24 }) {
   );
 }
 
+// Matches the sparkle glyph in the AI tab's own header (MobileAssistant/AssistantPanel) -
+// same mark in the nav as on the surface it opens, instead of an unrelated star outline.
 function IconAI({ size = 20 }) {
   return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" />
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12 2.5c.3 3.4 1 5.6 2.1 6.7 1.1 1.1 3.3 1.8 6.7 2.1-3.4.3-5.6 1-6.7 2.1-1.1 1.1-1.8 3.3-2.1 6.7-.3-3.4-1-5.6-2.1-6.7-1.1-1.1-3.3-1.8-6.7-2.1 3.4-.3 5.6-1 6.7-2.1 1.1-1.1 1.8-3.3 2.1-6.7z" />
     </svg>
   );
 }
@@ -668,7 +662,7 @@ export default function MobileDashboard() {
   return (
     <div
       className="h-dvh flex flex-col overflow-hidden"
-      style={{ backgroundColor: navTab === "dashboard" || navTab === "activity" ? HOME_BG : bg, color: text }}
+      style={{ backgroundColor: navTab === "dashboard" || navTab === "activity" || navTab === "ai" ? HOME_BG : bg, color: text }}
     >
 
       <MobileTopbar
@@ -764,24 +758,8 @@ export default function MobileDashboard() {
           />
         )}
 
-        {/* AI tab */}
-        {navTab === "ai" && (
-          <div className="flex flex-col h-[calc(100dvh-12rem)]">
-            <div
-              className="flex-1 flex flex-col items-center justify-center gap-3 rounded-2xl border"
-              style={{ backgroundColor: surface, borderColor: border }}
-            >
-              <IconAI size={36} />
-              <p className="text-base font-semibold" style={{ color: text }}>
-                Finsight AI
-              </p>
-              <p className="text-sm text-center px-8" style={{ color: muted }}>
-                AI assistant coming soon. Ask questions about your spending, get
-                insights, and more.
-              </p>
-            </div>
-          </div>
-        )}
+        {/* AI tab (#13) */}
+        {navTab === "ai" && <MobileAssistant />}
         </MobilePageSlide>
       </main>
 
