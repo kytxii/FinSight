@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import MobileActivity from "./MobileActivity";
 import MobileCategory from "./MobileCategory";
 import MobileTips from "./MobileTips";
@@ -8,7 +8,7 @@ import Skel from "../shared/Skel";
 import { CATEGORY_CONFIG, MONEY_IN_TYPES, MONEY_OUT_TYPES, fmt } from "../../utils/finance";
 import { useMonthPeriod, yearOptionsFromTransactions } from "../../hooks/mobile/useMonthPeriod";
 import {
-  HOME_TEXT, HOME_MUTED, HOME_SURFACE, HOME_DIVIDER, HOME_INCOME, HOME_EXPENSE,
+  HOME_TEXT, HOME_MUTED, HOME_SURFACE, HOME_DIVIDER, HOME_INCOME, HOME_EXPENSE, ACCENT,
   TILE_COLOR, CATEGORY_ICON,
 } from "../shared/categoryVisuals";
 
@@ -35,10 +35,13 @@ function lastMonths(n, anchorYear, anchorMonth) {
   return out;
 }
 
-function SectionCard({ title, children }) {
+function SectionCard({ title, right, children }) {
   return (
     <div style={{ backgroundColor: HOME_SURFACE, borderRadius: 18, padding: "16px 16px 18px", marginBottom: 16 }}>
-      <p style={{ margin: "0 0 14px", fontSize: 15, fontWeight: 700, color: HOME_TEXT }}>{title}</p>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+        <p style={{ margin: 0, fontSize: 15, fontWeight: 700, color: HOME_TEXT }}>{title}</p>
+        {right}
+      </div>
       {children}
     </div>
   );
@@ -97,8 +100,92 @@ function TrendChartSkel({ bars = 1 }) {
 
 const CATEGORY_HISTORY_MONTHS = 6;
 
+// Category Breakdown's own range presets (#102) - independent of the page's
+// month stepper above it, which keeps stepping the anchor month either way;
+// a preset just widens Category Breakdown (and its drill-through, #77) to a
+// trailing window ending at that anchor instead of the anchor month alone.
+const RANGE_PRESETS = [
+  { months: 1, label: "1M" },
+  { months: 3, label: "3M" },
+  { months: 6, label: "6M" },
+  { months: 12, label: "1Y" },
+];
+
+function formatRangeLabel(months, year, month) {
+  if (months === 1) {
+    return new Date(year, month, 1).toLocaleDateString("en-US", { month: "long", year: "numeric" });
+  }
+  const start = new Date(year, month - (months - 1), 1);
+  const end = new Date(year, month, 1);
+  const sameYear = start.getFullYear() === end.getFullYear();
+  const startLabel = start.toLocaleDateString("en-US", { month: "short", year: sameYear ? undefined : "numeric" });
+  const endLabel = end.toLocaleDateString("en-US", { month: "short", year: "numeric" });
+  return `${startLabel} – ${endLabel}`;
+}
+
+function nextRangeMonths(current) {
+  const idx = RANGE_PRESETS.findIndex((p) => p.months === current);
+  return RANGE_PRESETS[(idx + 1) % RANGE_PRESETS.length].months;
+}
+
+// One button, not four - tapping anywhere on it cycles 1M -> 3M -> 6M -> 1Y
+// -> 1M. The highlight is a single absolutely-positioned pill that slides
+// between slots (same translateX(N * 100%) pattern as the bottom nav's
+// active-tab indicator, MobileDashboard.jsx) rather than four independently
+// colored segments, so switching reads as one thing moving, not four toggles.
+function RangePresetToggle({ months, onCycle }) {
+  const activeIndex = RANGE_PRESETS.findIndex((p) => p.months === months);
+  const lastClickRef = useRef(0);
+
+  // Rate-limited to the slide's own duration - a rapid double/triple tap
+  // would otherwise queue several cycles faster than the highlight can
+  // visibly slide between them.
+  function handleClick() {
+    const now = Date.now();
+    if (now - lastClickRef.current < 240) return;
+    lastClickRef.current = now;
+    onCycle();
+  }
+
+  return (
+    <button
+      onClick={handleClick}
+      aria-label={`Range: ${RANGE_PRESETS[activeIndex]?.label}. Tap to cycle.`}
+      style={{
+        position: "relative", display: "flex", padding: 3, borderRadius: 999, border: "none", cursor: "pointer",
+        backgroundColor: "rgba(255,255,255,0.06)", boxShadow: "inset 0 1px 3px rgba(0,0,0,0.3)",
+      }}
+    >
+      <div
+        aria-hidden
+        style={{
+          position: "absolute", top: 3, bottom: 3, left: 3,
+          width: `calc((100% - 6px) / ${RANGE_PRESETS.length})`,
+          transform: `translateX(${activeIndex * 100}%)`,
+          transition: "transform 240ms cubic-bezier(0.32, 0.72, 0, 1)",
+          borderRadius: 999, backgroundColor: ACCENT, boxShadow: "0 1px 3px rgba(0,0,0,0.35)",
+        }}
+      />
+      {RANGE_PRESETS.map((p, i) => (
+        <span
+          key={p.label}
+          style={{
+            position: "relative", zIndex: 1,
+            padding: "5px 12px", borderRadius: 999,
+            fontSize: 12, fontWeight: 700,
+            color: i === activeIndex ? "#fff" : HOME_MUTED,
+            transition: "color 200ms ease",
+          }}
+        >
+          {p.label}
+        </span>
+      ))}
+    </button>
+  );
+}
+
 export default function MobileAnalytics({ transactions, deposits = [], loading, onEditTransaction, onDeleteTransaction, onEditDeposit, onDeleteDeposit, onOpenPaychecks, onRefresh, jump, onJumpHandled }) {
-  const { period, periodKey, periodLabel, isCurrentMonth, shiftMonth, setMonth, setYear, goTo, slideDir } = useMonthPeriod();
+  const { period, periodKey, isCurrentMonth, shiftMonth, setMonth, setYear, goTo, slideDir } = useMonthPeriod();
 
   // Local drill-down (#77) - kept independent of MobileDashboard's own
   // categoryView rather than stretched across tabs, since that one assumes
@@ -140,6 +227,18 @@ export default function MobileAnalytics({ transactions, deposits = [], loading, 
     slideDir,
   }), [period, shiftMonth, setMonth, setYear, isCurrentMonth, yearOptions, periodKey, slideDir]);
 
+  // Category Breakdown's own range preset (#102) - defaults to just the
+  // anchor month, same as before this issue.
+  const [rangeMonths, setRangeMonths] = useState(1);
+  const rangeMonthKeys = useMemo(
+    () => new Set(lastMonths(rangeMonths, period.year, period.month).map((m) => m.key)),
+    [rangeMonths, period],
+  );
+  const rangeLabel = useMemo(
+    () => formatRangeLabel(rangeMonths, period.year, period.month),
+    [rangeMonths, period],
+  );
+
   // This period's transactions, and a rolling N-month history ending at it -
   // MobileCategory's own "vs Last Month" card and history bars, scoped to
   // whatever month is selected up here rather than always the current one.
@@ -149,10 +248,23 @@ export default function MobileAnalytics({ transactions, deposits = [], loading, 
   );
   // Also scopes MobileActivity's list to this period (#191) - it just
   // renders whatever transactions/deposits it's given, so filtering here
-  // once replaces its own month-by-month infinite scroll.
+  // once replaces its own month-by-month infinite scroll. Deliberately the
+  // single anchor month, not the Category Breakdown range above - Activity
+  // is a different section and isn't part of #102's ask.
   const periodDepositsList = useMemo(
     () => deposits.filter((d) => monthKey(d.deposit_date) === periodKey),
     [deposits, periodKey],
+  );
+  // Category Breakdown's actual data source, and what a drill-through
+  // (#77) shows when a multi-month preset is active - the whole range,
+  // not just the anchor month, so the drilled total matches what was shown.
+  const rangeTransactions = useMemo(
+    () => transactions.filter((t) => rangeMonthKeys.has(monthKey(t.transaction_date))),
+    [transactions, rangeMonthKeys],
+  );
+  const rangeDepositsTotal = useMemo(
+    () => deposits.reduce((s, d) => (rangeMonthKeys.has(monthKey(d.deposit_date)) ? s + parseFloat(d.amount) : s), 0),
+    [deposits, rangeMonthKeys],
   );
   const categoryHistory = useMemo(() => {
     const { year, month } = period;
@@ -170,22 +282,17 @@ export default function MobileAnalytics({ transactions, deposits = [], loading, 
 
   const categoryBreakdown = useMemo(() => {
     const totals = {};
-    transactions.forEach((t) => {
-      if (monthKey(t.transaction_date) !== periodKey) return;
+    rangeTransactions.forEach((t) => {
       totals[t.category] = (totals[t.category] ?? 0) + parseFloat(t.amount);
     });
     // Deposits add to Tips on top of logged tips - not a subset, additive (#56/#99).
-    const periodDeposits = deposits.reduce(
-      (s, d) => (monthKey(d.deposit_date) === periodKey ? s + parseFloat(d.amount) : s),
-      0,
-    );
-    if (periodDeposits) totals.TIPS = (totals.TIPS ?? 0) + periodDeposits;
+    if (rangeDepositsTotal) totals.TIPS = (totals.TIPS ?? 0) + rangeDepositsTotal;
     const rows = Object.entries(totals)
       .map(([category, total]) => ({ category, total }))
       .sort((a, b) => b.total - a.total);
     const max = rows[0]?.total ?? 0;
     return { rows, max };
-  }, [transactions, deposits, periodKey]);
+  }, [rangeTransactions, rangeDepositsTotal]);
 
   // Ends at the selected month, not today (#152) - was previously anchored
   // to getNow() with an empty dependency array, so navigating the month
@@ -253,10 +360,10 @@ export default function MobileAnalytics({ transactions, deposits = [], loading, 
   ) : categoryView ? (
     <MobileCategory
       category={categoryView}
-      transactions={periodTransactions}
+      transactions={rangeTransactions}
       monthlyHistory={categoryHistory}
       loading={loading}
-      monthStepper={monthStepper}
+      monthStepper={rangeMonths > 1 ? { ...monthStepper, rangeLabel } : monthStepper}
       onBack={() => setCategoryView(null)}
       onEditTransaction={onEditTransaction}
       onDeleteTransaction={onDeleteTransaction}
@@ -289,11 +396,11 @@ export default function MobileAnalytics({ transactions, deposits = [], loading, 
         from { opacity: 0; transform: translateX(var(--mob-slide-from, 0)); }
         to   { opacity: 1; transform: translateX(0); }
       }`}</style>
-      <SectionCard title="Category Breakdown">
+      <SectionCard title="Category Breakdown" right={<RangePresetToggle months={rangeMonths} onCycle={() => setRangeMonths(nextRangeMonths)} />}>
         {loading ? (
           <CategoryBreakdownSkel />
         ) : categoryBreakdown.rows.length === 0 ? (
-          <p style={{ fontSize: 13, color: HOME_MUTED, textAlign: "center", padding: "10px 0" }}>No transactions in {periodLabel}</p>
+          <p style={{ fontSize: 13, color: HOME_MUTED, textAlign: "center", padding: "10px 0" }}>No transactions in {rangeLabel}</p>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {categoryBreakdown.rows.map(({ category, total }) => {

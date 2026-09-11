@@ -88,11 +88,24 @@ const VARIANTS = {
 };
 
 export default function MonthStepperHeader({
-  year, month, onShiftMonth, onSelectMonth, onSelectYear, isCurrentMonth, yearOptions, variant = "standalone",
+  year, month, onShiftMonth, onSelectMonth, onSelectYear, isCurrentMonth, yearOptions, variant = "standalone", rangeLabel,
 }) {
   const [picker, setPicker] = useState(null); // null | "month" | "year"
   const v = VARIANTS[variant];
   const closePicker = () => setPicker(null);
+
+  // A multi-month range preset (#102) isn't a single month to step through -
+  // drilling into a category from one (#77) shows a static label instead of
+  // the usual arrows/picker.
+  if (rangeLabel) {
+    return (
+      <div style={v.wrap}>
+        <span style={{ fontSize: v.textSize, fontWeight: v.weight, letterSpacing: "-0.4px", color: HOME_TEXT }}>
+          {rangeLabel}
+        </span>
+      </div>
+    );
+  }
 
   return (
     <div style={v.wrap}>
