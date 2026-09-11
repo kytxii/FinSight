@@ -35,7 +35,16 @@ export function useMonthPeriod() {
     setPeriod((p) => ({ ...p, year }));
   }
 
-  return { period, periodKey, periodLabel, isCurrentMonth, shiftMonth, setMonth, setYear, slideDir };
+  // Jump straight to an arbitrary year/month - e.g. locating a transaction
+  // from search (#191), which may land outside the current year as easily
+  // as inside it, so setMonth/setYear's "keep the other field" semantics
+  // don't fit.
+  function goTo(year, month) {
+    setSlideDir(0);
+    setPeriod({ year, month });
+  }
+
+  return { period, periodKey, periodLabel, isCurrentMonth, shiftMonth, setMonth, setYear, goTo, slideDir };
 }
 
 // Years selectable in the picker: current year down through the earliest

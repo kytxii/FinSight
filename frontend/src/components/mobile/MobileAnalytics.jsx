@@ -98,12 +98,33 @@ function TrendChartSkel({ bars = 1 }) {
 const CATEGORY_HISTORY_MONTHS = 6;
 
 export default function MobileAnalytics({ transactions, deposits = [], loading, onEditTransaction, onDeleteTransaction, onEditDeposit, onDeleteDeposit, onOpenPaychecks, onRefresh, jump, onJumpHandled }) {
-  const { period, periodKey, periodLabel, isCurrentMonth, shiftMonth, setMonth, setYear, slideDir } = useMonthPeriod();
+  const { period, periodKey, periodLabel, isCurrentMonth, shiftMonth, setMonth, setYear, goTo, slideDir } = useMonthPeriod();
 
   // Local drill-down (#77) - kept independent of MobileDashboard's own
   // categoryView rather than stretched across tabs, since that one assumes
   // the real current month while this tab's period can be any month.
   const [categoryView, setCategoryView] = useState(null);
+
+  // MobileActivity is scoped to this period now (#191), so locating a
+  // transaction elsewhere in its month has to move `period` there first.
+  // Done during render (not in an effect) so the corrected period is what
+  // MobileActivity actually mounts/re-renders with - an effect would land
+  // one render late, after MobileActivity's own jump effect already ran
+  // against the old, not-yet-matching period's transactions.
+  const [handledJumpToken, setHandledJumpToken] = useState(null);
+  if (jump && jump.token !== handledJumpToken) {
+    const target = transactions.find((t) => t.id === jump.id);
+    if (target) {
+      const d = new Date(target.transaction_date + "T00:00:00");
+      if (d.getFullYear() !== period.year || d.getMonth() !== period.month) {
+        goTo(d.getFullYear(), d.getMonth());
+      }
+    }
+    // A drill-down would otherwise keep rendering instead of the Activity
+    // list the highlight/scroll below actually targets.
+    if (categoryView) setCategoryView(null);
+    setHandledJumpToken(jump.token);
+  }
 
   const yearOptions = useMemo(() => yearOptionsFromTransactions(transactions), [transactions]);
 
@@ -125,6 +146,13 @@ export default function MobileAnalytics({ transactions, deposits = [], loading, 
   const periodTransactions = useMemo(
     () => transactions.filter((t) => monthKey(t.transaction_date) === periodKey),
     [transactions, periodKey],
+  );
+  // Also scopes MobileActivity's list to this period (#191) - it just
+  // renders whatever transactions/deposits it's given, so filtering here
+  // once replaces its own month-by-month infinite scroll.
+  const periodDepositsList = useMemo(
+    () => deposits.filter((d) => monthKey(d.deposit_date) === periodKey),
+    [deposits, periodKey],
   );
   const categoryHistory = useMemo(() => {
     const { year, month } = period;
@@ -365,8 +393,9 @@ export default function MobileAnalytics({ transactions, deposits = [], loading, 
       </div>
 
       <MobileActivity
-        transactions={transactions}
-        deposits={deposits}
+        transactions={periodTransactions}
+        deposits={periodDepositsList}
+        periodKey={periodKey}
         loading={loading}
         onEditTransaction={onEditTransaction}
         onDeleteTransaction={onDeleteTransaction}
