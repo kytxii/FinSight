@@ -791,6 +791,8 @@ export default function MobileDashboard() {
             onDeleteTransaction={handleDelete}
             onEditDeposit={setEditingDeposit}
             onDeleteDeposit={handleDeleteDeposit}
+            onOpenPaychecks={() => setPaychecksOpen(true)}
+            onRefresh={refresh}
             jump={activityJump}
             onJumpHandled={() => setActivityJump(null)}
           />

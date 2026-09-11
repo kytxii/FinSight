@@ -1,5 +1,8 @@
-import { useMemo } from "react";
+import { useState, useMemo } from "react";
 import MobileActivity from "./MobileActivity";
+import MobileCategory from "./MobileCategory";
+import MobileTips from "./MobileTips";
+import MobilePageSlide from "./MobilePageSlide";
 import MonthStepperHeader from "./shared/MonthStepperHeader";
 import Skel from "../shared/Skel";
 import { CATEGORY_CONFIG, MONEY_IN_TYPES, MONEY_OUT_TYPES, fmt } from "../../utils/finance";
@@ -92,10 +95,50 @@ function TrendChartSkel({ bars = 1 }) {
   );
 }
 
-export default function MobileAnalytics({ transactions, deposits = [], loading, onEditTransaction, onDeleteTransaction, onEditDeposit, onDeleteDeposit, jump, onJumpHandled }) {
+const CATEGORY_HISTORY_MONTHS = 6;
+
+export default function MobileAnalytics({ transactions, deposits = [], loading, onEditTransaction, onDeleteTransaction, onEditDeposit, onDeleteDeposit, onOpenPaychecks, onRefresh, jump, onJumpHandled }) {
   const { period, periodKey, periodLabel, isCurrentMonth, shiftMonth, setMonth, setYear, slideDir } = useMonthPeriod();
 
+  // Local drill-down (#77) - kept independent of MobileDashboard's own
+  // categoryView rather than stretched across tabs, since that one assumes
+  // the real current month while this tab's period can be any month.
+  const [categoryView, setCategoryView] = useState(null);
+
   const yearOptions = useMemo(() => yearOptionsFromTransactions(transactions), [transactions]);
+
+  const monthStepper = useMemo(() => ({
+    year: period.year,
+    month: period.month,
+    onShiftMonth: shiftMonth,
+    onSelectMonth: setMonth,
+    onSelectYear: setYear,
+    isCurrentMonth,
+    yearOptions,
+    periodKey,
+    slideDir,
+  }), [period, shiftMonth, setMonth, setYear, isCurrentMonth, yearOptions, periodKey, slideDir]);
+
+  // This period's transactions, and a rolling N-month history ending at it -
+  // MobileCategory's own "vs Last Month" card and history bars, scoped to
+  // whatever month is selected up here rather than always the current one.
+  const periodTransactions = useMemo(
+    () => transactions.filter((t) => monthKey(t.transaction_date) === periodKey),
+    [transactions, periodKey],
+  );
+  const categoryHistory = useMemo(() => {
+    const { year, month } = period;
+    const buckets = [];
+    for (let i = CATEGORY_HISTORY_MONTHS - 1; i >= 0; i--) {
+      const monthStart = new Date(year, month - i, 1);
+      const monthEnd = new Date(year, month - i + 1, 0, 23, 59, 59, 999);
+      buckets.push(transactions.filter((t) => {
+        const d = new Date(t.transaction_date + "T00:00:00");
+        return d >= monthStart && d <= monthEnd;
+      }));
+    }
+    return buckets;
+  }, [transactions, period]);
 
   const categoryBreakdown = useMemo(() => {
     const totals = {};
@@ -160,7 +203,39 @@ export default function MobileAnalytics({ transactions, deposits = [], loading, 
   const hasSavingsData = savingsSummary.some((m) => m.amount > 0);
   const savingsMax = Math.max(1, ...savingsSummary.map((m) => m.amount));
 
-  return (
+  // Drill-down page/back transition, matching MobileDashboard's own
+  // categoryView (#77 follow-up) - "activity" (the list) is the base page,
+  // drilling into a category or Tips slides forward, backing out of either
+  // slides back.
+  const pageKey = categoryView === "TIPS" ? "tips" : categoryView ? `category:${categoryView}` : "activity";
+  const pageOrder = categoryView ? 0.5 : 0;
+
+  // Drill-down (#77): Tips routes to MobileTips, same as Home's categoryView
+  // convention, since it's not a real transaction category page.
+  const content = categoryView === "TIPS" ? (
+    <MobileTips
+      transactions={transactions}
+      deposits={deposits}
+      loading={loading}
+      onBack={() => setCategoryView(null)}
+      onEditTransaction={onEditTransaction}
+      onDeleteTransaction={onDeleteTransaction}
+      onRefresh={onRefresh}
+    />
+  ) : categoryView ? (
+    <MobileCategory
+      category={categoryView}
+      transactions={periodTransactions}
+      monthlyHistory={categoryHistory}
+      loading={loading}
+      monthStepper={monthStepper}
+      onBack={() => setCategoryView(null)}
+      onEditTransaction={onEditTransaction}
+      onDeleteTransaction={onDeleteTransaction}
+      onOpenPaychecks={onOpenPaychecks}
+      onRefresh={onRefresh}
+    />
+  ) : (
     <>
       {/* Own instance of the shared stepper (#191: intentionally independent
           of MobileHome/MobileCategory's, unaffected by this extraction) */}
@@ -198,7 +273,11 @@ export default function MobileAnalytics({ transactions, deposits = [], loading, 
               const color = TILE_COLOR[category] ?? HOME_MUTED;
               const pct = categoryBreakdown.max > 0 ? (total / categoryBreakdown.max) * 100 : 0;
               return (
-                <div key={category} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div
+                  key={category}
+                  onClick={() => setCategoryView(category)}
+                  style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}
+                >
                   <div style={{
                     flex: "0 0 auto", width: 34, height: 34, borderRadius: "50%", background: color,
                     display: "flex", alignItems: "center", justifyContent: "center",
@@ -297,5 +376,11 @@ export default function MobileAnalytics({ transactions, deposits = [], loading, 
         onJumpHandled={onJumpHandled}
       />
     </>
+  );
+
+  return (
+    <MobilePageSlide pageKey={pageKey} order={pageOrder} layerClassName="space-y-4">
+      {content}
+    </MobilePageSlide>
   );
 }
