@@ -26,8 +26,9 @@ import {
 } from "../utils/finance";
 import { useTheme } from "../hooks/mobile/useTheme";
 import { useAuth } from "../context/AuthContext";
-import { getPresetRange } from "../components/mobile/DateRangeFilter";
-import { getToday, getNow } from "../utils/time";
+import { getMonthRange } from "../components/mobile/DateRangeFilter";
+import { getToday } from "../utils/time";
+import { useMonthPeriod, yearOptionsFromTransactions } from "../hooks/mobile/useMonthPeriod";
 import { errorMessage } from "../utils/errors";
 import MobilePageSlide from "../components/mobile/MobilePageSlide";
 import MobileScreen from "../components/mobile/MobileScreen";
@@ -408,8 +409,29 @@ export default function MobileDashboard() {
     }
   };
 
-  // Dashboard state (fixed to current month - no picker on the Home tab)
-  const dashDateRange = useMemo(() => getPresetRange("Current Month"), []);
+  // Dashboard state - steppable month/year shared by the Home tab's hero
+  // header and MobileCategory's summary header (#122/#196). Analytics keeps
+  // its own separate instance (#191).
+  const dashPeriod = useMonthPeriod();
+  const dashYearOptions = useMemo(() => yearOptionsFromTransactions(transactions), [transactions]);
+  const dashMonthStepper = useMemo(() => ({
+    year: dashPeriod.period.year,
+    month: dashPeriod.period.month,
+    onShiftMonth: dashPeriod.shiftMonth,
+    onSelectMonth: dashPeriod.setMonth,
+    onSelectYear: dashPeriod.setYear,
+    isCurrentMonth: dashPeriod.isCurrentMonth,
+    yearOptions: dashYearOptions,
+    // Not consumed by MonthStepperHeader itself - passed through so
+    // MobileCategory can key/animate its own month-change transition.
+    periodKey: dashPeriod.periodKey,
+    slideDir: dashPeriod.slideDir,
+  }), [dashPeriod, dashYearOptions]);
+
+  const dashDateRange = useMemo(
+    () => getMonthRange(dashPeriod.period.year, dashPeriod.period.month),
+    [dashPeriod.period],
+  );
 
   const [activityJump, setActivityJump] = useState(null);
 
@@ -602,9 +624,14 @@ export default function MobileDashboard() {
     [upcomingItems],
   );
 
-  // Last month (for the small +/-% badges on Home's Income/Expense cards,
-  // and MobileCategory's own vs-last-month card, #108)
-  const dashLastMonthRange = useMemo(() => getPresetRange("Last Month"), []);
+  // The month before whatever's selected (for the small +/-% badges on
+  // Home's Income/Expense cards, and MobileCategory's own vs-last-month
+  // card, #108) - anchored to dashPeriod, not always the real last month,
+  // now that the header can step to any month (#122/#196).
+  const dashLastMonthRange = useMemo(
+    () => getMonthRange(dashPeriod.period.year, dashPeriod.period.month - 1),
+    [dashPeriod.period],
+  );
   const dashLastMonthDeposits = useMemo(
     () => depositsInRange(dashLastMonthRange.from, dashLastMonthRange.to),
     [depositsInRange, dashLastMonthRange],
@@ -623,21 +650,23 @@ export default function MobileDashboard() {
     return { totalIn, totalOut };
   }, [dashLastMonthTransactions, dashLastMonthDeposits]);
 
-  // Rolling N-month window, oldest first, last entry the current month (#108).
+  // Rolling N-month window, oldest first, last entry the selected month -
+  // not always the real current month, now that the header can step
+  // (#108, #122/#196).
   const CATEGORY_HISTORY_MONTHS = 6;
   const dashCategoryHistory = useMemo(() => {
-    const now = getNow();
+    const { year, month } = dashPeriod.period;
     const buckets = [];
     for (let i = CATEGORY_HISTORY_MONTHS - 1; i >= 0; i--) {
-      const monthStart = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const monthEnd = new Date(now.getFullYear(), now.getMonth() - i + 1, 0, 23, 59, 59, 999);
+      const monthStart = new Date(year, month - i, 1);
+      const monthEnd = new Date(year, month - i + 1, 0, 23, 59, 59, 999);
       buckets.push(transactions.filter((t) => {
         const d = new Date(t.transaction_date + "T00:00:00");
         return d >= monthStart && d <= monthEnd;
       }));
     }
     return buckets;
-  }, [transactions]);
+  }, [transactions, dashPeriod.period]);
 
   useEffect(() => {
     document.body.style.overflow =
@@ -688,7 +717,8 @@ export default function MobileDashboard() {
         className="flex-1 px-4 pb-28 space-y-4 overflow-y-auto"
         style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 1rem + 54px)", WebkitOverflowScrolling: "touch" }}
       >
-        <style>{`@keyframes skel-pulse { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }`}</style>
+        <style>{`@keyframes skel-pulse { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
+        @keyframes mob-month-slide { from { opacity: 0; transform: translateX(var(--mob-slide-from, 0)); } to { opacity: 1; transform: translateX(0); } }`}</style>
         <MobilePageSlide pageKey={pageKey} order={pageOrder} layerClassName="space-y-4">
         {/* Dashboard tab */}
         {navTab === "dashboard" && (
@@ -710,6 +740,7 @@ export default function MobileDashboard() {
                 monthlyHistory={dashCategoryHistory}
                 loading={loading}
                 upcomingItems={upcomingItems}
+                monthStepper={dashMonthStepper}
                 onBack={() => setCategoryView(null)}
                 onEditTransaction={setEditingTransaction}
                 onDeleteTransaction={handleDelete}
@@ -717,7 +748,13 @@ export default function MobileDashboard() {
                 onRefresh={refresh}
               />
             ) : (
-              <>
+              <div
+                key={`dash-${dashPeriod.periodKey}`}
+                style={{
+                  animation: dashPeriod.slideDir ? "mob-month-slide 260ms ease" : undefined,
+                  "--mob-slide-from": dashPeriod.slideDir > 0 ? "24px" : "-24px",
+                }}
+              >
                 <MobileHome
                     loading={loading}
                     dashSummary={dashSummary}
@@ -729,6 +766,7 @@ export default function MobileDashboard() {
                     pendingBillsCount={pendingBillsCount}
                     dashSorted={dashSorted}
                     dashCategoryTotals={dashCategoryTotals}
+                    monthStepper={dashMonthStepper}
                     onOpenRecurring={() => setRecurringOpen(true)}
                     onOpenInstallments={() => setInstallmentsOpen(true)}
                     onOpenPaychecks={() => setPaychecksOpen(true)}
@@ -738,7 +776,7 @@ export default function MobileDashboard() {
                     onSeeAllTransactions={() => setNavTab("activity")}
                     onEditTransaction={setEditingTransaction}
                   />
-              </>
+              </div>
             )}
           </>
         )}

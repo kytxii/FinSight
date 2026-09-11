@@ -1,8 +1,9 @@
-import { useState, useMemo } from "react";
+import { useMemo } from "react";
 import MobileActivity from "./MobileActivity";
+import MonthStepperHeader from "./shared/MonthStepperHeader";
 import Skel from "../shared/Skel";
 import { CATEGORY_CONFIG, MONEY_IN_TYPES, MONEY_OUT_TYPES, fmt } from "../../utils/finance";
-import { getNow } from "../../utils/time";
+import { useMonthPeriod, yearOptionsFromTransactions } from "../../hooks/mobile/useMonthPeriod";
 import {
   HOME_TEXT, HOME_MUTED, HOME_SURFACE, HOME_DIVIDER, HOME_INCOME, HOME_EXPENSE,
   TILE_COLOR, CATEGORY_ICON,
@@ -10,7 +11,6 @@ import {
 
 
 const TREND_MONTHS = 6;
-const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
 function monthKey(dateStr) {
   return dateStr.slice(0, 7);
@@ -92,77 +92,10 @@ function TrendChartSkel({ bars = 1 }) {
   );
 }
 
-function IconChevron({ dir, size = 22 }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-      <path d={dir === "left" ? "M15 18l-6-6 6-6" : "M9 18l6-6-6-6"} />
-    </svg>
-  );
-}
-
-// A small dropdown under whichever of month/year was tapped, not a full sheet.
-function PickerList({ options, onSelect, onClose }) {
-  return (
-    <>
-      <div style={{ position: "fixed", inset: 0, zIndex: 20 }} onClick={onClose} />
-      <div style={{
-        position: "absolute", top: "calc(100% + 6px)", left: "50%", transform: "translateX(-50%)",
-        zIndex: 21, backgroundColor: HOME_SURFACE, border: `1px solid ${HOME_DIVIDER}`, borderRadius: 14,
-        padding: 6, maxHeight: 260, overflowY: "auto", boxShadow: "0 12px 28px rgba(0,0,0,0.45)",
-        display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 4, minWidth: 220,
-      }}>
-        {options.map(({ value, label, disabled }) => (
-          <button
-            key={value}
-            disabled={disabled}
-            onClick={() => onSelect(value)}
-            style={{
-              padding: "8px 10px", borderRadius: 8, border: "none", background: "transparent",
-              color: disabled ? HOME_DIVIDER : HOME_TEXT, fontSize: 13.5, fontWeight: 600,
-              cursor: disabled ? "default" : "pointer", textAlign: "center",
-            }}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-    </>
-  );
-}
-
 export default function MobileAnalytics({ transactions, deposits = [], loading, onEditTransaction, onDeleteTransaction, onEditDeposit, onDeleteDeposit, jump, onJumpHandled }) {
-  const now = getNow();
+  const { period, periodKey, periodLabel, isCurrentMonth, shiftMonth, setMonth, setYear, slideDir } = useMonthPeriod();
 
-  const [period, setPeriod] = useState({ year: now.getFullYear(), month: now.getMonth() }); // month: 0-11
-  const [picker, setPicker] = useState(null); // null | "month" | "year"
-
-  const periodKey = `${period.year}-${String(period.month + 1).padStart(2, "0")}`;
-  const periodLabel = new Date(period.year, period.month, 1).toLocaleDateString("en-US", { month: "long", year: "numeric" });
-  const isCurrentMonth = period.year === now.getFullYear() && period.month === now.getMonth();
-
-  const [slideDir, setSlideDir] = useState(0);
-
-  function shiftMonth(delta) {
-    setSlideDir(delta);
-    setPeriod((p) => {
-      let month = p.month + delta;
-      let year = p.year;
-      if (month < 0) { month = 11; year -= 1; }
-      else if (month > 11) { month = 0; year += 1; }
-      return { year, month };
-    });
-  }
-
-  const yearOptions = useMemo(() => {
-    let minYear = now.getFullYear();
-    transactions.forEach((t) => {
-      const y = parseInt(t.transaction_date.slice(0, 4), 10);
-      if (y < minYear) minYear = y;
-    });
-    const years = [];
-    for (let y = now.getFullYear(); y >= minYear; y--) years.push(y);
-    return years;
-  }, [transactions, now]);
+  const yearOptions = useMemo(() => yearOptionsFromTransactions(transactions), [transactions]);
 
   const categoryBreakdown = useMemo(() => {
     const totals = {};
@@ -229,46 +162,18 @@ export default function MobileAnalytics({ transactions, deposits = [], loading, 
 
   return (
     <>
-      {/* Matches Home's period-label placement */}
-      <div style={{ position: "relative", display: "flex", alignItems: "center", justifyContent: "center", gap: 8, margin: "4px 2px 18px" }}>
-        <button onClick={() => shiftMonth(-1)} aria-label="Previous month" style={{ color: HOME_MUTED, background: "none", border: "none", cursor: "pointer", width: 44, height: 44, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-          <IconChevron dir="left" />
-        </button>
-
-        <div style={{ display: "flex", alignItems: "baseline", justifyContent: "center", gap: 10, position: "relative", width: 175, flexShrink: 0 }}>
-          <span
-            onClick={() => setPicker(picker === "month" ? null : "month")}
-            style={{ fontSize: 20, fontWeight: 800, letterSpacing: "-0.4px", color: HOME_TEXT, cursor: "pointer" }}
-          >
-            {MONTH_NAMES[period.month]}
-          </span>
-          <span
-            onClick={() => setPicker(picker === "year" ? null : "year")}
-            style={{ fontSize: 20, fontWeight: 800, letterSpacing: "-0.4px", color: HOME_MUTED, cursor: "pointer" }}
-          >
-            {period.year}
-          </span>
-
-          {picker === "month" && (
-            <PickerList
-              options={MONTH_NAMES.map((label, i) => ({ value: i, label: label.slice(0, 3) }))}
-              onSelect={(m) => { setPeriod((p) => ({ ...p, month: m })); setPicker(null); }}
-              onClose={() => setPicker(null)}
-            />
-          )}
-          {picker === "year" && (
-            <PickerList
-              options={yearOptions.map((y) => ({ value: y, label: String(y) }))}
-              onSelect={(y) => { setPeriod((p) => ({ ...p, year: y })); setPicker(null); }}
-              onClose={() => setPicker(null)}
-            />
-          )}
-        </div>
-
-        <button onClick={() => shiftMonth(1)} disabled={isCurrentMonth} aria-label="Next month" style={{ color: isCurrentMonth ? HOME_DIVIDER : HOME_MUTED, background: "none", border: "none", cursor: isCurrentMonth ? "default" : "pointer", width: 44, height: 44, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-          <IconChevron dir="right" />
-        </button>
-      </div>
+      {/* Own instance of the shared stepper (#191: intentionally independent
+          of MobileHome/MobileCategory's, unaffected by this extraction) */}
+      <MonthStepperHeader
+        variant="standalone"
+        year={period.year}
+        month={period.month}
+        onShiftMonth={shiftMonth}
+        onSelectMonth={setMonth}
+        onSelectYear={setYear}
+        isCurrentMonth={isCurrentMonth}
+        yearOptions={yearOptions}
+      />
 
       <div
         key={`category-${periodKey}`}
