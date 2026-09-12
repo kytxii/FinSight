@@ -1,5 +1,11 @@
 import { useState, useEffect } from "react";
-import { fmt } from "../../utils/finance";
+import { fmt, MIN_TABLE_ROWS } from "../../utils/finance";
+
+// This card's rows are more compact than TransactionTable's (tighter
+// "10px 20px" padding, no text-lg) - reusing TransactionTable's own 60px
+// ROW_HEIGHT verbatim overshot the actual row-count parity #160 wanted, so
+// this is calibrated to Tips's own row height instead of borrowed as-is.
+const TIPS_ROW_HEIGHT = 54;
 import { HOME_SURFACE, HOME_DIVIDER, HOME_TEXT, HOME_MUTED, HOME_EXPENSE, HOME_INCOME, ACCENT, ACCENT_TEXT, TIPS_DEPOSITED, CATEGORY_ACCENT } from "../shared/categoryVisuals";
 import { updateTipDeposit, deleteTipDeposit, convertTipDepositToTransaction } from "../../api/tipDeposits";
 import CurrencyInput from "../shared/CurrencyInput";
@@ -240,8 +246,10 @@ export default function TipsTransactionsCard({
 
       {rowError && <p style={{ fontSize: 12, color: HOME_EXPENSE, margin: "10px 24px 0" }}>{rowError}</p>}
 
-      {/* Two tables sharing the header above */}
-      <div className="grid grid-cols-2" style={{ minHeight: 200 }}>
+      {/* Two tables sharing the header above - min-height matches every
+          other category tab's table convention (#160) instead of shrinking
+          when either side (tips or deposits) is empty/sparse. */}
+      <div className="grid grid-cols-2" style={{ minHeight: MIN_TABLE_ROWS * TIPS_ROW_HEIGHT }}>
         {/* Transactions (cash tips) */}
         <div style={{ borderRight: `1px solid ${border}` }}>
           <p style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: muted, margin: 0, padding: "12px 20px 8px" }}>Transactions</p>

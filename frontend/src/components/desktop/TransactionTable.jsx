@@ -1,5 +1,5 @@
 import { useState, useEffect, useLayoutEffect, useRef } from "react";
-import { CATEGORY_CONFIG, INCOME_TYPES, fmt } from "../../utils/finance";
+import { CATEGORY_CONFIG, INCOME_TYPES, fmt, MIN_TABLE_ROWS, ROW_HEIGHT } from "../../utils/finance";
 import { HOME_SURFACE, HOME_DIVIDER, HOME_TEXT, HOME_MUTED, HOME_INCOME, HOME_EXPENSE, CATEGORY_ACCENT, ACCENT, ACCENT_TEXT } from "../shared/categoryVisuals";
 
 function SortIcon({ active, dir, activeColor, muted }) {
@@ -26,10 +26,6 @@ function SortIcon({ active, dir, activeColor, muted }) {
     </svg>
   );
 }
-
-const MIN_TABLE_ROWS = 10;
-// Matches a real row's height, same 60px the delete-sweep cell already uses.
-const ROW_HEIGHT = 60;
 
 export default function TransactionTable({ rows, onAdd, onEdit, onDelete, activeColor, page, perPage, total, onPageChange, onPerPageChange, highlightId, typeFilter, onTypeFilterChange, sortColumn, sortDir, onSort, query = "", onQueryChange }) {
   const [addHovered, setAddHovered] = useState(false);
