@@ -45,7 +45,16 @@ async def login(request: Request, response: Response, data: LoginRequest, db: As
     return TokenResponse(access_token=access_token, token_type="bearer")
 
 
+# Refresh mints access tokens and rotates a DB row on every call, so it needs
+# a cap like /register and /login above. Deliberately looser than either: it
+# fires once per ACCESS_TOKEN_EXPIRE_MINUTES per open tab, and the client's
+# refresh mutex only dedupes within a single tab - several tabs expiring at
+# once legitimately burst several calls, which is exactly what the grace
+# period in refresh_session() absorbs. 20/minute leaves that burst untouched
+# (it stays well under the cap) while still capping brute-force attempts
+# against token hashes and cheap write amplification.
 @router.post("/refresh", response_model=TokenResponse)
+@limiter.limit("20/minute")
 async def refresh(request: Request, response: Response, db: AsyncSession = Depends(get_db)):
     raw_token = request.cookies.get("refresh_token")
     if not raw_token:
