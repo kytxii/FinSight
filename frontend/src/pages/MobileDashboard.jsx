@@ -608,14 +608,16 @@ export default function MobileDashboard() {
     [dashFiltered],
   );
 
+  // Cash-in-hand tips only (#197) - matches dashCashTips and desktop's model.
+  // Deposits are already-banked money, not additional income on top of this;
+  // OverviewBreakdownSheet counts them separately via periodDeposits/cashTips.
   const dashCategoryTotals = useMemo(() => {
     const totals = {};
     dashFiltered.forEach((t) => {
       totals[t.category] = (totals[t.category] ?? 0) + parseFloat(t.amount);
     });
-    if (dashMonthDeposits) totals.TIPS = (totals.TIPS ?? 0) + dashMonthDeposits;
     return totals;
-  }, [dashFiltered, dashMonthDeposits]);
+  }, [dashFiltered]);
 
   // This month's recurring items awaiting confirm/skip, shown in the Upcoming
   // Bills caption (#58).

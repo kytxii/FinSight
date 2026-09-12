@@ -9,8 +9,9 @@ import { CATEGORY_CONFIG, MONEY_IN_TYPES, MONEY_OUT_TYPES, fmt } from "../../uti
 import { useMonthPeriod, yearOptionsFromTransactions } from "../../hooks/mobile/useMonthPeriod";
 import {
   HOME_TEXT, HOME_MUTED, HOME_SURFACE, HOME_DIVIDER, HOME_INCOME, HOME_EXPENSE, ACCENT,
-  TILE_COLOR, CATEGORY_ICON,
+  TILE_COLOR, CATEGORY_ICON, TIPS_DEPOSITED,
 } from "../shared/categoryVisuals";
+import { IconBank } from "../shared/TipsIcons";
 
 
 const TREND_MONTHS = 6;
@@ -285,11 +286,13 @@ export default function MobileAnalytics({ transactions, deposits = [], loading, 
     rangeTransactions.forEach((t) => {
       totals[t.category] = (totals[t.category] ?? 0) + parseFloat(t.amount);
     });
-    // Deposits add to Tips on top of logged tips - not a subset, additive (#56/#99).
-    if (rangeDepositsTotal) totals.TIPS = (totals.TIPS ?? 0) + rangeDepositsTotal;
-    const rows = Object.entries(totals)
-      .map(([category, total]) => ({ category, total }))
-      .sort((a, b) => b.total - a.total);
+    const rows = Object.entries(totals).map(([category, total]) => ({ category, total }));
+    // A deposit is cash tips *after* they're banked, not additional income on
+    // top of them - folding it into TIPS double-counted the same money as
+    // both "still cash" and "now in the bank" (#197). Shown as its own
+    // synthetic row instead, same as desktop's separate "Tip deposits" line.
+    if (rangeDepositsTotal) rows.push({ category: "DEPOSITS", total: rangeDepositsTotal });
+    rows.sort((a, b) => b.total - a.total);
     const max = rows[0]?.total ?? 0;
     return { rows, max };
   }, [rangeTransactions, rangeDepositsTotal]);
@@ -404,25 +407,35 @@ export default function MobileAnalytics({ transactions, deposits = [], loading, 
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
             {categoryBreakdown.rows.map(({ category, total }) => {
+              // DEPOSITS is synthetic - not a real transaction category (#197) -
+              // so it isn't in CATEGORY_ICON/TILE_COLOR/CATEGORY_CONFIG and gets
+              // its own visuals, but drills into the same Tips page as TIPS.
+              const isDeposits = category === "DEPOSITS";
               const Icon = CATEGORY_ICON[category];
-              const color = TILE_COLOR[category] ?? HOME_MUTED;
+              const color = isDeposits ? TIPS_DEPOSITED : (TILE_COLOR[category] ?? HOME_MUTED);
+              const label = isDeposits ? "Deposits" : (CATEGORY_CONFIG[category]?.label ?? category);
               const pct = categoryBreakdown.max > 0 ? (total / categoryBreakdown.max) * 100 : 0;
               return (
                 <div
                   key={category}
-                  onClick={() => setCategoryView(category)}
+                  onClick={() => setCategoryView(isDeposits ? "TIPS" : category)}
                   style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}
                 >
                   <div style={{
-                    flex: "0 0 auto", width: 34, height: 34, borderRadius: "50%", background: color,
+                    flex: "0 0 auto", width: 34, height: 34, borderRadius: "50%",
+                    background: isDeposits ? "transparent" : color,
+                    border: isDeposits ? `1.5px solid ${TIPS_DEPOSITED}` : "none",
                     display: "flex", alignItems: "center", justifyContent: "center",
-                    boxShadow: "inset 0 1px 0 rgba(255,255,255,0.16)",
+                    boxShadow: isDeposits ? "none" : "inset 0 1px 0 rgba(255,255,255,0.16)",
                   }}>
-                    {Icon && <Icon />}
+                    {/* Same "deposited" tile treatment as MobileTips.jsx: a
+                        transparent/bordered circle with a TIPS_DEPOSITED-colored
+                        IconBank, not a solid fill. */}
+                    {isDeposits ? <IconBank color={TIPS_DEPOSITED} size={16} /> : (Icon && <Icon />)}
                   </div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                      <span style={{ fontSize: 13, fontWeight: 600, color: HOME_TEXT }}>{CATEGORY_CONFIG[category]?.label ?? category}</span>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: HOME_TEXT }}>{label}</span>
                       <span style={{ fontSize: 13, fontWeight: 600, color: HOME_TEXT, fontVariantNumeric: "tabular-nums" }}>{fmt(total)}</span>
                     </div>
                     <div style={{ height: 6, borderRadius: 999, backgroundColor: HOME_DIVIDER, overflow: "hidden" }}>
