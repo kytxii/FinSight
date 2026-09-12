@@ -177,16 +177,20 @@ export default function MobileCategory({
   const loadMoreRef = useRef(null);
   const [dismissedIds, setDismissedIds] = useState(new Set()); // resolved this render, hidden ahead of the next upcomingItems refresh
   const [paycheckUpcoming, setPaycheckUpcoming] = useState([]);
+  const [paycheckLoadFailed, setPaycheckLoadFailed] = useState(false);
   const Icon = CATEGORY_ICON[category];
   const tileColor = TILE_COLOR[category] ?? HOME_MUTED;
   const isIncome = INCOME_TYPES.has(category);
   const today = getToday();
 
   // INCOME has no recurring schedule, so upcoming items come from paychecks instead.
-  useEffect(() => {
+  function loadPaycheckUpcoming() {
     if (category !== "INCOME") return;
-    getPaychecks().then((res) => setPaycheckUpcoming(res.data.paychecks ?? [])).catch(() => {});
-  }, [category]);
+    getPaychecks()
+      .then((res) => { setPaycheckUpcoming(res.data.paychecks ?? []); setPaycheckLoadFailed(false); })
+      .catch(() => setPaycheckLoadFailed(true));
+  }
+  useEffect(loadPaycheckUpcoming, [category]);
 
   const monthEnd = useMemo(() => monthEndOf(today), [today]);
 
@@ -363,7 +367,9 @@ export default function MobileCategory({
 
       {/* Scheduled items awaiting due date or confirm/skip (#60), dotted dividers to mark them as not-yet-real. */}
       {category === "INCOME" ? (
-        upcomingPaychecks.length > 0 && (
+        paycheckLoadFailed ? (
+          <p style={{ margin: "0 4px 20px", fontSize: 13, color: HOME_MUTED }}>Couldn't load upcoming paychecks</p>
+        ) : upcomingPaychecks.length > 0 && (
           <div>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "0 4px 12px" }}>
               <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, letterSpacing: "-0.4px", color: HOME_TEXT }}>Upcoming</h2>

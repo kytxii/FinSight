@@ -258,6 +258,7 @@ export default function Dashboard() {
     savings,
     savingsStatus,
     refresh: refreshTransactions,
+    refreshFailed,
   } = useDashboardData(devFetch, [loadCashOnHand]);
 
   const {
@@ -1615,6 +1616,12 @@ export default function Dashboard() {
                           Saved
                         </span>
                       )}
+                    {toolMode === "recurring" &&
+                      recurringSaveState.saveStatus === "error" && (
+                        <span style={{ fontSize: 12, color: HOME_EXPENSE }}>
+                          Failed to save
+                        </span>
+                      )}
                     {toolMode === "recurring" && (
                       <button
                         onClick={recurringSaveState.onSave}
@@ -1942,6 +1949,11 @@ export default function Dashboard() {
             </div>
           ) : (
             <main className="px-6 py-6 flex-1">
+              {refreshFailed && (
+                <p style={{ fontSize: 12, color: HOME_EXPENSE, margin: "0 0 12px" }}>
+                  Couldn't refresh transactions — showing the last loaded data
+                </p>
+              )}
               {/* Keyed so changing page - or stepping the month, on the main
             dashboard or a category tab alike - replays tool-page-in.
             transform stays `none` when idle - a non-none transform becomes
@@ -3274,7 +3286,6 @@ export default function Dashboard() {
                         dateRange={dateRange}
                       />
                     ) : (
-                      // Self-hides when the category has nothing scheduled (#127).
                       <div className="space-y-4">
                         <CategoryUpcomingPanel
                           category={activeTab}

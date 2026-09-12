@@ -154,7 +154,7 @@ export default function AccountPanel({ onSaveStateChange }) {
           setConnections(res.data);
           if (res.data.includes(linkingProvider)) setLinkingProvider(null);
         })
-        .catch(() => {});
+        .catch(() => setConnectionsError("Couldn't check connection status - try switching back to this tab again"));
     }
     window.addEventListener("focus", onFocus);
     return () => window.removeEventListener("focus", onFocus);

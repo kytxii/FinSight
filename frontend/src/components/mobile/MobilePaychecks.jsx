@@ -177,6 +177,7 @@ export default function MobilePaychecks({ onSaved }) {
   const [editingId, setEditingId] = useState(null);
   const [editValue, setEditValue] = useState("");
   const [rowErrorId, setRowErrorId] = useState(null);
+  const [refreshError, setRefreshError] = useState(false);
 
   const [balanceAnchor, setBalanceAnchorState] = useState(cached?.balanceAnchor ?? null);
   const [editingBalance, setEditingBalance] = useState(false);
@@ -221,6 +222,8 @@ export default function MobilePaychecks({ onSaved }) {
         spendingReserve: reserveRes.data.spending_reserve,
       });
     } catch {
+      // The loading/empty states below already cover the failure case,
+      // same as the desktop panel.
     } finally { setLoading(false); }
   }
 
@@ -231,7 +234,12 @@ export default function MobilePaychecks({ onSaved }) {
     getPaychecks().then(r => {
       setPaychecks(r.data.paychecks);
       setPending(r.data.pending_paychecks);
-    }).catch(() => {});
+    }).catch(() => {
+      // The write that triggered this already succeeded - only the re-fetch
+      // to reflect it failed (#175), same as the desktop panel.
+      setRefreshError(true);
+      setTimeout(() => setRefreshError(false), 4000);
+    });
   }
 
   const filteredPaychecks = useMemo(() => {
@@ -418,6 +426,8 @@ export default function MobilePaychecks({ onSaved }) {
           .pcCollapse, .pcSaved { transition: none; }
         }
       `}</style>
+
+      {refreshError && <p style={{ fontSize: 12, color: HOME_EXPENSE, margin: 0 }}>Couldn't refresh — showing the last loaded data</p>}
 
       {loading && (
         <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>

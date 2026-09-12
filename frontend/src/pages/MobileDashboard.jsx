@@ -257,6 +257,7 @@ export default function MobileDashboard() {
   });
 
   const [upcomingItems, setUpcomingItems] = useState([]);
+  const [upcomingLoadFailed, setUpcomingLoadFailed] = useState(false);
 
   function devFetch() {
     return devMenu.devFetch(getTransactions);
@@ -266,7 +267,9 @@ export default function MobileDashboard() {
   // than living in the shared hook (desktop's Upcoming panel fetches its
   // own data per-category instead of at the dashboard level).
   function loadUpcoming() {
-    getUpcomingRecurringPayments().then((res) => setUpcomingItems(res.data)).catch(() => {});
+    getUpcomingRecurringPayments()
+      .then((res) => { setUpcomingItems(res.data); setUpcomingLoadFailed(false); })
+      .catch(() => setUpcomingLoadFailed(true));
   }
 
   const {
@@ -280,6 +283,7 @@ export default function MobileDashboard() {
     savings,
     savingsStatus,
     refresh,
+    refreshFailed,
   } = useDashboardData(devFetch, [loadUpcoming]);
 
   const [editingTransaction, setEditingTransaction] = useState(null);
@@ -721,6 +725,11 @@ export default function MobileDashboard() {
       >
         <style>{`@keyframes skel-pulse { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
         @keyframes mob-month-slide { from { opacity: 0; transform: translateX(var(--mob-slide-from, 0)); } to { opacity: 1; transform: translateX(0); } }`}</style>
+        {(refreshFailed || upcomingLoadFailed) && (
+          <p style={{ fontSize: 12, color: HOME_EXPENSE, margin: 0 }}>
+            {refreshFailed ? "Couldn't refresh transactions" : "Couldn't load upcoming bills"} — showing the last loaded data
+          </p>
+        )}
         <MobilePageSlide pageKey={pageKey} order={pageOrder} layerClassName="space-y-4">
         {/* Dashboard tab */}
         {navTab === "dashboard" && (

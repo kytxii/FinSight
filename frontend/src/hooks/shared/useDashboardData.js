@@ -34,6 +34,7 @@ export function useDashboardData(fetchTransactions = getTransactions, extraLoade
   const [safeToSpendStatus, setSafeToSpendStatus] = useState("loading"); // loading | ok | no-balance | no-schedule | error
   const [savings, setSavings] = useState(null);
   const [savingsStatus, setSavingsStatus] = useState("loading"); // loading | ok | no-schedule | no-amounts | no-history | error
+  const [refreshFailed, setRefreshFailed] = useState(false);
 
   function loadSafeToSpend() {
     getSpendableSurplus()
@@ -95,8 +96,8 @@ export function useDashboardData(fetchTransactions = getTransactions, extraLoade
 
   function refresh() {
     fetchTransactions()
-      .then((res) => setTransactions(res.data))
-      .catch(() => {});
+      .then((res) => { setTransactions(res.data); setRefreshFailed(false); })
+      .catch(() => setRefreshFailed(true));
     loadAll();
   }
 
@@ -112,5 +113,6 @@ export function useDashboardData(fetchTransactions = getTransactions, extraLoade
     savings,
     savingsStatus,
     refresh,
+    refreshFailed,
   };
 }

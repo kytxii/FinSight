@@ -248,7 +248,6 @@ export default function CategoryUpcomingPanel({ category, onRefresh }) {
   };
 
   const rows = isIncome ? upcomingPaychecks : categoryUpcoming;
-  if (rows.length === 0) return null;
 
   return (
     <div className="rounded-2xl" style={{ backgroundColor: HOME_SURFACE, color: HOME_TEXT }}>
@@ -262,7 +261,16 @@ export default function CategoryUpcomingPanel({ category, onRefresh }) {
         </span>
       </div>
 
-      {isIncome
+      {rows.length === 0 ? (
+        // Always rendered rather than unmounting the whole card (was #127,
+        // reverted here) - hiding it entirely left the right column shorter
+        // than CategoryDetailPanel below it expects, and shorter than
+        // TransactionTable beside it, the same alignment problem #160/#161
+        // fixed elsewhere by never letting a card collapse to nothing.
+        <p className="px-6 py-14 text-center text-base" style={{ color: HOME_MUTED }}>
+          {isIncome ? "No paychecks expected this month" : `Nothing upcoming for ${label}`}
+        </p>
+      ) : isIncome
         ? upcomingPaychecks.map((p, i) => (
             <PaycheckRow key={p.id} paycheck={p} color={color} first={i === 0} />
           ))
