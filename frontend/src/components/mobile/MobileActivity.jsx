@@ -11,22 +11,7 @@ import {
 } from "../shared/categoryVisuals";
 
 
-const PAGE_SIZE = 20; // fixed-count pagination, used only when an explicit sort is active (no months to page by)
-const MONTHS_PER_PAGE = 1; // default (date-desc, grouped) view pages by whole months instead
-
-function monthKey(dateStr) {
-  return dateStr.slice(0, 7);
-}
-
-// Distinct months, most recent first. `arr` must already be date-descending.
-function distinctMonthsDesc(arr) {
-  const out = [];
-  for (const t of arr) {
-    const mk = monthKey(t.transaction_date);
-    if (out[out.length - 1] !== mk) out.push(mk);
-  }
-  return out;
-}
+const PAGE_SIZE = 20; // fixed-count pagination within the selected month
 
 function CategoryButton({ label, active, color, onClick }) {
   return (
@@ -44,10 +29,6 @@ function CategoryButton({ label, active, color, onClick }) {
       {label}
     </button>
   );
-}
-
-function monthLabel(dateStr) {
-  return new Date(dateStr + "T00:00:00").toLocaleDateString("en-US", { month: "long", year: "numeric" });
 }
 
 function IconSearch() {
@@ -72,14 +53,6 @@ function IconCalendar() {
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
       <rect x="3" y="5" width="18" height="16" rx="2.5" />
       <path d="M16 3v4M8 3v4M3 10h18" />
-    </svg>
-  );
-}
-
-function IconChevronDown({ size = 16 }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M6 9l6 6 6-6" />
     </svg>
   );
 }
@@ -157,30 +130,31 @@ function ActivityRow({ t, first, last, openId, setOpenId, onEditTransaction, onD
   );
 }
 
-export default function MobileActivity({ transactions, deposits = [], loading, onEditTransaction, onDeleteTransaction, onEditDeposit, onDeleteDeposit, jump, onJumpHandled }) {
+export default function MobileActivity({ transactions, deposits = [], periodKey, loading, onEditTransaction, onDeleteTransaction, onEditDeposit, onDeleteDeposit, jump, onJumpHandled }) {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("ALL");
   const [sortField, setSortField] = useState(null); // null | "amount" | "name" | "date"
   const [sortDir, setSortDir] = useState(null); // null | "asc" | "desc"
-  const [visibleMonthCount, setVisibleMonthCount] = useState(MONTHS_PER_PAGE);
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [openId, setOpenId] = useState(null);
   const [highlightId, setHighlightId] = useState(null);
-  const [collapsedMonths, setCollapsedMonths] = useState(() => new Set());
 
   const rowRefs = useRef({});
   const sentinelRef = useRef(null);
   function setRowRef(id, el) { rowRefs.current[id] = el; }
 
-  function resetPagination() { setVisibleMonthCount(MONTHS_PER_PAGE); setVisibleCount(PAGE_SIZE); }
-  function toggleMonth(month) {
-    setCollapsedMonths((prev) => {
-      const next = new Set(prev);
-      if (next.has(month)) next.delete(month);
-      else next.add(month);
-      return next;
-    });
-  }
+  function resetPagination() { setVisibleCount(PAGE_SIZE); }
+
+  // This component doesn't remount when the month selector above it steps -
+  // visibleCount otherwise carries over from whatever month was open last,
+  // so switching to a shorter (or just different) month could render far
+  // more than one page's worth of rows instantly instead of paging in from
+  // scratch. A jump into a specific month still overrides this via its own
+  // effect below (order-safe: it does `Math.max`, not an overwrite).
+  useEffect(() => {
+    resetPagination();
+    setOpenId(null);
+  }, [periodKey]);
   function updateQuery(v) { setQuery(v); resetPagination(); }
   function updateCategory(c) { setCategory(c); resetPagination(); }
   function advanceCategory() {
@@ -233,14 +207,11 @@ export default function MobileActivity({ transactions, deposits = [], loading, o
     return arr;
   }, [filtered, sortField, sortDir]);
 
-  const isGrouped = !sortField;
-  const allMonths = useMemo(() => isGrouped ? distinctMonthsDesc(sorted) : [], [sorted, isGrouped]);
-  const visibleMonths = useMemo(() => allMonths.slice(0, visibleMonthCount), [allMonths, visibleMonthCount]);
-
-  const visible = isGrouped
-    ? sorted.filter((t) => visibleMonths.includes(monthKey(t.transaction_date)))
-    : sorted.slice(0, visibleCount);
-  const hasMore = isGrouped ? visibleMonthCount < allMonths.length : visibleCount < sorted.length;
+  // Flat, count-paginated list within whatever transactions/deposits were
+  // passed in - the parent already scopes those to one month (#191), so
+  // there's only ever one month here to page through, not many.
+  const visible = sorted.slice(0, visibleCount);
+  const hasMore = visibleCount < sorted.length;
 
   useEffect(() => {
     if (!hasMore) return;
@@ -249,42 +220,40 @@ export default function MobileActivity({ transactions, deposits = [], loading, o
     const obs = new IntersectionObserver(
       (entries) => {
         if (!entries[0].isIntersecting) return;
-        if (isGrouped) setVisibleMonthCount((c) => c + MONTHS_PER_PAGE);
-        else setVisibleCount((c) => c + PAGE_SIZE);
+        // Disconnect immediately - without this, a still-short list (or a
+        // slow reflow) can leave the sentinel intersecting across more than
+        // one callback invocation, bumping visibleCount several times
+        // before the browser ever paints the newly rendered rows, which
+        // reads as the whole month loading at once instead of a page at a
+        // time. Re-armed below (keyed on visibleCount) only once the DOM
+        // reflects the new count.
+        obs.disconnect();
+        setVisibleCount((c) => c + PAGE_SIZE);
       },
       { rootMargin: "60px" },
     );
     obs.observe(el);
     return () => obs.disconnect();
-  }, [hasMore, isGrouped]);
+  }, [hasMore, visibleCount]);
 
+  // Locating a transaction (#191): the parent has already moved its period
+  // so this month's transactions/deposits include the target before this
+  // effect ever runs - just clear any filter that could be hiding it,
+  // reveal it if it's past the current page, and scroll to it.
   useEffect(() => {
     if (!jump) return;
     setQuery("");
     setCategory("ALL");
     setSortField(null);
     setSortDir(null);
-    const allSorted = [...transactions].sort((a, b) => new Date(b.transaction_date) - new Date(a.transaction_date));
-    const jumpMonths = distinctMonthsDesc(allSorted);
-    const targetTxn = transactions.find((t) => t.id === jump.id);
-    const monthIdx = targetTxn ? jumpMonths.indexOf(monthKey(targetTxn.transaction_date)) : -1;
-    if (monthIdx !== -1) setVisibleMonthCount((c) => Math.max(c, MONTHS_PER_PAGE, monthIdx + 1));
-    // Collapse every month above the target's, not just expand the target's
-    // if it happened to be collapsed - loading months up to the target only
-    // to leave them all expanded meant scrolling past the full row list of
-    // every month in between to reach it. Only the target month's rows
-    // actually render; the rest are just their (still-visible) headers.
-    if (targetTxn) {
-      const monthsAbove = jumpMonths.slice(0, monthIdx).map((mk) => monthLabel(mk + "-01"));
-      setCollapsedMonths(new Set(monthsAbove));
-    }
+    const idx = [...transactions]
+      .sort((a, b) => new Date(b.transaction_date) - new Date(a.transaction_date))
+      .findIndex((t) => t.id === jump.id);
+    if (idx !== -1) setVisibleCount((c) => Math.max(c, idx + 1));
     setHighlightId(jump.id);
-    // Scroll is delayed past the 0.2s collapse transition above - starting
-    // it while other months are still animating shut moves the target's
-    // position mid-scroll.
     const scrollTimer = setTimeout(() => {
       rowRefs.current[jump.id]?.scrollIntoView({ behavior: "smooth", block: "center" });
-    }, 260);
+    }, 60);
     const clearHighlight = setTimeout(() => {
       setHighlightId(null);
       // Tells the parent this jump was consumed so it clears its own jump
@@ -303,18 +272,6 @@ export default function MobileActivity({ transactions, deposits = [], loading, o
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only re-run on a new jump request, not every transactions change
   }, [jump]);
-
-  const groups = useMemo(() => {
-    if (sortField) return null;
-    const out = [];
-    visible.forEach((t) => {
-      const month = monthLabel(t.transaction_date);
-      const g = out[out.length - 1];
-      if (!g || g.month !== month) out.push({ month, items: [t] });
-      else g.items.push(t);
-    });
-    return out;
-  }, [visible, sortField]);
 
   const cardStyle = { backgroundColor: HOME_SURFACE, borderRadius: 18, overflow: "hidden" };
 
@@ -388,55 +345,8 @@ export default function MobileActivity({ transactions, deposits = [], loading, o
           </div>
         ) : sorted.length === 0 ? (
           <p style={{ fontSize: 13, color: HOME_MUTED, textAlign: "center", padding: "30px 0" }}>No transactions found</p>
-        ) : groups ? (
-          groups.map((g, gi) => {
-            const collapsed = collapsedMonths.has(g.month);
-            const groupHasOpenRow = openId != null && g.items.some((t) => t.id === openId);
-            return (
-              <div key={g.month + gi} style={{ marginBottom: 18, animation: "activityFadeIn 0.3s ease" }}>
-                <button
-                  onClick={() => toggleMonth(g.month)}
-                  aria-expanded={!collapsed}
-                  style={{
-                    display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%",
-                    background: "none", border: "none", padding: "0 4px 8px", margin: 0, cursor: "pointer",
-                  }}
-                >
-                  <span style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", color: HOME_MUTED }}>
-                    {g.month}
-                  </span>
-                  <span style={{
-                    color: HOME_MUTED, display: "flex",
-                    transform: collapsed ? "rotate(-90deg)" : "rotate(0deg)", transition: "transform 0.2s ease",
-                  }}>
-                    <IconChevronDown />
-                  </span>
-                </button>
-                <div style={{
-                  display: "grid", gridTemplateRows: collapsed ? "0fr" : "1fr",
-                  transition: "grid-template-rows 0.2s cubic-bezier(0.4, 0, 0.2, 1)",
-                  contain: "layout paint", willChange: "grid-template-rows",
-                  position: "relative", zIndex: groupHasOpenRow ? 6 : "auto",
-                }}>
-                  <div style={{ overflow: "hidden" }}>
-                    <div style={cardStyle}>
-                      {g.items.map((t, i) => (
-                        <ActivityRow
-                          key={t.id} t={t} first={i === 0} last={i === g.items.length - 1}
-                          openId={openId} setOpenId={setOpenId}
-                          onEditTransaction={onEditTransaction} onDeleteTransaction={onDeleteTransaction}
-                          onEditDeposit={onEditDeposit} onDeleteDeposit={onDeleteDeposit}
-                          highlightId={highlightId} setRowRef={setRowRef}
-                        />
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            );
-          })
         ) : (
-          <div style={cardStyle}>
+          <div style={{ ...cardStyle, animation: "activityFadeIn 0.3s ease" }}>
             {visible.map((t, i) => (
               <ActivityRow
                 key={t.id} t={t} first={i === 0} last={i === visible.length - 1}

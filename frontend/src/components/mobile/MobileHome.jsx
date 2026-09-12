@@ -1,7 +1,8 @@
 import { CATEGORY_CONFIG, INCOME_TYPES, fmt, fmtWhole } from "../../utils/finance";
-import { periodLabel, relativeDate } from "../../utils/mobileFormat";
+import { relativeDate } from "../../utils/mobileFormat";
 import Skel from "../shared/Skel";
 import NotePill from "../shared/NotePill";
+import MonthStepperHeader from "./shared/MonthStepperHeader";
 import {
   HOME_TEXT,
   HOME_MUTED,
@@ -317,6 +318,7 @@ export default function MobileHome({
   pendingBillsCount,
   dashSorted,
   dashCategoryTotals,
+  monthStepper,
   onOpenRecurring,
   onOpenPaychecks,
   onOpenInstallments,
@@ -355,16 +357,7 @@ export default function MobileHome({
             marginBottom: 12,
           }}
         >
-          <span
-            style={{
-              fontSize: 20,
-              fontWeight: 800,
-              letterSpacing: "-0.4px",
-              color: HOME_TEXT,
-            }}
-          >
-            {periodLabel()}
-          </span>
+          <MonthStepperHeader variant="hero" {...monthStepper} />
           <span
             style={{
               display: "flex",

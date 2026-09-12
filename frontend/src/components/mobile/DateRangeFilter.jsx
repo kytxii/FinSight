@@ -33,6 +33,19 @@ export function getPresetRange(label) {
   return { from, to };
 }
 
+// Like getPresetRange("Current Month"), but for an arbitrary month rather
+// than always the real current one - backs the mobile month stepper
+// (#122/#196), which needs "Current Month"'s exact bounds for whatever
+// month/year is selected, not just today's. `month` normalizes fine outside
+// 0-11 (e.g. -1 rolls into the prior year), same as Date does elsewhere here.
+export function getMonthRange(year, month) {
+  const from = new Date(year, month, 1);
+  from.setHours(0, 0, 0, 0);
+  const to = new Date(year, month + 1, 0);
+  to.setHours(23, 59, 59, 999);
+  return { from, to };
+}
+
 export default function DateRangeFilter({ activeColor, onChange, dropdown = false, blackActiveText = false }) {
   const dark = useTheme();
   const [activePreset, setActivePreset] = useState("Current Month");

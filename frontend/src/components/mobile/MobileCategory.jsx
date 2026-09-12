@@ -6,7 +6,8 @@ import ListRowSkeleton from "../skeletons/shared/ListRowSkeleton";
 import CurrencyInput from "../shared/CurrencyInput";
 import NotePill from "../shared/NotePill";
 import { CATEGORY_CONFIG, INCOME_TYPES, fmt, nextAmountSort } from "../../utils/finance";
-import { periodLabel, relativeDate } from "../../utils/mobileFormat";
+import { relativeDate } from "../../utils/mobileFormat";
+import MonthStepperHeader from "./shared/MonthStepperHeader";
 import { getToday } from "../../utils/time";
 import { getPaychecks } from "../../api/paychecks";
 import { confirmRecurringPayment, skipRecurringPayment } from "../../api/recurringPayments";
@@ -168,7 +169,7 @@ function UpcomingRow({ item, today, tileColor, icon, first, onConfirm, onSkip })
 }
 
 export default function MobileCategory({
-  category, transactions, monthlyHistory = [], loading, upcomingItems = [], onBack, onEditTransaction, onDeleteTransaction, onOpenPaychecks, onRefresh,
+  category, transactions, monthlyHistory = [], loading, upcomingItems = [], monthStepper, onBack, onEditTransaction, onDeleteTransaction, onOpenPaychecks, onRefresh,
 }) {
   const [openId, setOpenId] = useState(null);
   const [amountSort, setAmountSort] = useState(null); // null | "asc" | "desc"
@@ -285,11 +286,19 @@ export default function MobileCategory({
         </h1>
       </div>
 
+      {/* Everything below is month-scoped, so it replays the same slide-in
+          the Home tab uses on month change (#196 follow-up) - the header
+          above (back button, category icon/title) isn't. */}
+      <div
+        key={`cat-${monthStepper?.periodKey}`}
+        style={{
+          animation: monthStepper?.slideDir ? "mob-month-slide 260ms ease" : undefined,
+          "--mob-slide-from": monthStepper?.slideDir > 0 ? "24px" : "-24px",
+        }}
+      >
       {/* Summary */}
       <div style={{ margin: "0 2px 20px" }}>
-        <p style={{ margin: "0 0 10px", fontSize: 13, fontWeight: 600, color: HOME_MUTED, textTransform: "uppercase", letterSpacing: "0.4px" }}>
-          {periodLabel()}
-        </p>
+        <MonthStepperHeader variant="compact" {...monthStepper} />
         <div style={{ display: "flex", gap: 10 }}>
           <div style={{ flex: 1, backgroundColor: HOME_SURFACE, borderRadius: 18, padding: "13px 15px 14px" }}>
             <p style={{ margin: "0 0 4px", fontSize: 13, fontWeight: 500, color: HOME_MUTED }}>Total</p>
@@ -497,6 +506,7 @@ export default function MobileCategory({
             </div>
           )}
         </div>
+      </div>
       </div>
     </>
   );

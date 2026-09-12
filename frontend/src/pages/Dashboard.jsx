@@ -1934,10 +1934,16 @@ export default function Dashboard() {
             </div>
           ) : (
             <main className="px-6 py-6 flex-1">
-              {/* Keyed so changing page replays tool-page-in. transform stays `none`
-            when idle - a non-none transform becomes a containing block. */}
+              {/* Keyed so changing page - or stepping the month, on the main
+            dashboard or a category tab alike - replays tool-page-in.
+            transform stays `none` when idle - a non-none transform becomes
+            a containing block. */}
               <div
-                key={activeTab === "ALL" ? "dashboard" : activeTab}
+                key={`${activeTab === "ALL" ? "dashboard" : activeTab}${
+                  isSingleMonthRange(dateRange) && dateRange.from
+                    ? `-${dateRange.from.getFullYear()}-${dateRange.from.getMonth()}`
+                    : ""
+                }`}
                 className="space-y-5"
                 style={{
                   opacity: categoryClosing ? 0 : 1,
