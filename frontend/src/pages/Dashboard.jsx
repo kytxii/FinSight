@@ -34,7 +34,8 @@ import {
 } from "recharts";
 import { useAuth } from "../context/AuthContext";
 import { getTransactions, deleteTransaction } from "../api/transactions";
-import { deleteRecurringPayment } from "../api/recurringPayments";
+import { deleteRecurringPayment, getUpcomingRecurringPayments } from "../api/recurringPayments";
+import { getPaychecks } from "../api/paychecks";
 import { getCashOnHand } from "../api/tipDeposits";
 import {
   CATEGORIES,
@@ -223,6 +224,10 @@ function loadTrendCategories() {
 export default function Dashboard() {
   const { isDemo } = useAuth();
   const [tipsCashOnHand, setTipsCashOnHand] = useState(0);
+  const [upcomingRecurring, setUpcomingRecurring] = useState([]);
+  const [upcomingRecurringLoading, setUpcomingRecurringLoading] = useState(true);
+  const [upcomingPaychecks, setUpcomingPaychecks] = useState([]);
+  const [upcomingPaychecksLoading, setUpcomingPaychecksLoading] = useState(true);
 
   const devMenu = useDevMenu();
   const {
@@ -247,6 +252,26 @@ export default function Dashboard() {
       .catch(() => setTipsCashOnHand(0));
   }
 
+  // Owned here rather than inside CategoryUpcomingPanel (#161 follow-up):
+  // that panel sits inside a div keyed on the active tab, so it remounts on
+  // every category switch and re-fetched from scratch each time, leaving it
+  // visibly empty for a beat while the transaction table beside it - fed
+  // from this same dashboard-level state - painted instantly. Loaded once
+  // here on mount (and on every refresh) so switching tabs is instant.
+  function loadUpcomingRecurring() {
+    getUpcomingRecurringPayments()
+      .then((res) => setUpcomingRecurring(res.data))
+      .catch(() => setUpcomingRecurring([]))
+      .finally(() => setUpcomingRecurringLoading(false));
+  }
+
+  function loadUpcomingPaychecks() {
+    getPaychecks()
+      .then((res) => setUpcomingPaychecks(res.data.paychecks ?? []))
+      .catch(() => setUpcomingPaychecks([]))
+      .finally(() => setUpcomingPaychecksLoading(false));
+  }
+
   const {
     transactions,
     setTransactions,
@@ -259,7 +284,7 @@ export default function Dashboard() {
     savingsStatus,
     refresh: refreshTransactions,
     refreshFailed,
-  } = useDashboardData(devFetch, [loadCashOnHand]);
+  } = useDashboardData(devFetch, [loadCashOnHand, loadUpcomingRecurring, loadUpcomingPaychecks]);
 
   const {
     activeTab,
@@ -3289,6 +3314,13 @@ export default function Dashboard() {
                       <div className="space-y-4">
                         <CategoryUpcomingPanel
                           category={activeTab}
+                          items={upcomingRecurring}
+                          paychecks={upcomingPaychecks}
+                          loading={
+                            activeTab === "INCOME"
+                              ? upcomingPaychecksLoading
+                              : upcomingRecurringLoading
+                          }
                           onRefresh={refreshTransactions}
                         />
                         <CategoryDetailPanel

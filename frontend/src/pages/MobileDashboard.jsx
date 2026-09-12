@@ -12,7 +12,9 @@ import {
   deleteTransaction,
 } from "../api/transactions";
 import { getUpcomingRecurringPayments } from "../api/recurringPayments";
+import { getPaychecks } from "../api/paychecks";
 import { deleteTipDeposit, createTipDeposit } from "../api/tipDeposits";
+import { setCached } from "../utils/pageCache";
 import CurrencyInput from "../components/shared/CurrencyInput";
 import Toggle from "../components/shared/Toggle";
 import MobileTransactionModal from "../components/mobile/MobileTransactionModal";
@@ -46,7 +48,7 @@ import AccountPanel from "../components/shared/AccountPanel";
 import OverviewBreakdownSheet from "../components/desktop/OverviewBreakdownSheet";
 import MobileHome from "../components/mobile/MobileHome";
 import MobileTopbar from "../components/mobile/MobileTopbar";
-import MobileCategory from "../components/mobile/MobileCategory";
+import MobileCategory, { INCOME_UPCOMING_CACHE_KEY } from "../components/mobile/MobileCategory";
 import MobileTips from "../components/mobile/MobileTips";
 import MobilePaychecks from "../components/mobile/MobilePaychecks";
 import MobileRecurring from "../components/mobile/MobileRecurring";
@@ -272,6 +274,19 @@ export default function MobileDashboard() {
       .catch(() => setUpcomingLoadFailed(true));
   }
 
+  // Warms MobileCategory's own paycheck cache ahead of time, so drilling
+  // into the Income category shows its "Upcoming" section instantly instead
+  // of popping in ~1s later like every other prop-fed section on that page -
+  // MobileCategory still does its own real fetch (with its own error state)
+  // when actually visited, this just means that fetch usually already has a
+  // cache hit to seed from. Silent on failure is fine here: it's purely a
+  // warm-up, not the source of truth for what the user sees.
+  function loadIncomeUpcoming() {
+    getPaychecks()
+      .then((res) => setCached(INCOME_UPCOMING_CACHE_KEY, res.data.paychecks ?? []))
+      .catch(() => {});
+  }
+
   const {
     transactions,
     setTransactions,
@@ -284,7 +299,7 @@ export default function MobileDashboard() {
     savingsStatus,
     refresh,
     refreshFailed,
-  } = useDashboardData(devFetch, [loadUpcoming]);
+  } = useDashboardData(devFetch, [loadUpcoming, loadIncomeUpcoming]);
 
   const [editingTransaction, setEditingTransaction] = useState(null);
   const [editingDeposit, setEditingDeposit] = useState(null);

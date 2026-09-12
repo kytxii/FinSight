@@ -1,9 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { CATEGORY_CONFIG, fmt } from "../../utils/finance";
 import { getToday } from "../../utils/time";
 import { relativeDate } from "../../utils/mobileFormat";
-import { getPaychecks } from "../../api/paychecks";
-import { confirmRecurringPayment, skipRecurringPayment, getUpcomingRecurringPayments } from "../../api/recurringPayments";
+import Skel from "../shared/Skel";
+import { confirmRecurringPayment, skipRecurringPayment } from "../../api/recurringPayments";
 import {
   HOME_SURFACE,
   HOME_DIVIDER,
@@ -192,9 +192,15 @@ function PaycheckRow({ paycheck, color, first }) {
   );
 }
 
-export default function CategoryUpcomingPanel({ category, onRefresh }) {
-  const [items, setItems] = useState([]);
-  const [paychecks, setPaychecks] = useState([]);
+// `items`/`paychecks`/`loading` are owned by Dashboard.jsx rather than
+// fetched here (#161 follow-up). This panel lives inside a div keyed on the
+// active tab, so it fully remounts on every category switch - self-fetching
+// meant resetting to [] and paying a network round-trip each time, which is
+// why it rendered an empty state for a beat while the transaction table
+// beside it (fed from dashboard-level state that survives the remount)
+// painted instantly. One dashboard-level fetch also serves every tab, since
+// getUpcomingRecurringPayments returns all categories and filters below.
+export default function CategoryUpcomingPanel({ category, items = [], paychecks = [], loading = false, onRefresh }) {
   const [dismissedIds, setDismissedIds] = useState(new Set());
 
   const color = CATEGORY_ACCENT[category] ?? HOME_MUTED;
@@ -202,16 +208,6 @@ export default function CategoryUpcomingPanel({ category, onRefresh }) {
   const isIncome = category === "INCOME";
   const today = getToday();
   const monthEnd = useMemo(() => monthEndOf(today), [today]);
-
-  const load = useCallback(() => {
-    if (isIncome) {
-      getPaychecks().then((res) => setPaychecks(res.data.paychecks ?? [])).catch(() => setPaychecks([]));
-    } else {
-      getUpcomingRecurringPayments().then((res) => setItems(res.data)).catch(() => setItems([]));
-    }
-  }, [isIncome]);
-
-  useEffect(() => { load(); }, [load]);
 
   const [prevCategory, setPrevCategory] = useState(category);
   if (prevCategory !== category) {
@@ -233,17 +229,17 @@ export default function CategoryUpcomingPanel({ category, onRefresh }) {
     [paychecks, today, monthEnd],
   );
 
+  // onRefresh runs the dashboard-level reload, which re-fetches the upcoming
+  // items this panel now receives as props - no separate local load() needed.
   const handleConfirm = async (id, amount) => {
     await confirmRecurringPayment(id, { amount });
     setDismissedIds((prev) => new Set(prev).add(id));
-    load();
     onRefresh?.();
   };
 
   const handleSkip = async (id) => {
     await skipRecurringPayment(id);
     setDismissedIds((prev) => new Set(prev).add(id));
-    load();
     onRefresh?.();
   };
 
@@ -261,7 +257,22 @@ export default function CategoryUpcomingPanel({ category, onRefresh }) {
         </span>
       </div>
 
-      {rows.length === 0 ? (
+      {loading ? (
+        // Never claim "nothing upcoming" before the data has landed - that
+        // read as a wrong answer that then corrected itself a beat later.
+        <div className="px-6 py-5" style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+          {[0, 1].map((i) => (
+            <div key={i} className="flex items-center gap-4">
+              <Skel h={9} w={9} style={{ borderRadius: "50%", flexShrink: 0 }} />
+              <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 6 }}>
+                <Skel h={16} w="55%" />
+                <Skel h={12} w="32%" />
+              </div>
+              <Skel h={16} w={64} />
+            </div>
+          ))}
+        </div>
+      ) : rows.length === 0 ? (
         // Always rendered rather than unmounting the whole card (was #127,
         // reverted here) - hiding it entirely left the right column shorter
         // than CategoryDetailPanel below it expects, and shorter than
