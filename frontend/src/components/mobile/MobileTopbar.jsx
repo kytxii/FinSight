@@ -204,7 +204,7 @@ export default function MobileTopbar({
                         {CATEGORY_CONFIG[t.category]?.label ?? t.category} · {date}
                       </p>
                     </div>
-                    <span style={{ fontSize: 14, fontWeight: 700, color, flexShrink: 0 }}>
+                    <span style={{ fontSize: 14, fontWeight: 700, color, flexShrink: 0, fontVariantNumeric: "tabular-nums" }}>
                       {fmt(t.amount)}
                     </span>
                   </button>

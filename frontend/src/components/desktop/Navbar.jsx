@@ -247,7 +247,7 @@ export default function Navbar({ transactions = [], onSelectTransaction, onOpenT
                           </p>
                         </div>
                         {/* Amount */}
-                        <span className="text-sm font-bold shrink-0" style={{ color: catColor }}>
+                        <span className="text-sm font-bold shrink-0" style={{ color: catColor, fontVariantNumeric: "tabular-nums" }}>
                           {fmt(t.amount)}
                         </span>
                       </button>

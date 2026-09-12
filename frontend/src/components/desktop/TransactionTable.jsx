@@ -420,7 +420,7 @@ export default function TransactionTable({ rows, onAdd, onEdit, onDelete, active
                       </span>
                     </div>
                   </td>
-                  <td className="px-6 py-4 text-right text-lg font-bold" style={{ paddingRight: "24px", color: INCOME_TYPES.has(t.category) ? HOME_INCOME : HOME_EXPENSE }}>
+                  <td className="px-6 py-4 text-right text-lg font-bold" style={{ paddingRight: "24px", color: INCOME_TYPES.has(t.category) ? HOME_INCOME : HOME_EXPENSE, fontVariantNumeric: "tabular-nums" }}>
                     {INCOME_TYPES.has(t.category) ? "+" : "-"}{fmt(t.amount)}
                   </td>
                   <td className="px-6 py-4 text-base whitespace-nowrap" style={{ color: muted }}>
