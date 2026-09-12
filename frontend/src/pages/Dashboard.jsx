@@ -24,11 +24,8 @@ import {
 import Skel from "../components/shared/Skel";
 import OverviewPanelSkeleton from "../components/skeletons/desktop/OverviewPanelSkeleton";
 import {
-  Cell,
   Tooltip,
   ResponsiveContainer,
-  BarChart,
-  Bar,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -187,6 +184,9 @@ const TREND_CATEGORIES = REAL_CATEGORIES;
 const TREND_TARGET_POINTS = 45;
 const TREND_LEGEND_PER_ROW = 4;
 const TREND_CHART_HEIGHT = "clamp(320px, 45vh, 560px)";
+// Default window for the per-category timeline chart (#159) - not yet
+// user-reconfigurable, the issue only settled on a default.
+const CATEGORY_TIMELINE_MONTHS = 6;
 
 const OVERVIEW_DRAWER_TITLES = {
   balance: "Current Balance",
@@ -925,40 +925,48 @@ export default function Dashboard() {
     [trendData],
   );
 
-  // Biggest merchants by name. Category tabs only.
-  const barData = useMemo(() => {
+  // Single per-category timeline, replacing the old "Spending Over Time" +
+  // "Top _ by Name" pair (#159) - both assumed an expense-shaped category
+  // ("Top Income by Name" read oddly, and "Spending" was wrong outside
+  // expense tabs) and the area chart was day-level, scoped to whatever
+  // narrow date-range filter was active. This is deliberately NOT scoped to
+  // `filtered`/the active date-range filter - the whole point is a longer,
+  // stable window regardless of what's currently filtered - but does anchor
+  // its end the same way trendData above does (the selected month if one's
+  // picked, clamped to real today), so it doesn't show months that haven't
+  // happened yet when stepping through past periods.
+  const categoryTimelineData = useMemo(() => {
     if (activeTab === "ALL") return [];
-    const grouped = {};
-    filtered.forEach((t) => {
-      grouped[t.name] = (grouped[t.name] ?? 0) + parseFloat(t.amount);
-    });
-    const entries = Object.entries(grouped)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 12);
-    const START = 100,
-      END = 30;
-    const step = entries.length > 1 ? (START - END) / (entries.length - 1) : 0;
-    return entries.map(([name, total], i) => ({
-      month: name,
-      total: parseFloat(total.toFixed(2)),
-      color: `color-mix(in srgb, ${CATEGORY_ACCENT[activeTab]} ${Math.round(START - i * step)}%, black)`,
-    }));
-  }, [filtered, activeTab]);
+    const now = getNow();
+    const realToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const selectedEnd = dateRange.to
+      ? new Date(dateRange.to.getFullYear(), dateRange.to.getMonth(), dateRange.to.getDate())
+      : realToday;
+    const today = selectedEnd > realToday ? realToday : selectedEnd;
 
-  const areaData = useMemo(() => {
-    if (activeTab === "ALL") return [];
-    const grouped = {};
-    filtered.forEach((t) => {
-      grouped[t.transaction_date] =
-        (grouped[t.transaction_date] ?? 0) + parseFloat(t.amount);
+    const months = Array.from({ length: CATEGORY_TIMELINE_MONTHS }, (_, i) => {
+      const d = new Date(today.getFullYear(), today.getMonth() - (CATEGORY_TIMELINE_MONTHS - 1 - i), 1);
+      return {
+        key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`,
+        label: d.toLocaleDateString(
+          "en-US",
+          d.getFullYear() !== today.getFullYear()
+            ? { month: "short", year: "2-digit" }
+            : { month: "short" },
+        ),
+        total: 0,
+      };
     });
-    return Object.entries(grouped)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([date, total]) => ({
-        date: new Date(date + "T00:00:00").getTime(),
-        total: parseFloat(total.toFixed(2)),
-      }));
-  }, [filtered, activeTab]);
+    const byKey = Object.fromEntries(months.map((m) => [m.key, m]));
+
+    transactions.forEach((t) => {
+      if (t.category !== activeTab) return;
+      const bucket = byKey[t.transaction_date.slice(0, 7)];
+      if (bucket) bucket.total += parseFloat(t.amount);
+    });
+
+    return months.map((m) => ({ ...m, total: parseFloat(m.total.toFixed(2)) }));
+  }, [transactions, activeTab, dateRange]);
 
   const sorted = useMemo(() => {
     let arr = [...filtered];
@@ -3013,191 +3021,102 @@ export default function Dashboard() {
                     )}
                   </div>
                 ) : (
-                  <div className="grid grid-cols-2 gap-4">
-                    <ChartCard
-                      title="Spending Over Time"
-                      activeColor={activeColor}
-                    >
-                      {areaData.length > 0 ? (
-                        <ResponsiveContainer
-                          width="100%"
-                          height={230}
-                          style={{ pointerEvents: "none" }}
-                        >
-                          <AreaChart data={areaData}>
-                            <defs>
-                              <linearGradient
-                                id="areaFill"
-                                x1="0"
-                                y1="0"
-                                x2="0"
-                                y2="1"
-                              >
-                                <stop
-                                  offset="5%"
-                                  stopColor={activeColor}
-                                  stopOpacity={0.3}
-                                />
-                                <stop
-                                  offset="95%"
-                                  stopColor={activeColor}
-                                  stopOpacity={0.02}
-                                />
-                              </linearGradient>
-                            </defs>
-                            <CartesianGrid
-                              strokeDasharray="3 3"
-                              vertical={false}
-                              stroke={"rgba(255,255,255,0.06)"}
-                            />
-                            <XAxis
-                              dataKey="date"
-                              type="number"
-                              scale="time"
-                              domain={["dataMin", "dataMax"]}
-                              axisLine={false}
-                              tickLine={false}
-                              tick={{ fontSize: 12, fill: text }}
-                              tickFormatter={(v) =>
-                                new Date(v).toLocaleDateString("en-US", {
-                                  month: "short",
-                                  day: "numeric",
-                                })
-                              }
-                            />
-                            <YAxis
-                              axisLine={false}
-                              tickLine={false}
-                              tickFormatter={(v) => `$${v}`}
-                              tick={{ fontSize: 12, fill: text }}
-                            />
-                            <Tooltip
-                              {...tooltipProps}
-                              cursor={{
-                                stroke: activeColor,
-                                strokeWidth: 1,
-                                strokeDasharray: "4 4",
-                              }}
-                              content={({ payload }) => {
-                                if (!payload?.length) return null;
-                                const { date, total } = payload[0].payload;
-                                return (
-                                  <div
+                  // Single timeline replacing the old "Spending Over Time" +
+                  // "Top _ by Name" pair (#159) - see categoryTimelineData.
+                  <ChartCard
+                    title={`${CATEGORY_CONFIG[activeTab].label} Over Time`}
+                    activeColor={activeColor}
+                  >
+                    {categoryTimelineData.some((m) => m.total !== 0) ? (
+                      <ResponsiveContainer width="100%" height={230}>
+                        <AreaChart data={categoryTimelineData}>
+                          <defs>
+                            <linearGradient
+                              id="areaFill"
+                              x1="0"
+                              y1="0"
+                              x2="0"
+                              y2="1"
+                            >
+                              <stop
+                                offset="5%"
+                                stopColor={activeColor}
+                                stopOpacity={0.3}
+                              />
+                              <stop
+                                offset="95%"
+                                stopColor={activeColor}
+                                stopOpacity={0.02}
+                              />
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid
+                            strokeDasharray="3 3"
+                            vertical={false}
+                            stroke={"rgba(255,255,255,0.06)"}
+                          />
+                          <XAxis
+                            dataKey="label"
+                            axisLine={false}
+                            tickLine={false}
+                            tick={{ fontSize: 12, fill: text }}
+                          />
+                          <YAxis
+                            axisLine={false}
+                            tickLine={false}
+                            tickFormatter={(v) => `$${v}`}
+                            tick={{ fontSize: 12, fill: text }}
+                          />
+                          <Tooltip
+                            {...tooltipProps}
+                            cursor={{
+                              stroke: activeColor,
+                              strokeWidth: 1,
+                              strokeDasharray: "4 4",
+                            }}
+                            content={({ payload }) => {
+                              if (!payload?.length) return null;
+                              const { label, total } = payload[0].payload;
+                              return (
+                                <div
+                                  style={{
+                                    ...tooltipProps.contentStyle,
+                                    padding: "8px 12px",
+                                  }}
+                                >
+                                  <p
                                     style={{
-                                      ...tooltipProps.contentStyle,
-                                      padding: "8px 12px",
+                                      margin: 0,
+                                      opacity: 0.7,
+                                      fontSize: 12,
                                     }}
                                   >
-                                    <p
-                                      style={{
-                                        margin: 0,
-                                        opacity: 0.7,
-                                        fontSize: 12,
-                                      }}
-                                    >
-                                      {new Date(date).toLocaleDateString(
-                                        "en-US",
-                                        {
-                                          month: "short",
-                                          day: "numeric",
-                                          year: "numeric",
-                                        },
-                                      )}
-                                    </p>
-                                    <p style={{ margin: 0, fontWeight: 600 }}>
-                                      {fmt(total)}
-                                    </p>
-                                  </div>
-                                );
-                              }}
-                            />
-                            <Area
-                              key={activeTab}
-                              type="monotone"
-                              dataKey="total"
-                              stroke={activeColor}
-                              strokeWidth={2}
-                              fill="url(#areaFill)"
-                              dot={{ fill: activeColor, r: 4, strokeWidth: 0 }}
-                              activeDot={{ r: 6, strokeWidth: 0 }}
-                              isAnimationActive={false}
-                            />
-                          </AreaChart>
-                        </ResponsiveContainer>
-                      ) : (
-                        <EmptyChartState />
-                      )}
-                    </ChartCard>
-
-                    <ChartCard
-                      title={`Top ${CATEGORY_CONFIG[activeTab].label} by Name`}
-                      activeColor={activeColor}
-                    >
-                      {barData.length > 0 ? (
-                        <ResponsiveContainer
-                          width="100%"
-                          height={230}
-                          style={{ pointerEvents: "none" }}
-                        >
-                          <BarChart data={barData}>
-                            <CartesianGrid
-                              strokeDasharray="3 3"
-                              vertical={false}
-                            />
-                            <XAxis
-                              dataKey="month"
-                              axisLine={false}
-                              tickLine={false}
-                              interval={0}
-                              height={60}
-                              tick={(props) => {
-                                const val = props.payload?.value ?? "";
-                                const label =
-                                  val.length > 12
-                                    ? val.slice(0, 12) + "…"
-                                    : val;
-                                return (
-                                  <text
-                                    x={props.x}
-                                    y={props.y}
-                                    dy={8}
-                                    textAnchor="end"
-                                    fontSize={12}
-                                    style={{ fill: text }}
-                                    transform={`rotate(-35, ${props.x}, ${props.y})`}
-                                  >
                                     {label}
-                                  </text>
-                                );
-                              }}
-                            />
-                            <YAxis
-                              axisLine={false}
-                              tickLine={false}
-                              tickFormatter={(v) => `$${v}`}
-                              tick={{ fontSize: 12, fill: text }}
-                            />
-                            <Tooltip
-                              {...tooltipProps}
-                              formatter={(v) => fmt(v)}
-                              cursor={false}
-                            />
-                            <Bar
-                              dataKey="total"
-                              radius={[6, 6, 0, 0]}
-                              barSize={32}
-                            >
-                              {barData.map((entry) => (
-                                <Cell key={entry.month} fill={entry.color} />
-                              ))}
-                            </Bar>
-                          </BarChart>
-                        </ResponsiveContainer>
-                      ) : (
-                        <EmptyChartState />
-                      )}
-                    </ChartCard>
-                  </div>
+                                  </p>
+                                  <p style={{ margin: 0, fontWeight: 600 }}>
+                                    {fmt(total)}
+                                  </p>
+                                </div>
+                              );
+                            }}
+                          />
+                          <Area
+                            key={activeTab}
+                            type="monotone"
+                            dataKey="total"
+                            stroke={activeColor}
+                            strokeWidth={2}
+                            fill="url(#areaFill)"
+                            dot={{ fill: activeColor, r: 4, strokeWidth: 0 }}
+                            activeDot={{ r: 6, strokeWidth: 0 }}
+                            isAnimationActive={false}
+                          />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <EmptyChartState />
+                    )}
+                  </ChartCard>
                 )}
 
                 {loading ? (
