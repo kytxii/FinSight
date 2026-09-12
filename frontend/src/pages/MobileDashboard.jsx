@@ -1049,13 +1049,16 @@ export default function MobileDashboard() {
         style={{
           backgroundColor: HOME_SURFACE,
           borderRadius: keyboardOpen ? "16px 16px 16px 16px" : "16px 16px 0 0",
-          transition: "border-radius 150ms ease, border-bottom 150ms ease",
           paddingBottom: "env(safe-area-inset-bottom)",
           transform: `translateY(${entrySheetOpen ? dragY : 100}${entrySheetOpen && dragY > 0 ? "" : "%"})`,
+          // One combined value - this was previously two `transition` keys in
+          // the same object, so the transform-only one silently won and the
+          // corners snapped instead of easing when the keyboard opened (#179).
+          // Still drops to "none" mid-drag so the sheet tracks the finger 1:1.
           transition:
             dragY > 0
               ? "none"
-              : "transform 300ms cubic-bezier(0.32, 0.72, 0, 1)",
+              : "transform 300ms cubic-bezier(0.32, 0.72, 0, 1), border-radius 150ms ease",
         }}
         onTouchStart={onSheetTouchStart}
         onTouchMove={onSheetTouchMove}
