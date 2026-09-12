@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { CATEGORY_CONFIG, fmt } from "../../utils/finance";
+import { CATEGORY_CONFIG, fmt, MIN_TABLE_ROWS, ROW_HEIGHT } from "../../utils/finance";
 import { HOME_SURFACE, HOME_DIVIDER, HOME_TEXT, HOME_MUTED, CATEGORY_ACCENT, PANEL_ROW_PAD_Y } from "../shared/categoryVisuals";
 
 const SPARK_MONTHS = 6;
@@ -138,41 +138,47 @@ export default function CategoryTrendPanel({ transactions, dateRange }) {
         <h3 className="text-xl font-semibold">Categories</h3>
       </div>
 
-      {rows.length === 0 ? (
-        <p className="px-6 py-14 text-center text-base" style={{ color: muted }}>No activity this period</p>
-      ) : (
-        <div>
-          <div className="flex items-center justify-center" style={{ padding: "16px", borderBottom: `1px solid ${border}` }}>
-            <Donut rows={rows} total={rows.reduce((s, r) => s + r.total, 0)} hoveredCat={hoveredCat} onHoverCat={setHoveredCat} />
+      {/* Floored to match TransactionTable's own 600px content-area convention
+          (#160/#161) - excludes this card's header above, same as the table
+          excludes its own header/search bar, so the two full cards' bottoms
+          line up regardless of how many categories or rows either has. */}
+      <div style={{ minHeight: MIN_TABLE_ROWS * ROW_HEIGHT }}>
+        {rows.length === 0 ? (
+          <p className="px-6 py-14 text-center text-base" style={{ color: muted }}>No activity this period</p>
+        ) : (
+          <div>
+            <div className="flex items-center justify-center" style={{ padding: "16px", borderBottom: `1px solid ${border}` }}>
+              <Donut rows={rows} total={rows.reduce((s, r) => s + r.total, 0)} hoveredCat={hoveredCat} onHoverCat={setHoveredCat} />
+            </div>
+            {rows.map((r, i) => {
+              const color = CATEGORY_ACCENT[r.category] ?? muted;
+              const label = CATEGORY_CONFIG[r.category]?.label ?? r.category;
+              return (
+                <div
+                  key={r.category}
+                  className="flex items-center gap-4 px-6 transition-colors"
+                  style={{
+                    paddingTop: PANEL_ROW_PAD_Y, paddingBottom: PANEL_ROW_PAD_Y,
+                    borderTop: i === 0 ? "none" : `1px solid ${border}`,
+                    backgroundColor: hoveredCat === r.category ? "rgba(255,255,255,0.04)" : "transparent",
+                  }}
+                  onMouseEnter={() => setHoveredCat(r.category)}
+                  onMouseLeave={() => setHoveredCat(null)}
+                >
+                  <span style={{ width: 9, height: 9, borderRadius: "50%", backgroundColor: color, flexShrink: 0 }} />
+                  <span className="text-lg font-medium" style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {label}
+                  </span>
+                  <Sparkline values={r.values} color={color} />
+                  <span className="text-lg font-bold" style={{ minWidth: 84, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
+                    {fmt(r.total)}
+                  </span>
+                </div>
+              );
+            })}
           </div>
-          {rows.map((r, i) => {
-            const color = CATEGORY_ACCENT[r.category] ?? muted;
-            const label = CATEGORY_CONFIG[r.category]?.label ?? r.category;
-            return (
-              <div
-                key={r.category}
-                className="flex items-center gap-4 px-6 transition-colors"
-                style={{
-                  paddingTop: PANEL_ROW_PAD_Y, paddingBottom: PANEL_ROW_PAD_Y,
-                  borderTop: i === 0 ? "none" : `1px solid ${border}`,
-                  backgroundColor: hoveredCat === r.category ? "rgba(255,255,255,0.04)" : "transparent",
-                }}
-                onMouseEnter={() => setHoveredCat(r.category)}
-                onMouseLeave={() => setHoveredCat(null)}
-              >
-                <span style={{ width: 9, height: 9, borderRadius: "50%", backgroundColor: color, flexShrink: 0 }} />
-                <span className="text-lg font-medium" style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {label}
-                </span>
-                <Sparkline values={r.values} color={color} />
-                <span className="text-lg font-bold" style={{ minWidth: 84, textAlign: "right", fontVariantNumeric: "tabular-nums" }}>
-                  {fmt(r.total)}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
