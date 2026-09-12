@@ -5,10 +5,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
 from typing import NamedTuple
 import calendar
-from app.models import Transaction, RecurringPayment, Paycheck, Installment
+from app.models import Transaction, RecurringPayment, Paycheck, Installment, CreditCardCharge, CreditCardChargeAllocation
 from app.models.category import Category
 from app.schemas import CreateTransaction, UpdateTransaction
-from app.services import recurring_payment_service
+from app.services import recurring_payment_service, credit_card_service
 from app.services.recurring_payment_service import InvalidRecurringPaymentError
 
 
@@ -80,6 +80,34 @@ async def delete_transaction(transaction_id: UUID, current_user: UUID, db: Async
         if paycheck is not None:
             paycheck.amount = None
             paycheck.updated_by = current_user
+
+    # This transaction is a credit card payment's anchor - deleting it here
+    # (the normal transaction delete path) bypassed delete_payment's own
+    # unlink/re-evaluate cleanup entirely (#140). Reuse that logic rather
+    # than duplicate it; it deletes the CreditCardPayment and re-evaluates
+    # charges it funded, then falls through to delete this transaction below.
+    if transaction.credit_card_payment_id is not None:
+        await credit_card_service.delete_payment(transaction.credit_card_payment_id, current_user, db)
+
+    # This transaction IS a settled charge's promoted row. Deleting it used
+    # to leave the charge's CreditCardChargeAllocation rows in place while
+    # the charge itself flipped to "Partial" - paid-for money the UI could
+    # no longer account for (#140). A charge is always paid in full or not
+    # at all (#147: allocate() never partially funds one), so releasing its
+    # allocation(s) leaves nothing funding it - delete the charge outright,
+    # the same convention delete_payment already uses for a charge left
+    # with zero allocations, rather than leave a dangling $0 charge.
+    if transaction.credit_card_charge_id is not None:
+        charge = await db.scalar(
+            select(CreditCardCharge).where(CreditCardCharge.id == transaction.credit_card_charge_id)
+        )
+        if charge is not None:
+            allocations = (await db.scalars(
+                select(CreditCardChargeAllocation).where(CreditCardChargeAllocation.charge_id == charge.id)
+            )).all()
+            for allocation in allocations:
+                await db.delete(allocation)
+            await db.delete(charge)
 
     await db.delete(transaction)
     await db.commit()
