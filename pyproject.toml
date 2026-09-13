@@ -5,7 +5,7 @@ requires-python = ">=3.12"
 dependencies = [
     # API
     "fastapi",
-    "uvicorn",
+    "uvicorn[standard]",
     # Database
     "sqlalchemy[asyncio]",
     "alembic",

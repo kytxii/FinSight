@@ -1,4 +1,4 @@
-from sqlalchemy import String, Numeric, Integer, Boolean, DateTime, UUID, Enum as CategoryEnum
+from sqlalchemy import String, Numeric, Integer, Boolean, DateTime, UUID, Enum as CategoryEnum, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -25,5 +25,7 @@ class Installment(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
-    created_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)
+    created_by: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
     updated_by: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False)

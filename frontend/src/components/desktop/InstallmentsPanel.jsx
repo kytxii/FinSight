@@ -64,6 +64,7 @@ export default function InstallmentsPanel({ desktop = false, addSignal, onSaved 
   const [loading, setLoading] = useState(true);
   const [loadFailed, setLoadFailed] = useState(false);
   const [availableCash, setAvailableCash] = useState(null);
+  const [surplusFailed, setSurplusFailed] = useState(false);
 
   const [showForm, setShowForm] = useState(false);
   const [showAddCard, setShowAddCard] = useState(false);
@@ -82,13 +83,15 @@ export default function InstallmentsPanel({ desktop = false, addSignal, onSaved 
   useEffect(load, []);
 
   // Fetched once, shared by each row's Impact stat and the form's gauge preview.
-  useEffect(() => {
+  function loadSurplus() {
     let cancelled = false;
+    setSurplusFailed(false);
     getSpendableSurplus()
       .then(res => { if (!cancelled) setAvailableCash(parseFloat(res.data.free_to_allocate)); })
-      .catch(() => {});
+      .catch(() => { if (!cancelled) setSurplusFailed(true); });
     return () => { cancelled = true; };
-  }, []);
+  }
+  useEffect(loadSurplus, []);
 
   function rowImpact(row) {
     if (row.monthly_payment == null || availableCash == null) return null;
@@ -325,7 +328,14 @@ export default function InstallmentsPanel({ desktop = false, addSignal, onSaved 
             <div className="rounded-2xl px-5 py-4" style={{ backgroundColor: bg }}>
               <p style={{ fontSize: 11, fontWeight: 600, color: muted, margin: 0 }}>AVAILABLE CASH</p>
               <p style={{ fontSize: 22, fontWeight: 700, color: HOME_INCOME, margin: "4px 0 0", fontVariantNumeric: "tabular-nums" }}>{availableCash != null ? fmt(availableCash) : "—"}</p>
-              <p style={{ fontSize: 11.5, color: muted, margin: "3px 0 0" }}>Used for each card's impact</p>
+              {surplusFailed ? (
+                <p style={{ fontSize: 11.5, color: HOME_EXPENSE, margin: "3px 0 0" }}>
+                  Couldn't load —{" "}
+                  <span onClick={loadSurplus} style={{ textDecoration: "underline", cursor: "pointer" }}>Retry</span>
+                </p>
+              ) : (
+                <p style={{ fontSize: 11.5, color: muted, margin: "3px 0 0" }}>Used for each card's impact</p>
+              )}
             </div>
           </div>
         )}

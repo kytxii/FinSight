@@ -12,6 +12,13 @@ export const CATEGORIES = [
 
 export const ALL_COLORS = { color: "#818cf8", lightColor: "#4f46e5" };
 
+// Shared desktop table sizing (#160) - every category tab's table stays a
+// consistent height regardless of row count, padding out to MIN_TABLE_ROWS
+// with filler rows (or a single MIN_TABLE_ROWS * ROW_HEIGHT-tall empty
+// state) instead of shrinking. ROW_HEIGHT matches a real row's height.
+export const MIN_TABLE_ROWS = 10;
+export const ROW_HEIGHT = 60;
+
 export const CATEGORY_CONFIG = {
   INCOME: { color: "#4ade80", lightColor: "#16a34a", label: "Income" },
   EXPENSE: { color: "#f87171", lightColor: "#dc2626", label: "Expenses" },

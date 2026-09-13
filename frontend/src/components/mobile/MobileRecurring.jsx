@@ -10,7 +10,7 @@ import {
   updateRecurringPayment,
   deleteRecurringPayment,
 } from "../../api/recurringPayments";
-import { useSheetDrag, SHEET_EASE } from "../../hooks/useSheetDrag";
+import { useSheetDrag, SHEET_EASE } from "../../hooks/shared/useSheetDrag";
 import { HOME_TEXT, HOME_MUTED, HOME_SURFACE, HOME_DIVIDER, HOME_EXPENSE, HOME_INCOME, HOME_ACCENT, TILE_COLOR, CATEGORY_ICON } from "../shared/categoryVisuals";
 import { getCached, hasCached, setCached } from "../../utils/pageCache";
 
@@ -200,6 +200,7 @@ export default function MobileRecurring({ onSaved, openAddSignal }) {
   // revalidates in the background.
   const [rows, setRows] = useState(() => getCached(CACHE_KEY) ?? []);
   const [loading, setLoading] = useState(() => !hasCached(CACHE_KEY));
+  const [loadFailed, setLoadFailed] = useState(false);
   const [deletingIds, setDeletingIds] = useState(new Set());
   const [openId, setOpenId] = useState(null);
   const [listError, setListError] = useState("");
@@ -211,13 +212,15 @@ export default function MobileRecurring({ onSaved, openAddSignal }) {
 
   const prevSignal = useRef(openAddSignal);
 
-  useEffect(() => {
+  function loadRecurring() {
     if (!hasCached(CACHE_KEY)) setLoading(true);
+    setLoadFailed(false);
     getRecurringPayments()
       .then(r => { setRows(r.data); setCached(CACHE_KEY, r.data); })
-      .catch(() => {})
+      .catch(() => setLoadFailed(true))
       .finally(() => setLoading(false));
-  }, []);
+  }
+  useEffect(loadRecurring, []);
 
   // Parent's "+" button in the overlay header bumps this counter to request the add sheet.
   useEffect(() => {
@@ -333,6 +336,20 @@ export default function MobileRecurring({ onSaved, openAddSignal }) {
               </div>
             </div>
           ))}
+        </div>
+      ) : loadFailed ? (
+        <div style={{ textAlign: "center", padding: "28px 16px", borderRadius: 16, border: `1px dashed ${HOME_DIVIDER}` }}>
+          <p style={{ fontSize: 13, color: HOME_MUTED, margin: "0 0 10px" }}>Couldn't load recurring payments</p>
+          <button
+            onClick={loadRecurring}
+            style={{
+              fontSize: 13, fontWeight: 700, padding: "7px 16px", borderRadius: 10,
+              border: "none", color: "#fff", backgroundColor: HOME_INCOME,
+              cursor: "pointer",
+            }}
+          >
+            Try again
+          </button>
         </div>
       ) : rows.length === 0 ? (
         <div style={{ textAlign: "center", padding: "28px 16px", borderRadius: 16, border: `1px dashed ${HOME_DIVIDER}` }}>

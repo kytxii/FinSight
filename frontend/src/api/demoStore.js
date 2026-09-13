@@ -7,6 +7,19 @@ import {
   computeMonthlyPayment,
   computeGaugeStatus,
 } from "../utils/installmentMath";
+import { computeCashOnHand } from "../utils/cashOnHand";
+import { computeRunningBalance } from "../utils/runningBalance";
+import {
+  toDateStr,
+  nextMonthStart,
+  addMonthsClamped,
+  iterPayDates,
+  generatePayDatesThrough,
+  averageRecentAmounts,
+  committedItems,
+  computeSpendableSurplus,
+  computeEstimatedSavings,
+} from "../utils/paycheckMath";
 
 const TX_KEY = "demo_transactions";
 const RP_KEY = "demo_recurring";
@@ -2025,9 +2038,6 @@ const SEED_TRANSACTIONS = [
     category: "TIPS",
     transaction_date: "2026-04-26",
   },
-  // Settled charges for the demo credit card balance below (SEED_CREDIT_CARD_CHARGES)
-  // - mirrors the real "settled" transaction allocateCreditCardPayment creates,
-  // tagged so balance/spend math skips them (already counted via the payment).
   {
     id: "demo-t-cc-1",
     name: "Amazon",
@@ -2055,20 +2065,63 @@ const SEED_TRANSACTIONS = [
 ];
 
 const SEED_RECURRING = [
-  { id: "demo-r-1", name: "Rent",           amount: "1200.00", day_of_month: 1,    category: "BILL"         },
-  { id: "demo-r-2", name: "Spotify",        amount: "9.99",    day_of_month: 1,    category: "SUBSCRIPTION" },
-  { id: "demo-r-3", name: "Gym Membership", amount: "40.00",   day_of_month: 5,    category: "SUBSCRIPTION" },
-  { id: "demo-r-4", name: "Internet",       amount: "60.00",   day_of_month: 10,   category: "BILL"         },
-  { id: "demo-r-5", name: "Netflix",        amount: "15.99",   day_of_month: 15,   category: "SUBSCRIPTION" },
-  { id: "demo-r-6", name: "Electric",       amount: "88.00",   day_of_month: 20,   category: "BILL"         },
-  { id: "demo-r-7", name: "Groceries",      amount: "400.00",  day_of_month: null, category: "EXPENSE", is_estimate: true },
-  // Every other dated recurring item above already has a matching transaction
-  // seeded for the current demo month (2026-04), so they're always "paid" by
-  // DEMO_TODAY regardless of day_of_month - none of them can ever show
-  // "upcoming". This one is deliberately due after DEMO_TODAY's day (28) with
-  // no April transaction seeded for it, so the per-category Upcoming panel
-  // has something real to show.
-  { id: "demo-r-8", name: "Water Bill",     amount: "35.00",   day_of_month: 29,   category: "BILL"         },
+  {
+    id: "demo-r-1",
+    name: "Rent",
+    amount: "1200.00",
+    day_of_month: 1,
+    category: "BILL",
+  },
+  {
+    id: "demo-r-2",
+    name: "Spotify",
+    amount: "9.99",
+    day_of_month: 1,
+    category: "SUBSCRIPTION",
+  },
+  {
+    id: "demo-r-3",
+    name: "Gym Membership",
+    amount: "40.00",
+    day_of_month: 5,
+    category: "SUBSCRIPTION",
+  },
+  {
+    id: "demo-r-4",
+    name: "Internet",
+    amount: "60.00",
+    day_of_month: 10,
+    category: "BILL",
+  },
+  {
+    id: "demo-r-5",
+    name: "Netflix",
+    amount: "15.99",
+    day_of_month: 15,
+    category: "SUBSCRIPTION",
+  },
+  {
+    id: "demo-r-6",
+    name: "Electric",
+    amount: "88.00",
+    day_of_month: 20,
+    category: "BILL",
+  },
+  {
+    id: "demo-r-7",
+    name: "Groceries",
+    amount: "400.00",
+    day_of_month: null,
+    category: "EXPENSE",
+    is_estimate: true,
+  },
+  {
+    id: "demo-r-8",
+    name: "Water Bill",
+    amount: "35.00",
+    day_of_month: 29,
+    category: "BILL",
+  },
 ];
 
 const SEED_PAYCHECK_SCHEDULES = [
@@ -2189,9 +2242,6 @@ const SEED_INSTALLMENTS = [
   },
 ];
 
-// One demo card, partially paid off (#54) - total_amount bigger than what's
-// been allocated to charges so far, so "left" > 0 and the progress bar reads
-// as in-progress instead of empty or fully paid.
 const SEED_CREDIT_CARD_PAYMENTS = [
   {
     id: "demo-ccp-1",
@@ -2231,9 +2281,27 @@ const SEED_CREDIT_CARD_CHARGES = [
 ];
 
 const SEED_CREDIT_CARD_ALLOCATIONS = [
-  { id: "demo-cca-1", charge_id: "demo-ccc-1", payment_id: "demo-ccp-1", amount_applied: "245.00", created_at: "2026-04-04T12:00:00.000Z" },
-  { id: "demo-cca-2", charge_id: "demo-ccc-2", payment_id: "demo-ccp-1", amount_applied: "165.00", created_at: "2026-04-12T12:00:00.000Z" },
-  { id: "demo-cca-3", charge_id: "demo-ccc-3", payment_id: "demo-ccp-1", amount_applied: "90.00", created_at: "2026-04-20T12:00:00.000Z" },
+  {
+    id: "demo-cca-1",
+    charge_id: "demo-ccc-1",
+    payment_id: "demo-ccp-1",
+    amount_applied: "245.00",
+    created_at: "2026-04-04T12:00:00.000Z",
+  },
+  {
+    id: "demo-cca-2",
+    charge_id: "demo-ccc-2",
+    payment_id: "demo-ccp-1",
+    amount_applied: "165.00",
+    created_at: "2026-04-12T12:00:00.000Z",
+  },
+  {
+    id: "demo-cca-3",
+    charge_id: "demo-ccc-3",
+    payment_id: "demo-ccp-1",
+    amount_applied: "90.00",
+    created_at: "2026-04-20T12:00:00.000Z",
+  },
 ];
 
 // Init
@@ -2496,9 +2564,22 @@ export const aiCleanupNames = () =>
     },
   });
 
-// Recurring payments
-// INCOME and TIPS are excluded - they're handled by paychecks and cash tracking,
-// not recurring payments. Mirrors the backend's category validator.
+export const sendChatMessage = () =>
+  Promise.reject({
+    response: {
+      status: 503,
+      data: {
+        detail:
+          "The AI assistant needs a real account — not available in demo mode.",
+      },
+    },
+  });
+
+export const getAssistantUsage = () =>
+  Promise.resolve({
+    data: { requests_remaining_today: 500, requests_remaining_this_minute: 15 },
+  });
+
 const RECURRING_BLOCKED_CATEGORIES = new Set(["INCOME", "TIPS"]);
 
 function rejectBlockedCategory(category) {
@@ -2737,8 +2818,6 @@ const PAYCHECK_EXPENSE_CATEGORIES = new Set([
   "SAVINGS",
   "DEBT",
 ]);
-const PAYCHECK_INCOME_CATEGORIES = new Set(["INCOME", "REIMBURSEMENT", "TIPS"]);
-
 // Excludes SAVINGS - moving money into savings isn't spending it.
 const NON_SAVINGS_EXPENSE_CATEGORIES = new Set([
   "EXPENSE",
@@ -2750,105 +2829,14 @@ const NON_SAVINGS_EXPENSE_CATEGORIES = new Set([
 const MONEY_IN_CATEGORIES = new Set(["INCOME", "REIMBURSEMENT"]);
 const SAVINGS_HISTORY_MONTHS = 3;
 
-function toDateStr(d) {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
-// Adds months to a date, clamping the day if the target month is shorter
-// (Jan 31 + 1 month -> Feb 28). Mirrors _add_months.
-function addMonthsClamped(base, months) {
-  const year = base.getFullYear();
-  const month = base.getMonth();
-  const day = base.getDate();
-  const targetIndex = month + months;
-  const targetYear = year + Math.floor(targetIndex / 12);
-  const targetMonth = ((targetIndex % 12) + 12) % 12;
-  const lastDay = new Date(targetYear, targetMonth + 1, 0).getDate();
-  return new Date(targetYear, targetMonth, Math.min(day, lastDay));
-}
-
-// Yields a schedule's pay dates going forward. SEMI_MONTHLY produces two dates
-// 15 days apart each month.
-function* iterPayDates(schedule) {
-  const start = new Date(schedule.start_date + "T00:00:00");
-
-  if (schedule.frequency === "WEEKLY" || schedule.frequency === "BIWEEKLY") {
-    const stepDays = schedule.frequency === "WEEKLY" ? 7 : 14;
-    let current = start;
-    while (true) {
-      yield current;
-      current = new Date(current);
-      current.setDate(current.getDate() + stepDays);
-    }
-  } else if (schedule.frequency === "MONTHLY") {
-    let months = 0;
-    while (true) {
-      yield addMonthsClamped(start, months);
-      months += 1;
-    }
-  } else if (schedule.frequency === "SEMI_MONTHLY") {
-    let months = 0;
-    while (true) {
-      const anchor = addMonthsClamped(start, months);
-      yield anchor;
-      const second = new Date(anchor);
-      second.setDate(second.getDate() + 15);
-      yield second;
-      months += 1;
-    }
-  }
-}
-
-function generatePayDatesThrough(schedule, through) {
-  const dates = [];
-  for (const d of iterPayDates(schedule)) {
-    dates.push(d);
-    if (d > through) break;
-  }
-  return dates;
-}
-
-function nextOccurrence(dayOfMonth, fromDate) {
-  const lastDay = new Date(
-    fromDate.getFullYear(),
-    fromDate.getMonth() + 1,
-    0,
-  ).getDate();
-  const candidate = new Date(
-    fromDate.getFullYear(),
-    fromDate.getMonth(),
-    Math.min(dayOfMonth, lastDay),
-  );
-  if (candidate >= fromDate) return candidate;
-
-  const nextMonth = addMonthsClamped(
-    new Date(fromDate.getFullYear(), fromDate.getMonth(), 1),
-    1,
-  );
-  const nextLastDay = new Date(
-    nextMonth.getFullYear(),
-    nextMonth.getMonth() + 1,
-    0,
-  ).getDate();
-  return new Date(
-    nextMonth.getFullYear(),
-    nextMonth.getMonth(),
-    Math.min(dayOfMonth, nextLastDay),
-  );
-}
-
 function backfillPaychecks(through) {
   const schedules = getAll(PS_KEY);
   const paychecks = getAll(PC_KEY);
-  // Defaulting this to DEMO_TODAY itself meant backfill only ever filled in
-  // paychecks up to today, never past it - the "next payday" SEED_PAYCHECKS'
-  // own comment says backfill would add was never actually generated. A
-  // month-out horizon comfortably covers the next occurrence for any of the
-  // supported frequencies (weekly/biweekly/monthly/semi-monthly).
-  const horizon = through ?? new Date(new Date(DEMO_TODAY + "T00:00:00").getTime() + 30 * 24 * 60 * 60 * 1000);
+  const horizon =
+    through ??
+    new Date(
+      new Date(DEMO_TODAY + "T00:00:00").getTime() + 30 * 24 * 60 * 60 * 1000,
+    );
   let changed = false;
 
   schedules
@@ -3017,39 +3005,17 @@ export const setBalanceAnchor = (data) => {
   return respond(anchor);
 };
 
-function balanceDelta(t) {
-  const amt = parseFloat(t.amount);
-  // A settled credit card charge (#54) already had its cash counted once via
-  // its payment's own transaction - counting it again here would double it.
-  // An expense paid_with_cash never touched checking either, same reasoning
-  // from the other direction - the cash tips that funded it were never
-  // counted as income here (#131), so counting the expense side without the
-  // income side would be the asymmetry #151 fixes.
-  if (t.category === "TIPS" || t.credit_card_charge_id || t.paid_with_cash) return 0;
-  return PAYCHECK_INCOME_CATEGORIES.has(t.category) ? amt : -amt;
-}
-
-function computeRunningBalance() {
+// See utils/runningBalance.js for the actual rule (#176).
+function computeRunningBalanceFromStore() {
   const raw = localStorage.getItem(BA_KEY);
   if (!raw) return null;
   const anchor = JSON.parse(raw);
-
-  const net = getAll(TX_KEY)
-    .filter(
-      (t) =>
-        t.transaction_date >= anchor.as_of_date &&
-        t.transaction_date <= DEMO_TODAY,
-    )
-    .reduce((sum, t) => sum + balanceDelta(t), 0);
-
-  const depositTotal = getAll(TD_KEY)
-    .filter(
-      (d) =>
-        d.deposit_date >= anchor.as_of_date && d.deposit_date <= DEMO_TODAY,
-    )
-    .reduce((sum, d) => sum + parseFloat(d.amount), 0);
-
-  return parseFloat(anchor.current_balance) + net + depositTotal;
+  return computeRunningBalance(
+    anchor,
+    getAll(TX_KEY),
+    getAll(TD_KEY),
+    DEMO_TODAY,
+  );
 }
 
 export const getRunningBalance = () => {
@@ -3061,61 +3027,10 @@ export const getRunningBalance = () => {
   }
   const anchor = JSON.parse(raw);
   return respond({
-    balance: computeRunningBalance().toFixed(2),
+    balance: computeRunningBalanceFromStore().toFixed(2),
     as_of_date: anchor.as_of_date,
   });
 };
-
-function nextMonthStart(today) {
-  const month = today.getMonth();
-  const year = today.getFullYear();
-  return month === 11 ? new Date(year + 1, 0, 1) : new Date(year, month + 1, 1);
-}
-
-function averageRecentAmounts(scheduleId, allPaychecks, limit = 3) {
-  const amounts = allPaychecks
-    .filter((p) => p.schedule_id === scheduleId && p.amount != null)
-    .sort((a, b) => b.pay_date.localeCompare(a.pay_date))
-    .slice(0, limit)
-    .map((p) => parseFloat(p.amount));
-  if (amounts.length === 0) return null;
-  return amounts.reduce((a, b) => a + b, 0) / amounts.length;
-}
-
-function committedItems(recurring, today, horizon) {
-  let total = 0;
-  const items = [];
-  recurring.forEach((rp) => {
-    if (rp.day_of_month == null) {
-      total += parseFloat(rp.amount);
-      items.push({
-        name: rp.name,
-        amount: parseFloat(rp.amount).toFixed(2),
-        day_of_month: null,
-        due_date: null,
-        category: rp.category,
-      });
-    } else {
-      const occurrence = nextOccurrence(rp.day_of_month, today);
-      if (occurrence <= horizon) {
-        total += parseFloat(rp.amount);
-        items.push({
-          name: rp.name,
-          amount: parseFloat(rp.amount).toFixed(2),
-          day_of_month: rp.day_of_month,
-          due_date: toDateStr(occurrence),
-          category: rp.category,
-        });
-      }
-    }
-  });
-  items.sort(
-    (a, b) =>
-      (a.due_date == null) - (b.due_date == null) ||
-      (a.due_date ?? "").localeCompare(b.due_date ?? ""),
-  );
-  return { total, items };
-}
 
 export const getSpendingReserve = () => {
   const raw = localStorage.getItem(RES_KEY);
@@ -3136,7 +3051,7 @@ function getSpendingReserveValue() {
 }
 
 export const getSpendableSurplus = () => {
-  const runningBalance = computeRunningBalance();
+  const runningBalance = computeRunningBalanceFromStore();
   if (runningBalance == null) {
     return Promise.reject({
       response: { status: 404, data: { detail: "No starting balance set" } },
@@ -3188,9 +3103,12 @@ export const getSpendableSurplus = () => {
   const { total: billsBeforeNextPayday, items: billsBreakdown } =
     committedItems(recurring, today, nextPayday);
 
-  const spendableSurplus =
-    runningBalance + (nextPaydayEstimate ?? 0) - billsBeforeNextPayday;
-  const freeToAllocate = spendableSurplus - getSpendingReserveValue();
+  const { spendableSurplus, freeToAllocate } = computeSpendableSurplus(
+    runningBalance,
+    nextPaydayEstimate,
+    billsBeforeNextPayday,
+    getSpendingReserveValue(),
+  );
 
   return respond({
     next_payday: nextPaydayStr,
@@ -3344,8 +3262,7 @@ export const getEstimatedSavings = () => {
       .map((t) => t.recurring_payment_id),
   );
   const wasSkipped = (rp) =>
-    rp.last_applied_month === currentMonthPrefix &&
-    !linkedThisMonth.has(rp.id);
+    rp.last_applied_month === currentMonthPrefix && !linkedThisMonth.has(rp.id);
 
   const committedRecurring = getAll(RP_KEY)
     .filter(
@@ -3371,21 +3288,15 @@ export const getEstimatedSavings = () => {
     )
     .reduce((sum, t) => sum + parseFloat(t.amount), 0);
 
-  // Whatever's left of the historical average once actual spend is netted
-  // out, floored at 0 - not a full remaining-days share of the average
-  // stacked on top of actual spend unconditionally, which double-billed a
-  // front-loaded month (#133), same fix as the real backend.
-  const discretionaryProjectedRemaining = Math.max(
-    monthlyDiscretionaryAvg - discretionarySpentSoFar,
-    0,
-  );
-
-  const rawCeiling =
-    wholeMonthIncome -
-    committedRecurring -
-    discretionarySpentSoFar -
-    discretionaryProjectedRemaining;
-  const estimatedSavings = Math.max(rawCeiling, 0);
+  // See utils/paycheckMath.js's computeEstimatedSavings for the actual rule
+  // (#133, #130).
+  const { estimatedSavings, discretionaryProjectedRemaining } =
+    computeEstimatedSavings(
+      wholeMonthIncome,
+      committedRecurring,
+      discretionarySpentSoFar,
+      monthlyDiscretionaryAvg,
+    );
 
   return respond({
     month_start: monthStartStr,
@@ -3445,19 +3356,33 @@ export const deleteTipDeposit = (id) => {
   return Promise.resolve({ data: null, status: 204 });
 };
 
-// #156: a quality-of-life correction, not a persistent link - the source row
-// is gone once converted, nothing ties the result back to what it came from.
 export const convertTransactionToTipDeposit = (id) => {
   const items = getAll(TX_KEY);
   const target = items.find((t) => t.id === id);
   if (!target) {
-    return Promise.reject({ response: { status: 404, data: { detail: "Transaction not found" } } });
+    return Promise.reject({
+      response: { status: 404, data: { detail: "Transaction not found" } },
+    });
   }
   if (target.category !== "TIPS") {
-    return Promise.reject({ response: { status: 400, data: { detail: "Only a Tips transaction can be converted to a deposit" } } });
+    return Promise.reject({
+      response: {
+        status: 400,
+        data: {
+          detail: "Only a Tips transaction can be converted to a deposit",
+        },
+      },
+    });
   }
-  saveAll(TX_KEY, items.filter((t) => t.id !== id));
-  const deposit = { id: nextId(), amount: target.amount, deposit_date: target.transaction_date };
+  saveAll(
+    TX_KEY,
+    items.filter((t) => t.id !== id),
+  );
+  const deposit = {
+    id: nextId(),
+    amount: target.amount,
+    deposit_date: target.transaction_date,
+  };
   saveAll(TD_KEY, [...getAll(TD_KEY), deposit]);
   return respond(deposit);
 };
@@ -3466,33 +3391,31 @@ export const convertTipDepositToTransaction = (id) => {
   const deposits = getAll(TD_KEY);
   const target = deposits.find((d) => d.id === id);
   if (!target) {
-    return Promise.reject({ response: { status: 404, data: { detail: "Tip deposit not found" } } });
+    return Promise.reject({
+      response: { status: 404, data: { detail: "Tip deposit not found" } },
+    });
   }
-  saveAll(TD_KEY, deposits.filter((d) => d.id !== id));
-  const transaction = { id: nextId(), name: "Cash", amount: target.amount, transaction_date: target.deposit_date, category: "TIPS" };
+  saveAll(
+    TD_KEY,
+    deposits.filter((d) => d.id !== id),
+  );
+  const transaction = {
+    id: nextId(),
+    name: "Cash",
+    amount: target.amount,
+    transaction_date: target.deposit_date,
+    category: "TIPS",
+  };
   saveAll(TX_KEY, [...getAll(TX_KEY), transaction]);
   return respond(transaction);
 };
 
-// Scoped to a calendar month (default: the current demo month) to match the
-// backend fix in #157 - this used to sum all-time, which read as wrong sitting
-// next to the this-month figures beside it. cash_on_hand is this month's
-// earned cash tips, not earned minus deposited - a deposit isn't tied to the
-// month its cash was earned, so netting the two would go negative whenever a
-// prior month's undeposited cash gets deposited this month.
 export const getCashOnHand = (year, month) => {
-  const period = year && month ? `${year}-${String(month).padStart(2, "0")}` : demoCurrentMonth();
-  const tipsEarned = getAll(TX_KEY)
-    .filter((t) => t.category === "TIPS" && t.transaction_date.slice(0, 7) === period)
-    .reduce((s, t) => s + parseFloat(t.amount), 0);
-  const tipsDeposited = getAll(TD_KEY)
-    .filter((d) => d.deposit_date.slice(0, 7) === period)
-    .reduce((s, d) => s + parseFloat(d.amount), 0);
-  return respond({
-    cash_on_hand: tipsEarned.toFixed(2),
-    tips_earned: tipsEarned.toFixed(2),
-    tips_deposited: tipsDeposited.toFixed(2),
-  });
+  const period =
+    year && month
+      ? `${year}-${String(month).padStart(2, "0")}`
+      : demoCurrentMonth();
+  return respond(computeCashOnHand(getAll(TX_KEY), getAll(TD_KEY), period));
 };
 
 // Installments
@@ -3643,11 +3566,6 @@ export const getInstallmentInsights = (id) => {
   );
 };
 
-// Credit card payment allocation (#54) - mirrors app/services/credit_card_service.py.
-// The anchor payment transaction keeps its full amount/category untouched;
-// allocating breaks it down into real, categorized charge transactions
-// without double-counting the cash movement (see cents/_balanceDelta below).
-
 function ccCents(n) {
   return Math.round(n * 100) / 100;
 }
@@ -3669,7 +3587,9 @@ function paidOnCharge(chargeId) {
 }
 
 function settledTransactionIdFor(chargeId) {
-  const settled = getAll(TX_KEY).find((t) => t.credit_card_charge_id === chargeId);
+  const settled = getAll(TX_KEY).find(
+    (t) => t.credit_card_charge_id === chargeId,
+  );
   return settled ? settled.id : null;
 }
 
@@ -3689,11 +3609,19 @@ function chargeSummary(charge) {
 
 function creditCardPaymentDetail(payment) {
   const chargeIds = [
-    ...new Set(getAll(CCA_KEY).filter((a) => a.payment_id === payment.id).map((a) => a.charge_id)),
+    ...new Set(
+      getAll(CCA_KEY)
+        .filter((a) => a.payment_id === payment.id)
+        .map((a) => a.charge_id),
+    ),
   ];
   const charges = getAll(CCC_KEY)
     .filter((c) => chargeIds.includes(c.id))
-    .sort((a, b) => (a.charge_date + a.created_at).localeCompare(b.charge_date + b.created_at))
+    .sort((a, b) =>
+      (a.charge_date + a.created_at).localeCompare(
+        b.charge_date + b.created_at,
+      ),
+    )
     .map(chargeSummary);
 
   const paid = paidOnPayment(payment.id);
@@ -3732,16 +3660,33 @@ export const createCreditCardPayment = (totalAmount, paymentDate, dueDate) => {
   return respond(creditCardPaymentDetail(payment));
 };
 
-export const createCreditCardPaymentFromTransaction = (transactionId, dueDate) => {
+export const createCreditCardPaymentFromTransaction = (
+  transactionId,
+  dueDate,
+) => {
   const transaction = getAll(TX_KEY).find((t) => t.id === transactionId);
   if (!transaction) {
-    return Promise.reject({ response: { status: 404, data: { detail: "Transaction not found" } } });
+    return Promise.reject({
+      response: { status: 404, data: { detail: "Transaction not found" } },
+    });
   }
   if (transaction.credit_card_payment_id) {
-    return Promise.reject({ response: { status: 404, data: { detail: "Transaction is already a credit card payment" } } });
+    return Promise.reject({
+      response: {
+        status: 404,
+        data: { detail: "Transaction is already a credit card payment" },
+      },
+    });
   }
   if (transaction.credit_card_charge_id) {
-    return Promise.reject({ response: { status: 404, data: { detail: "Transaction is a settled credit card charge, not a payment" } } });
+    return Promise.reject({
+      response: {
+        status: 404,
+        data: {
+          detail: "Transaction is a settled credit card charge, not a payment",
+        },
+      },
+    });
   }
 
   const payment = {
@@ -3755,7 +3700,9 @@ export const createCreditCardPaymentFromTransaction = (transactionId, dueDate) =
   saveAll(CCP_KEY, [...getAll(CCP_KEY), payment]);
   saveAll(
     TX_KEY,
-    getAll(TX_KEY).map((t) => (t.id === transactionId ? { ...t, credit_card_payment_id: payment.id } : t)),
+    getAll(TX_KEY).map((t) =>
+      t.id === transactionId ? { ...t, credit_card_payment_id: payment.id } : t,
+    ),
   );
 
   return respond(creditCardPaymentDetail(payment));
@@ -3764,7 +3711,12 @@ export const createCreditCardPaymentFromTransaction = (transactionId, dueDate) =
 export const getCreditCardPayment = (paymentId) => {
   const payment = getAll(CCP_KEY).find((p) => p.id === paymentId);
   if (!payment) {
-    return Promise.reject({ response: { status: 404, data: { detail: "Credit card payment not found" } } });
+    return Promise.reject({
+      response: {
+        status: 404,
+        data: { detail: "Credit card payment not found" },
+      },
+    });
   }
   return respond(creditCardPaymentDetail(payment));
 };
@@ -3772,24 +3724,51 @@ export const getCreditCardPayment = (paymentId) => {
 export const allocateCreditCardPayment = (paymentId, data) => {
   const payment = getAll(CCP_KEY).find((p) => p.id === paymentId);
   if (!payment) {
-    return Promise.reject({ response: { status: 404, data: { detail: "Credit card payment not found" } } });
+    return Promise.reject({
+      response: {
+        status: 404,
+        data: { detail: "Credit card payment not found" },
+      },
+    });
   }
 
   // A third allocate shape: reuse an already-recorded, unlinked transaction
   // as the charge, applied in full - it already IS the charge, no duplicate
   // transaction gets created the way a from-scratch charge's promotion does.
   if (data.transaction_id) {
-    const transaction = getAll(TX_KEY).find((t) => t.id === data.transaction_id);
+    const transaction = getAll(TX_KEY).find(
+      (t) => t.id === data.transaction_id,
+    );
     if (!transaction) {
-      return Promise.reject({ response: { status: 404, data: { detail: "Transaction not found" } } });
+      return Promise.reject({
+        response: { status: 404, data: { detail: "Transaction not found" } },
+      });
     }
-    if (transaction.credit_card_payment_id || transaction.credit_card_charge_id) {
-      return Promise.reject({ response: { status: 400, data: { detail: "Transaction is already linked to a credit card payment or charge" } } });
+    if (
+      transaction.credit_card_payment_id ||
+      transaction.credit_card_charge_id
+    ) {
+      return Promise.reject({
+        response: {
+          status: 400,
+          data: {
+            detail:
+              "Transaction is already linked to a credit card payment or charge",
+          },
+        },
+      });
     }
     const amount = parseFloat(transaction.amount);
-    const leftOnPayment = ccCents(parseFloat(payment.total_amount) - paidOnPayment(paymentId));
+    const leftOnPayment = ccCents(
+      parseFloat(payment.total_amount) - paidOnPayment(paymentId),
+    );
     if (amount > leftOnPayment) {
-      return Promise.reject({ response: { status: 400, data: { detail: "Amount exceeds what's left on this payment" } } });
+      return Promise.reject({
+        response: {
+          status: 400,
+          data: { detail: "Amount exceeds what's left on this payment" },
+        },
+      });
     }
 
     const charge = {
@@ -3801,28 +3780,39 @@ export const allocateCreditCardPayment = (paymentId, data) => {
       created_at: new Date().toISOString(),
     };
     saveAll(CCC_KEY, [...getAll(CCC_KEY), charge]);
-    saveAll(CCA_KEY, [...getAll(CCA_KEY), {
-      id: nextId(),
-      charge_id: charge.id,
-      payment_id: paymentId,
-      amount_applied: transaction.amount,
-      created_at: new Date().toISOString(),
-    }]);
+    saveAll(CCA_KEY, [
+      ...getAll(CCA_KEY),
+      {
+        id: nextId(),
+        charge_id: charge.id,
+        payment_id: paymentId,
+        amount_applied: transaction.amount,
+        created_at: new Date().toISOString(),
+      },
+    ]);
     saveAll(
       TX_KEY,
-      getAll(TX_KEY).map((t) => (t.id === transaction.id ? { ...t, credit_card_charge_id: charge.id } : t)),
+      getAll(TX_KEY).map((t) =>
+        t.id === transaction.id
+          ? { ...t, credit_card_charge_id: charge.id }
+          : t,
+      ),
     );
 
     return respond(creditCardPaymentDetail(payment));
   }
 
-  // A new charge is always allocated in full against this payment (#147) -
-  // no partial/rollover concept, so this is rejected outright rather than
-  // accepted partially if there isn't enough left to cover it.
   const totalAmount = parseFloat(data.total_amount);
-  const leftOnPayment = ccCents(parseFloat(payment.total_amount) - paidOnPayment(paymentId));
+  const leftOnPayment = ccCents(
+    parseFloat(payment.total_amount) - paidOnPayment(paymentId),
+  );
   if (totalAmount > leftOnPayment) {
-    return Promise.reject({ response: { status: 400, data: { detail: "Amount exceeds what's left on this payment" } } });
+    return Promise.reject({
+      response: {
+        status: 400,
+        data: { detail: "Amount exceeds what's left on this payment" },
+      },
+    });
   }
 
   const charge = {
@@ -3835,18 +3825,17 @@ export const allocateCreditCardPayment = (paymentId, data) => {
   };
   saveAll(CCC_KEY, [...getAll(CCC_KEY), charge]);
 
-  saveAll(CCA_KEY, [...getAll(CCA_KEY), {
-    id: nextId(),
-    charge_id: charge.id,
-    payment_id: paymentId,
-    amount_applied: charge.total_amount,
-    created_at: new Date().toISOString(),
-  }]);
+  saveAll(CCA_KEY, [
+    ...getAll(CCA_KEY),
+    {
+      id: nextId(),
+      charge_id: charge.id,
+      payment_id: paymentId,
+      amount_applied: charge.total_amount,
+      created_at: new Date().toISOString(),
+    },
+  ]);
 
-  // Always fully paid the moment it's created - a real, categorized
-  // transaction, tagged so balance/spend-ceiling math (getEstimatedSavings,
-  // _get_running_balance equivalents below) skips it: that cash already
-  // left via the payment's own transaction.
   const settled = {
     id: nextId(),
     name: charge.name,
@@ -3863,20 +3852,29 @@ export const allocateCreditCardPayment = (paymentId, data) => {
 export const deleteCreditCardPayment = (paymentId) => {
   const payment = getAll(CCP_KEY).find((p) => p.id === paymentId);
   if (!payment) {
-    return Promise.reject({ response: { status: 404, data: { detail: "Credit card payment not found" } } });
+    return Promise.reject({
+      response: {
+        status: 404,
+        data: { detail: "Credit card payment not found" },
+      },
+    });
   }
 
-  // Unlink the anchor transaction rather than deleting it - real money left
-  // the account regardless of how it was categorized (#54 follow-up).
   saveAll(
     TX_KEY,
-    getAll(TX_KEY).map((t) => (t.credit_card_payment_id === paymentId ? { ...t, credit_card_payment_id: null } : t)),
+    getAll(TX_KEY).map((t) =>
+      t.credit_card_payment_id === paymentId
+        ? { ...t, credit_card_payment_id: null }
+        : t,
+    ),
   );
 
   const allocations = getAll(CCA_KEY).filter((a) => a.payment_id === paymentId);
   const contributionByCharge = {};
   for (const a of allocations) {
-    contributionByCharge[a.charge_id] = ccCents((contributionByCharge[a.charge_id] ?? 0) + parseFloat(a.amount_applied));
+    contributionByCharge[a.charge_id] = ccCents(
+      (contributionByCharge[a.charge_id] ?? 0) + parseFloat(a.amount_applied),
+    );
   }
 
   let charges = getAll(CCC_KEY);
@@ -3893,7 +3891,9 @@ export const deleteCreditCardPayment = (paymentId) => {
       // Unlink rather than delete - real money already left the account,
       // same reasoning as the anchor transaction above.
       transactions = transactions.map((t) =>
-        t.credit_card_charge_id === chargeId ? { ...t, credit_card_charge_id: null } : t,
+        t.credit_card_charge_id === chargeId
+          ? { ...t, credit_card_charge_id: null }
+          : t,
       );
     }
     if (paidAfter <= 0) {
@@ -3902,43 +3902,72 @@ export const deleteCreditCardPayment = (paymentId) => {
   }
   saveAll(TX_KEY, transactions);
   saveAll(CCC_KEY, charges);
-  saveAll(CCA_KEY, getAll(CCA_KEY).filter((a) => a.payment_id !== paymentId));
-  saveAll(CCP_KEY, getAll(CCP_KEY).filter((p) => p.id !== paymentId));
+  saveAll(
+    CCA_KEY,
+    getAll(CCA_KEY).filter((a) => a.payment_id !== paymentId),
+  );
+  saveAll(
+    CCP_KEY,
+    getAll(CCP_KEY).filter((p) => p.id !== paymentId),
+  );
 
   return respond(null);
 };
 
-// Removes just this payment's allocation(s) toward one charge, without
-// touching the rest of the payment (#146) - the balance detail page's own
-// edit mode, distinct from deleting the whole payment above.
 export const removeChargeFromPayment = (paymentId, chargeId) => {
   const payment = getAll(CCP_KEY).find((p) => p.id === paymentId);
   if (!payment) {
-    return Promise.reject({ response: { status: 404, data: { detail: "Credit card payment not found" } } });
+    return Promise.reject({
+      response: {
+        status: 404,
+        data: { detail: "Credit card payment not found" },
+      },
+    });
   }
   const charge = getAll(CCC_KEY).find((c) => c.id === chargeId);
   if (!charge) {
-    return Promise.reject({ response: { status: 404, data: { detail: "Charge not found" } } });
+    return Promise.reject({
+      response: { status: 404, data: { detail: "Charge not found" } },
+    });
   }
 
-  const matching = getAll(CCA_KEY).filter((a) => a.payment_id === paymentId && a.charge_id === chargeId);
+  const matching = getAll(CCA_KEY).filter(
+    (a) => a.payment_id === paymentId && a.charge_id === chargeId,
+  );
   if (matching.length === 0) {
-    return Promise.reject({ response: { status: 404, data: { detail: "Charge is not allocated to this payment" } } });
+    return Promise.reject({
+      response: {
+        status: 404,
+        data: { detail: "Charge is not allocated to this payment" },
+      },
+    });
   }
 
   const paidNow = paidOnCharge(chargeId);
   const total = parseFloat(charge.total_amount);
-  saveAll(CCA_KEY, getAll(CCA_KEY).filter((a) => !(a.payment_id === paymentId && a.charge_id === chargeId)));
+  saveAll(
+    CCA_KEY,
+    getAll(CCA_KEY).filter(
+      (a) => !(a.payment_id === paymentId && a.charge_id === chargeId),
+    ),
+  );
   const paidAfter = paidOnCharge(chargeId);
 
   if (paidNow >= total && paidAfter < total) {
     saveAll(
       TX_KEY,
-      getAll(TX_KEY).map((t) => (t.credit_card_charge_id === chargeId ? { ...t, credit_card_charge_id: null } : t)),
+      getAll(TX_KEY).map((t) =>
+        t.credit_card_charge_id === chargeId
+          ? { ...t, credit_card_charge_id: null }
+          : t,
+      ),
     );
   }
   if (paidAfter <= 0) {
-    saveAll(CCC_KEY, getAll(CCC_KEY).filter((c) => c.id !== chargeId));
+    saveAll(
+      CCC_KEY,
+      getAll(CCC_KEY).filter((c) => c.id !== chargeId),
+    );
   }
 
   return respond(creditCardPaymentDetail(payment));

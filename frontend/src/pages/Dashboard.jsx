@@ -24,11 +24,8 @@ import {
 import Skel from "../components/shared/Skel";
 import OverviewPanelSkeleton from "../components/skeletons/desktop/OverviewPanelSkeleton";
 import {
-  Cell,
   Tooltip,
   ResponsiveContainer,
-  BarChart,
-  Bar,
   XAxis,
   YAxis,
   CartesianGrid,
@@ -37,9 +34,9 @@ import {
 } from "recharts";
 import { useAuth } from "../context/AuthContext";
 import { getTransactions, deleteTransaction } from "../api/transactions";
-import { deleteRecurringPayment } from "../api/recurringPayments";
-import { getSpendableSurplus, getEstimatedSavings } from "../api/paychecks";
-import { getTipDeposits, getCashOnHand } from "../api/tipDeposits";
+import { deleteRecurringPayment, getUpcomingRecurringPayments } from "../api/recurringPayments";
+import { getPaychecks } from "../api/paychecks";
+import { getCashOnHand } from "../api/tipDeposits";
 import {
   CATEGORIES,
   CATEGORY_CONFIG,
@@ -52,6 +49,7 @@ import {
 } from "../utils/finance";
 import { getNow, getToday } from "../utils/time";
 import Navbar from "../components/desktop/Navbar";
+import AssistantPanel from "../components/desktop/AssistantPanel";
 import AddTransactionPage from "../components/desktop/AddTransactionPage";
 import PaychecksPanel from "../components/desktop/PaychecksPanel";
 import RecurringPaymentsModal from "../components/desktop/RecurringPaymentsModal";
@@ -75,6 +73,28 @@ import {
   ExpensesBody,
 } from "../components/desktop/OverviewBreakdownSheet";
 import Footer from "../components/shared/Footer";
+import IconToolTile from "../components/desktop/IconToolTile";
+import TrendPill from "../components/desktop/TrendPill";
+import StackedFraction from "../components/desktop/StackedFraction";
+import OverviewColumn from "../components/desktop/OverviewColumn";
+import EmptyChartState from "../components/desktop/EmptyChartState";
+import {
+  DevMenuSection,
+  DevMenuInfo,
+  DevMenuButton,
+  DevMenuRow,
+} from "../components/desktop/DevMenuControls";
+import { IconHandCash, IconBank } from "../components/shared/TipsIcons";
+import { useDevMenu } from "../hooks/shared/useDevMenu";
+import { useDashboardData } from "../hooks/shared/useDashboardData";
+import { useToolPanels } from "../hooks/desktop/useToolPanels";
+import { useTransactionFilters } from "../hooks/desktop/useTransactionFilters";
+import {
+  useHoldToDelete,
+  HOLD_DELETE_MS,
+  HOLD_DELETE_RING_R,
+  HOLD_DELETE_RING_C,
+} from "../hooks/shared/useHoldToDelete";
 
 // Shows the month title with arrows when the range is a single month.
 function isSingleMonthRange(range) {
@@ -97,260 +117,20 @@ function isSingleMonthRange(range) {
   );
 }
 
-function IconToolTile({ children }) {
-  return (
-    <div
-      style={{
-        width: 30,
-        height: 30,
-        borderRadius: 9,
-        flexShrink: 0,
-        background: "#2a2a2e",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        boxShadow: "inset 0 1px 0 rgba(255,255,255,0.12)",
-      }}
-    >
-      <svg
-        width="16"
-        height="16"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="#c7c7cc"
-        strokeWidth="1.7"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        {children}
-      </svg>
-    </div>
-  );
-}
-
-function TrendPill({ label, value, color }) {
-  return (
-    <div
-      style={{
-        flex: "0 0 auto",
-        display: "flex",
-        alignItems: "center",
-        gap: 6,
-        padding: "6px 11px",
-        borderRadius: 999,
-        backgroundColor: "rgba(255,255,255,0.05)",
-      }}
-    >
-      <span
-        style={{
-          width: 8,
-          height: 8,
-          borderRadius: "50%",
-          backgroundColor: color,
-          flexShrink: 0,
-        }}
-      />
-      <span
-        style={{
-          whiteSpace: "nowrap",
-          fontSize: 13,
-          fontWeight: 600,
-          color: HOME_MUTED,
-        }}
-      >
-        {label}
-      </span>
-      <span
-        style={{
-          whiteSpace: "nowrap",
-          fontSize: 13,
-          fontWeight: 700,
-          color: HOME_TEXT,
-          fontVariantNumeric: "tabular-nums",
-        }}
-      >
-        {value}
-      </span>
-    </div>
-  );
-}
-
-function StackedFraction({ num, den, color }) {
-  return (
-    <span
-      style={{
-        display: "inline-flex",
-        flexDirection: "column",
-        alignItems: "flex-start",
-        lineHeight: 1.2,
-      }}
-    >
-      <span
-        style={{
-          fontSize: 20,
-          fontWeight: 700,
-          color,
-          fontVariantNumeric: "tabular-nums",
-        }}
-      >
-        {num}
-      </span>
-      <span
-        style={{
-          width: "100%",
-          borderTop: `1.5px solid color-mix(in srgb, ${color} 45%, transparent)`,
-          margin: "3px 0",
-        }}
-      />
-      <span
-        style={{
-          fontSize: 13,
-          fontWeight: 600,
-          color: HOME_MUTED,
-          fontVariantNumeric: "tabular-nums",
-        }}
-      >
-        {den}
-      </span>
-    </span>
-  );
-}
-
 // Small icon tile for the TIPS TOTAL sub-headings, matching MobileTips's
 // hero tiles at a size that fits inside a quarter-width overview column.
 function tipsStatTile(color, outline) {
   return {
-    width: 20, height: 20, borderRadius: "50%", flexShrink: 0,
+    width: 20,
+    height: 20,
+    borderRadius: "50%",
+    flexShrink: 0,
     background: outline ? "transparent" : color,
     border: outline ? `1.5px solid ${color}` : "none",
-    display: "flex", alignItems: "center", justifyContent: "center",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
   };
-}
-
-// Cash-in-hand icon, white strokes on a filled teal circle - same as MobileTips.
-function IconHandCash({ size = 12 }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M11 15h2a2 2 0 1 0 0-4h-3c-.6 0-1.1.2-1.4.6L3 17" />
-      <path d="m7 21 1.6-1.4c.3-.4.8-.6 1.4-.6h4c1.1 0 2.1-.4 2.8-1.2l4.6-4.4a2 2 0 0 0-2.75-2.91l-4.2 3.9" />
-      <path d="m2 16 6 6" />
-      <circle cx="16" cy="9" r="2.9" />
-      <circle cx="6" cy="5" r="3" />
-    </svg>
-  );
-}
-
-function IconBank({ color, size = 11 }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M3 21h18" />
-      <path d="M12 3 3 8h18z" />
-      <path d="M5 8v10M9.5 8v10M14.5 8v10M19 8v10" />
-    </svg>
-  );
-}
-
-// One column of the unified overview panel (#123).
-function OverviewColumn({
-  label,
-  value,
-  valueNode,
-  color,
-  caption,
-  onClick,
-  active,
-  first,
-}) {
-  const [hovered, setHovered] = useState(false);
-  const tint = color ?? HOME_TEXT;
-  const interactive = onClick != null;
-  const Tag = interactive ? "button" : "div";
-  return (
-    <Tag
-      type={interactive ? "button" : undefined}
-      onClick={onClick}
-      onMouseEnter={interactive ? () => setHovered(true) : undefined}
-      onMouseLeave={interactive ? () => setHovered(false) : undefined}
-      className={`text-left transition-all duration-150 ${interactive ? "cursor-pointer active:scale-[0.98]" : ""}`}
-      style={{
-        position: "relative",
-        flex: 1,
-        minWidth: 0,
-        padding: "16px 20px",
-        border: "none",
-        borderRadius: 0,
-        borderLeft: first ? "none" : `1px solid ${HOME_DIVIDER}`,
-        backgroundColor: active
-          ? `color-mix(in srgb, ${tint} 12%, transparent)`
-          : hovered
-            ? `color-mix(in srgb, ${tint} 7%, transparent)`
-            : "transparent",
-        font: "inherit",
-        color: "inherit",
-      }}
-    >
-      <div className="flex items-center justify-between gap-2">
-        <p
-          style={{
-            fontSize: 11,
-            fontWeight: 700,
-            letterSpacing: "0.06em",
-            textTransform: "uppercase",
-            color: HOME_MUTED,
-            margin: 0,
-          }}
-        >
-          {label}
-        </p>
-        {interactive && (
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            width="13"
-            height="13"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2.5"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            style={{
-              color: active || hovered ? tint : HOME_MUTED,
-              flexShrink: 0,
-              transform: active ? "rotate(180deg)" : "none",
-              transition: "transform 200ms ease, color 150ms ease",
-            }}
-          >
-            <path d="M6 9l6 6 6-6" />
-          </svg>
-        )}
-      </div>
-      {valueNode ?? (
-        <p
-          style={{
-            fontSize: 22,
-            fontWeight: 700,
-            color,
-            margin: "6px 0 0",
-            fontVariantNumeric: "tabular-nums",
-          }}
-        >
-          {value}
-        </p>
-      )}
-      {caption != null && (
-        <p
-          style={{
-            fontSize: 11,
-            fontWeight: 600,
-            color: HOME_MUTED,
-            margin: "5px 0 0",
-          }}
-        >
-          {caption}
-        </p>
-      )}
-    </Tag>
-  );
 }
 
 // Steps from the month being viewed, not from today.
@@ -405,6 +185,9 @@ const TREND_CATEGORIES = REAL_CATEGORIES;
 const TREND_TARGET_POINTS = 45;
 const TREND_LEGEND_PER_ROW = 4;
 const TREND_CHART_HEIGHT = "clamp(320px, 45vh, 560px)";
+// Default window for the per-category timeline chart (#159) - not yet
+// user-reconfigurable, the issue only settled on a default.
+const CATEGORY_TIMELINE_MONTHS = 6;
 
 const OVERVIEW_DRAWER_TITLES = {
   balance: "Current Balance",
@@ -440,20 +223,91 @@ function loadTrendCategories() {
 
 export default function Dashboard() {
   const { isDemo } = useAuth();
-  const [transactions, setTransactions] = useState([]);
-  const [tipDeposits, setTipDeposits] = useState([]);
   const [tipsCashOnHand, setTipsCashOnHand] = useState(0);
+  const [upcomingRecurring, setUpcomingRecurring] = useState([]);
+  const [upcomingRecurringLoading, setUpcomingRecurringLoading] = useState(true);
+  const [upcomingPaychecks, setUpcomingPaychecks] = useState([]);
+  const [upcomingPaychecksLoading, setUpcomingPaychecksLoading] = useState(true);
 
-  const [dateRange, setDateRange] = useState(() => {
-    const now = getNow();
-    const from = new Date(now);
-    from.setDate(1);
-    from.setHours(0, 0, 0, 0);
-    const to = new Date(now);
-    to.setMonth(to.getMonth() + 1, 0);
-    to.setHours(23, 59, 59, 999);
-    return { from, to };
-  });
+  const devMenu = useDevMenu();
+  const {
+    open: devMenuOpen,
+    setOpen: setDevMenuOpen,
+    forceEmpty: devForceEmpty,
+    setForceEmpty: setDevForceEmpty,
+    delay: devDelay,
+    setDelay: setDevDelay,
+    forceError: devForceError,
+    toggleForceError: toggleDevForceError,
+    lastFetch: devLastFetch,
+  } = devMenu;
+
+  function devFetch() {
+    return devMenu.devFetch(getTransactions);
+  }
+
+  function loadCashOnHand() {
+    getCashOnHand()
+      .then((res) => setTipsCashOnHand(parseFloat(res.data.cash_on_hand)))
+      .catch(() => setTipsCashOnHand(0));
+  }
+
+  // Owned here rather than inside CategoryUpcomingPanel (#161 follow-up):
+  // that panel sits inside a div keyed on the active tab, so it remounts on
+  // every category switch and re-fetched from scratch each time, leaving it
+  // visibly empty for a beat while the transaction table beside it - fed
+  // from this same dashboard-level state - painted instantly. Loaded once
+  // here on mount (and on every refresh) so switching tabs is instant.
+  function loadUpcomingRecurring() {
+    getUpcomingRecurringPayments()
+      .then((res) => setUpcomingRecurring(res.data))
+      .catch(() => setUpcomingRecurring([]))
+      .finally(() => setUpcomingRecurringLoading(false));
+  }
+
+  function loadUpcomingPaychecks() {
+    getPaychecks()
+      .then((res) => setUpcomingPaychecks(res.data.paychecks ?? []))
+      .catch(() => setUpcomingPaychecks([]))
+      .finally(() => setUpcomingPaychecksLoading(false));
+  }
+
+  const {
+    transactions,
+    setTransactions,
+    loading,
+    setLoading,
+    tipDeposits,
+    safeToSpend,
+    safeToSpendStatus,
+    savings,
+    savingsStatus,
+    refresh: refreshTransactions,
+    refreshFailed,
+  } = useDashboardData(devFetch, [loadCashOnHand, loadUpcomingRecurring, loadUpcomingPaychecks]);
+
+  const {
+    activeTab,
+    setActiveTab,
+    categoryClosing,
+    setCategoryClosing,
+    categoryCloseTimer,
+    dateRange,
+    setDateRange,
+    activePreset,
+    setActivePreset,
+    page,
+    setPage,
+    perPage,
+    setPerPage,
+    typeFilter,
+    setTypeFilter,
+    tableQuery,
+    setTableQuery,
+    sortColumn,
+    sortDir,
+    handleSort,
+  } = useTransactionFilters();
 
   // Only years that have transactions show in the year picker (#124).
   const trackedYears = useMemo(() => {
@@ -474,25 +328,11 @@ export default function Dashboard() {
     return map;
   }, [transactions]);
 
-  const [loading, setLoading] = useState(true);
-  const [safeToSpend, setSafeToSpend] = useState(null);
-  const [safeToSpendStatus, setSafeToSpendStatus] = useState("loading"); // loading | ok | no-balance | no-schedule | error
-  const [savings, setSavings] = useState(null);
-  const [savingsStatus, setSavingsStatus] = useState("loading"); // loading | ok | no-schedule | no-amounts | no-history | error
   const [breakdownCell, setBreakdownCell] = useState(null); // null | balance | bills | cash | savings | income | expenses
   const [breakdownClosing, setBreakdownClosing] = useState(false);
   const [outgoingCell, setOutgoingCell] = useState(null);
   const outgoingTimer = useRef(null);
   const breakdownCloseTimer = useRef(null);
-  const [devMenuOpen, setDevMenuOpen] = useState(false);
-  const [devForceEmpty, setDevForceEmpty] = useState(false);
-  const [devDelay, setDevDelay] = useState(0);
-  const [devForceError, setDevForceError] = useState(false);
-  const [devLastFetch, setDevLastFetch] = useState(null);
-  const devForceErrorRef = useRef(false);
-  const [activeTab, setActiveTab] = useState("ALL"); // "ALL" | any category
-  const [categoryClosing, setCategoryClosing] = useState(false);
-  const categoryCloseTimer = useRef(null);
   const [trendMonths, setTrendMonths] = useState(1); // 1 | 3 | 6 | 12 | "all"
   const trendRangeRef = useRef(null);
   const [rangeIndicator, setRangeIndicator] = useState(null);
@@ -565,8 +405,6 @@ export default function Dashboard() {
         PICKER_TRANSITION_MS,
       );
     }
-    // renderPicker is set by this effect, so watching it would loop.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [datePicker]);
 
   useEffect(
@@ -581,19 +419,23 @@ export default function Dashboard() {
     if (renderPicker && pickerContentRef.current) {
       setPickerWidth(pickerContentRef.current.scrollWidth);
     }
-    // Re-measures whenever the number of choices can change.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [renderPicker, trackedYears.length, dateRange.from.getFullYear()]);
+  }, [renderPicker, trackedYears.length, dateRange.from?.getFullYear()]);
 
   useEffect(() => {
     if (renderPicker && renderPicker === datePicker) {
       setPickerOpen(true);
     }
   }, [renderPicker, datePicker, pickerWidth]);
-  const [toolMode, setToolMode] = useState(null); // null | "paychecks" | "recurring" | "installments" | "add"
-  const [toolClosing, setToolClosing] = useState(false);
-  const toolCloseTimer = useRef(null);
-  const [openedTools, setOpenedTools] = useState(new Set());
+  const {
+    toolMode,
+    setToolMode,
+    toolClosing,
+    setToolClosing,
+    toolCloseTimer,
+    openedTools,
+    openTool,
+    closeTool,
+  } = useToolPanels(TOOL_TRANSITION_MS);
   const [recurringSaveState, setRecurringSaveState] = useState({
     isDirty: false,
     isSaving: false,
@@ -611,43 +453,12 @@ export default function Dashboard() {
     selectionCount: 0,
     deleteSelected: () => {},
   });
-  // Hold-to-delete on the Credit Cards header button: press and hold fills
-  // the ring around the trash icon; releasing early cancels, holding the
-  // full duration commits the delete.
-  const HOLD_DELETE_MS = 1200;
-  const HOLD_DELETE_RING_R = 16;
-  const HOLD_DELETE_RING_C = 2 * Math.PI * HOLD_DELETE_RING_R;
-  const [holdingDelete, setHoldingDelete] = useState(false);
-  function startDeleteHold() {
-    if (!(creditCardsEditState.editMode && creditCardsEditState.hasSelection)) return;
-    setHoldingDelete(true);
-  }
-  function cancelDeleteHold() {
-    setHoldingDelete(false);
-  }
-  function onDeleteRingTransitionEnd(e) {
-    if (e.propertyName !== "stroke-dashoffset" || !holdingDelete) return;
-    setHoldingDelete(false);
-    creditCardsEditState.deleteSelected();
-  }
-  function openTool(mode) {
-    clearTimeout(toolCloseTimer.current);
-    setToolClosing(false);
-    setToolMode(mode);
-    setOpenedTools((prev) => (prev.has(mode) ? prev : new Set(prev).add(mode)));
-  }
-  function closeTool() {
-    // Setting toolClosing with no tool open remounts the page, which looks
-    // like a full refresh.
-    if (toolMode == null) return;
-    clearTimeout(toolCloseTimer.current);
-    setToolClosing(true);
-    toolCloseTimer.current = setTimeout(() => {
-      setToolMode(null);
-      setToolClosing(false);
-    }, TOOL_TRANSITION_MS);
-  }
-
+  const {
+    holding: holdingDelete,
+    start: startDeleteHold,
+    cancel: cancelDeleteHold,
+    onRingTransitionEnd: onDeleteRingTransitionEnd,
+  } = useHoldToDelete(creditCardsEditState);
   // Opens the same way Tools do, but keyed to `activeTab`. "ALL" means closed.
   function openCategory(cat) {
     clearTimeout(categoryCloseTimer.current);
@@ -668,34 +479,27 @@ export default function Dashboard() {
   }
   const [editingTransaction, setEditingTransaction] = useState(null);
   const [editingFromSearch, setEditingFromSearch] = useState(false);
-  const [page, setPage] = useState(1);
-  const [perPage, setPerPage] = useState(10);
-  const [typeFilter, setTypeFilter] = useState(null);
-  const [tableQuery, setTableQuery] = useState("");
-  const [sortColumn, setSortColumn] = useState("date");
-  const [sortDir, setSortDir] = useState("desc");
-
-  function handleSort(col) {
-    if (col === "date") {
-      if (sortColumn === "date")
-        setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-      else {
-        setSortColumn("date");
-        setSortDir("desc");
-      }
-    } else {
-      if (sortColumn !== col) {
-        setSortColumn(col);
-        setSortDir("asc");
-      } else if (sortDir === "asc") setSortDir("desc");
-      else {
-        setSortColumn("date");
-        setSortDir("desc");
-      }
-    }
-  }
   const [highlightId, setHighlightId] = useState(null);
-  const [activePreset, setActivePreset] = useState("Current Month");
+  // Holds until any click on the page, rather than auto-clearing on a timer.
+  // Attached after the click that sets highlightId has already finished
+  // dispatching (effects run post-commit), so that same click never
+  // immediately clears the highlight it just set.
+  useEffect(() => {
+    if (highlightId == null) return;
+    const clear = () => setHighlightId(null);
+    // Deferred by a tick - attaching synchronously in this effect still
+    // catches the very same click that set highlightId (confirmed via
+    // logging: the click that opens this effect's listener also fires it,
+    // same tick). Standard fix for this exact "click outside" pitfall.
+    const timer = setTimeout(
+      () => document.addEventListener("click", clear),
+      0,
+    );
+    return () => {
+      clearTimeout(timer);
+      document.removeEventListener("click", clear);
+    };
+  }, [highlightId]);
   const [catHov, setCatHov] = useState(null);
   const [toolHov, setToolHov] = useState(null);
 
@@ -721,85 +525,12 @@ export default function Dashboard() {
   }
 
   const tableRef = useRef(null);
+  // Locate computes and sets the exact page a transaction lands on - the
+  // filters-changed effect below would otherwise immediately stomp that back
+  // to page 1 on the very next render (it fires whenever dateRange/tableQuery
+  // change, which locate's own filter reset also triggers).
+  const skipPageResetRef = useRef(false);
 
-  async function devFetch() {
-    if (devForceErrorRef.current) {
-      devForceErrorRef.current = false;
-      setDevForceError(false);
-      throw new Error("Forced error");
-    }
-    if (devDelay > 0) await new Promise((r) => setTimeout(r, devDelay));
-    return getTransactions();
-  }
-
-  useEffect(() => {
-    devFetch()
-      .then((res) => {
-        setTransactions(res.data);
-        setLoading(false);
-        setDevLastFetch(new Date());
-      })
-      .catch(() => {
-        setLoading(false);
-      });
-  }, []);
-
-  function loadTipDeposits() {
-    getTipDeposits()
-      .then((res) => setTipDeposits(res.data))
-      .catch(() => setTipDeposits([]));
-  }
-
-  // Mirrors MobileTips (#157): a server-computed, calendar-month-scoped
-  // aggregate, independent of the dashboard's own date range picker.
-  function loadCashOnHand() {
-    getCashOnHand()
-      .then((res) => setTipsCashOnHand(parseFloat(res.data.cash_on_hand)))
-      .catch(() => setTipsCashOnHand(0));
-  }
-
-  function loadSafeToSpend() {
-    getSpendableSurplus()
-      .then((res) => {
-        setSafeToSpend(res.data);
-        setSafeToSpendStatus("ok");
-      })
-      .catch((err) => {
-        const detail = err.response?.data?.detail;
-        setSafeToSpend(null);
-        if (detail === "No starting balance set")
-          setSafeToSpendStatus("no-balance");
-        else if (detail === "No active paycheck schedule found")
-          setSafeToSpendStatus("no-schedule");
-        else setSafeToSpendStatus("error");
-      });
-  }
-
-  function loadSavings() {
-    getEstimatedSavings()
-      .then((res) => {
-        setSavings(res.data);
-        setSavingsStatus("ok");
-      })
-      .catch((err) => {
-        const detail = err.response?.data?.detail;
-        setSavings(null);
-        if (detail === "No active paycheck schedule found")
-          setSavingsStatus("no-schedule");
-        else if (detail === "No paycheck amounts yet")
-          setSavingsStatus("no-amounts");
-        else if (detail === "Not enough spending history")
-          setSavingsStatus("no-history");
-        else setSavingsStatus("error");
-      });
-  }
-
-  useEffect(() => {
-    loadSafeToSpend();
-    loadSavings();
-    loadTipDeposits();
-    loadCashOnHand();
-  }, []);
   useEffect(
     () => () => {
       clearTimeout(breakdownCloseTimer.current);
@@ -807,21 +538,12 @@ export default function Dashboard() {
       clearTimeout(toolCloseTimer.current);
       clearTimeout(categoryCloseTimer.current);
     },
-    [],
+    // toolCloseTimer/categoryCloseTimer come from custom hooks rather than a
+    // local useRef, so eslint can't statically see they're stable across
+    // renders (they are - refs always are) - listed explicitly instead of
+    // disabling the rule.
+    [toolCloseTimer, categoryCloseTimer],
   );
-
-  function refreshTransactions() {
-    devFetch()
-      .then((res) => {
-        setTransactions(res.data);
-        setDevLastFetch(new Date());
-      })
-      .catch(() => {});
-    loadSafeToSpend();
-    loadSavings();
-    loadTipDeposits();
-    loadCashOnHand();
-  }
 
   async function handleDelete(t) {
     if (t.recurring_payment_id) {
@@ -849,24 +571,89 @@ export default function Dashboard() {
       clearTimeout(categoryCloseTimer.current);
       setCategoryClosing(false);
       setActiveTab("ALL");
-      setDateRange({ from: null, to: null });
-      const allSorted = [...transactions].sort(
-        (a, b) => new Date(b.transaction_date) - new Date(a.transaction_date),
-      );
-      const idx = allSorted.findIndex((tx) => tx.id === t.id);
+      // This locate is about to set the exact target page itself - stop the
+      // filters-changed effect from immediately resetting it back to 1.
+      skipPageResetRef.current = true;
+      // A stale table search/type filter would hide the row outright - clear
+      // both so the transaction can actually surface, same as a person
+      // manually hunting for it would need to.
+      setTableQuery("");
+      setTypeFilter(null);
+
+      // Only move the date range if the transaction actually falls outside
+      // it - jumping to "all time" (the old behavior) blew away whatever
+      // month/range the user was looking at for no reason when the row was
+      // already in view. When it does need to move, land on the same single
+      // month a person clicking the month arrows to it would land on -
+      // nothing custom, just the normal state change and whatever motion
+      // that already produces (the trend chart's own transition).
+      const txDate = new Date(t.transaction_date + "T00:00:00");
+      const inCurrentRange =
+        (!dateRange.from || txDate >= dateRange.from) &&
+        (!dateRange.to || txDate <= dateRange.to);
+      const targetRange = inCurrentRange
+        ? dateRange
+        : monthRangeFor(txDate.getFullYear(), txDate.getMonth());
+      if (!inCurrentRange) {
+        setActivePreset(null);
+        setDateRange(targetRange);
+      }
+
+      // Mirrors the `filtered`/`sorted` pipeline above, computed against the
+      // range this is about to land on (not the current render's memoized
+      // values, which still reflect state from before this update) and the
+      // current sort - the same page a person paging through by hand would
+      // land on.
+      const rangeFiltered = transactions.filter((tx) => {
+        const d = new Date(tx.transaction_date + "T00:00:00");
+        if (targetRange.from && d < targetRange.from) return false;
+        if (targetRange.to && d > targetRange.to) return false;
+        return true;
+      });
+      const dir = sortDir === "asc" ? 1 : -1;
+      const rangeSorted = [...rangeFiltered].sort((a, b) => {
+        if (sortColumn === "name") return dir * a.name.localeCompare(b.name);
+        if (sortColumn === "amount")
+          return dir * (parseFloat(a.amount) - parseFloat(b.amount));
+        return (
+          dir * (new Date(a.transaction_date) - new Date(b.transaction_date))
+        );
+      });
+      const idx = rangeSorted.findIndex((tx) => tx.id === t.id);
       if (idx !== -1) setPage(Math.ceil((idx + 1) / perPage));
+
+      // Holds until something else takes focus (editing/selecting another
+      // row overwrites it) rather than auto-clearing after a few seconds.
       setHighlightId(t.id);
-      setTimeout(() => setHighlightId(null), 2500);
       setTimeout(
         () =>
           tableRef.current?.scrollIntoView({
             behavior: "smooth",
-            block: "start",
+            block: "center",
           }),
         50,
       );
     },
-    [transactions, perPage],
+    // categoryCloseTimer/setActiveTab/setCategoryClosing/setDateRange/setPage/
+    // setTableQuery/setTypeFilter/setActivePreset
+    // come from custom hooks (useTransactionFilters) rather than local
+    // useState/useRef, so eslint can't statically see they're stable across
+    // renders (they are) - listed explicitly instead of disabling the rule.
+    [
+      transactions,
+      perPage,
+      dateRange,
+      sortColumn,
+      sortDir,
+      categoryCloseTimer,
+      setActiveTab,
+      setCategoryClosing,
+      setDateRange,
+      setPage,
+      setTableQuery,
+      setTypeFilter,
+      setActivePreset,
+    ],
   );
 
   const filtered = useMemo(() => {
@@ -1054,14 +841,22 @@ export default function Dashboard() {
 
   const trendData = useMemo(() => {
     const now = getNow();
-    const realToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const realToday = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate(),
+    );
     // Ends at the month selected via the chevrons/date-range picker up top,
     // not always real "today" - otherwise switching months there never moves
     // this chart at all (the same bug #152 fixed on mobile's Analytics tab,
     // just here on desktop). Clamped so a range that reaches into the future
     // can't push the window past today.
     const selectedEnd = dateRange.to
-      ? new Date(dateRange.to.getFullYear(), dateRange.to.getMonth(), dateRange.to.getDate())
+      ? new Date(
+          dateRange.to.getFullYear(),
+          dateRange.to.getMonth(),
+          dateRange.to.getDate(),
+        )
       : realToday;
     const today = selectedEnd > realToday ? realToday : selectedEnd;
     let start;
@@ -1156,40 +951,48 @@ export default function Dashboard() {
     [trendData],
   );
 
-  // Biggest merchants by name. Category tabs only.
-  const barData = useMemo(() => {
+  // Single per-category timeline, replacing the old "Spending Over Time" +
+  // "Top _ by Name" pair (#159) - both assumed an expense-shaped category
+  // ("Top Income by Name" read oddly, and "Spending" was wrong outside
+  // expense tabs) and the area chart was day-level, scoped to whatever
+  // narrow date-range filter was active. This is deliberately NOT scoped to
+  // `filtered`/the active date-range filter - the whole point is a longer,
+  // stable window regardless of what's currently filtered - but does anchor
+  // its end the same way trendData above does (the selected month if one's
+  // picked, clamped to real today), so it doesn't show months that haven't
+  // happened yet when stepping through past periods.
+  const categoryTimelineData = useMemo(() => {
     if (activeTab === "ALL") return [];
-    const grouped = {};
-    filtered.forEach((t) => {
-      grouped[t.name] = (grouped[t.name] ?? 0) + parseFloat(t.amount);
-    });
-    const entries = Object.entries(grouped)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 12);
-    const START = 100,
-      END = 30;
-    const step = entries.length > 1 ? (START - END) / (entries.length - 1) : 0;
-    return entries.map(([name, total], i) => ({
-      month: name,
-      total: parseFloat(total.toFixed(2)),
-      color: `color-mix(in srgb, ${CATEGORY_ACCENT[activeTab]} ${Math.round(START - i * step)}%, black)`,
-    }));
-  }, [filtered, activeTab]);
+    const now = getNow();
+    const realToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const selectedEnd = dateRange.to
+      ? new Date(dateRange.to.getFullYear(), dateRange.to.getMonth(), dateRange.to.getDate())
+      : realToday;
+    const today = selectedEnd > realToday ? realToday : selectedEnd;
 
-  const areaData = useMemo(() => {
-    if (activeTab === "ALL") return [];
-    const grouped = {};
-    filtered.forEach((t) => {
-      grouped[t.transaction_date] =
-        (grouped[t.transaction_date] ?? 0) + parseFloat(t.amount);
+    const months = Array.from({ length: CATEGORY_TIMELINE_MONTHS }, (_, i) => {
+      const d = new Date(today.getFullYear(), today.getMonth() - (CATEGORY_TIMELINE_MONTHS - 1 - i), 1);
+      return {
+        key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`,
+        label: d.toLocaleDateString(
+          "en-US",
+          d.getFullYear() !== today.getFullYear()
+            ? { month: "short", year: "2-digit" }
+            : { month: "short" },
+        ),
+        total: 0,
+      };
     });
-    return Object.entries(grouped)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(([date, total]) => ({
-        date: new Date(date + "T00:00:00").getTime(),
-        total: parseFloat(total.toFixed(2)),
-      }));
-  }, [filtered, activeTab]);
+    const byKey = Object.fromEntries(months.map((m) => [m.key, m]));
+
+    transactions.forEach((t) => {
+      if (t.category !== activeTab) return;
+      const bucket = byKey[t.transaction_date.slice(0, 7)];
+      if (bucket) bucket.total += parseFloat(t.amount);
+    });
+
+    return months.map((m) => ({ ...m, total: parseFloat(m.total.toFixed(2)) }));
+  }, [transactions, activeTab, dateRange]);
 
   const sorted = useMemo(() => {
     let arr = [...filtered];
@@ -1226,8 +1029,15 @@ export default function Dashboard() {
     .slice((page - 1) * perPage, page * perPage);
 
   useEffect(() => {
+    if (skipPageResetRef.current) {
+      skipPageResetRef.current = false;
+      return;
+    }
     setPage(1);
-  }, [filtered, perPage, tableQuery, typeFilter, sortColumn, sortDir]);
+    // setPage comes from useTransactionFilters rather than local useState,
+    // so eslint can't statically see it's stable across renders (it is) -
+    // listed explicitly instead of disabling the rule.
+  }, [filtered, perPage, tableQuery, typeFilter, sortColumn, sortDir, setPage]);
 
   useEffect(() => {
     if (!categoriesOpen) return;
@@ -1513,6 +1323,11 @@ export default function Dashboard() {
           if (cmd === "devtools") setDevMenuOpen(val);
         }}
       />
+
+      {/* Own floating trigger + panel, bottom-right - independent of
+          Navbar's own drawer (top-right) and of useToolPanels' full-page
+          takeovers (#177 desktop-only). */}
+      <AssistantPanel />
 
       <div className="flex-1 flex min-h-0">
         <aside
@@ -1809,7 +1624,9 @@ export default function Dashboard() {
                 >
                   {TOOL_TITLES[toolMode]}
                 </h1>
-                {(toolMode === "recurring" || toolMode === "installments" || toolMode === "creditCards") && (
+                {(toolMode === "recurring" ||
+                  toolMode === "installments" ||
+                  toolMode === "creditCards") && (
                   <div
                     style={{
                       marginLeft: "auto",
@@ -1822,6 +1639,12 @@ export default function Dashboard() {
                       recurringSaveState.saveStatus === "saved" && (
                         <span style={{ fontSize: 12, color: HOME_INCOME }}>
                           Saved
+                        </span>
+                      )}
+                    {toolMode === "recurring" &&
+                      recurringSaveState.saveStatus === "error" && (
+                        <span style={{ fontSize: 12, color: HOME_EXPENSE }}>
+                          Failed to save
                         </span>
                       )}
                     {toolMode === "recurring" && (
@@ -1855,79 +1678,110 @@ export default function Dashboard() {
                         {recurringSaveState.isSaving ? "Saving…" : "Save"}
                       </button>
                     )}
-                    {toolMode === "creditCards" && (() => {
-                      const showDelete = creditCardsEditState.editMode && creditCardsEditState.hasSelection;
-                      return (
-                        <button
-                          onMouseDown={startDeleteHold}
-                          onMouseUp={cancelDeleteHold}
-                          onMouseLeave={cancelDeleteHold}
-                          onTouchStart={startDeleteHold}
-                          onTouchEnd={cancelDeleteHold}
-                          aria-label={`Hold to delete ${creditCardsEditState.selectionCount} selected`}
-                          tabIndex={showDelete ? 0 : -1}
-                          style={{
-                            width: showDelete ? 36 : 0,
-                            height: 36,
-                            borderRadius: "50%",
-                            flexShrink: 0,
-                            overflow: "hidden",
-                            cursor: showDelete ? "pointer" : "default",
-                            background: `color-mix(in srgb, ${HOME_EXPENSE} 16%, ${surface})`,
-                            border: `1px solid ${HOME_EXPENSE}`,
-                            display: "flex",
-                            alignItems: "center",
-                            justifyContent: "center",
-                            position: "relative",
-                            color: HOME_EXPENSE,
-                            opacity: showDelete ? 1 : 0,
-                            transform: showDelete ? "scale(1)" : "scale(0.5)",
-                            marginLeft: showDelete ? 0 : -10,
-                            marginRight: showDelete ? 0 : -10,
-                            pointerEvents: showDelete ? "auto" : "none",
-                            userSelect: "none",
-                            transition:
-                              "width 220ms ease, margin 220ms ease, opacity 180ms ease, transform 220ms ease",
-                          }}
-                        >
-                          {/* Ring and icon share one 36x36 coordinate space so they're
+                    {toolMode === "creditCards" &&
+                      (() => {
+                        const showDelete =
+                          creditCardsEditState.editMode &&
+                          creditCardsEditState.hasSelection;
+                        return (
+                          <button
+                            onMouseDown={startDeleteHold}
+                            onMouseUp={cancelDeleteHold}
+                            onMouseLeave={cancelDeleteHold}
+                            onTouchStart={startDeleteHold}
+                            onTouchEnd={cancelDeleteHold}
+                            aria-label={`Hold to delete ${creditCardsEditState.selectionCount} selected`}
+                            tabIndex={showDelete ? 0 : -1}
+                            style={{
+                              width: showDelete ? 36 : 0,
+                              height: 36,
+                              borderRadius: "50%",
+                              flexShrink: 0,
+                              overflow: "hidden",
+                              cursor: showDelete ? "pointer" : "default",
+                              background: `color-mix(in srgb, ${HOME_EXPENSE} 16%, ${surface})`,
+                              border: `1px solid ${HOME_EXPENSE}`,
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              position: "relative",
+                              color: HOME_EXPENSE,
+                              opacity: showDelete ? 1 : 0,
+                              transform: showDelete ? "scale(1)" : "scale(0.5)",
+                              marginLeft: showDelete ? 0 : -10,
+                              marginRight: showDelete ? 0 : -10,
+                              pointerEvents: showDelete ? "auto" : "none",
+                              userSelect: "none",
+                              transition:
+                                "width 220ms ease, margin 220ms ease, opacity 180ms ease, transform 220ms ease",
+                            }}
+                          >
+                            {/* Ring and icon share one 36x36 coordinate space so they're
                               guaranteed to center on the same point - two separate
                               overlapping SVGs left room for the two boxes to drift
                               apart from each other. */}
-                          <svg
-                            width="36" height="36" viewBox="0 0 36 36"
-                            style={{ position: "absolute", inset: 0, pointerEvents: "none" }}
-                          >
-                            <g transform="translate(-1 -1)">
-                              <circle
-                                cx="18" cy="18" r={HOLD_DELETE_RING_R} fill="none" stroke={HOME_EXPENSE} strokeWidth="2.5"
-                                strokeLinecap="round"
-                                strokeDasharray={HOLD_DELETE_RING_C}
-                                strokeDashoffset={holdingDelete ? 0 : HOLD_DELETE_RING_C}
-                                transform="rotate(-90 18 18)"
-                                onTransitionEnd={onDeleteRingTransitionEnd}
-                                style={{
-                                  transition: holdingDelete
-                                    ? `stroke-dashoffset ${HOLD_DELETE_MS}ms linear`
-                                    : "stroke-dashoffset 150ms ease",
-                                }}
-                              />
-                              {/* Nested SVG viewport, not a hand-computed transform - x/y/width/height
+                            <svg
+                              width="36"
+                              height="36"
+                              viewBox="0 0 36 36"
+                              style={{
+                                position: "absolute",
+                                inset: 0,
+                                pointerEvents: "none",
+                              }}
+                            >
+                              <g transform="translate(-1 -1)">
+                                <circle
+                                  cx="18"
+                                  cy="18"
+                                  r={HOLD_DELETE_RING_R}
+                                  fill="none"
+                                  stroke={HOME_EXPENSE}
+                                  strokeWidth="2.5"
+                                  strokeLinecap="round"
+                                  strokeDasharray={HOLD_DELETE_RING_C}
+                                  strokeDashoffset={
+                                    holdingDelete ? 0 : HOLD_DELETE_RING_C
+                                  }
+                                  transform="rotate(-90 18 18)"
+                                  onTransitionEnd={onDeleteRingTransitionEnd}
+                                  style={{
+                                    transition: holdingDelete
+                                      ? `stroke-dashoffset ${HOLD_DELETE_MS}ms linear`
+                                      : "stroke-dashoffset 150ms ease",
+                                  }}
+                                />
+                                {/* Nested SVG viewport, not a hand-computed transform - x/y/width/height
                                   place a 16x16 box at (10,10)-(26,26), i.e. centered in this 36x36
                                   space ((36-16)/2 = 10 on each side), and its own viewBox handles
                                   scaling the 24x24-authored icon down to fit. */}
-                              <svg x="10" y="10" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                <path d="M3 6h18M19 6l-1 14H6L5 6M10 11v6M14 11v6M9 6V4h6v2" />
-                              </svg>
-                            </g>
-                          </svg>
-                        </button>
-                      );
-                    })()}
+                                <svg
+                                  x="10"
+                                  y="10"
+                                  width="16"
+                                  height="16"
+                                  viewBox="0 0 24 24"
+                                  fill="none"
+                                  stroke="currentColor"
+                                  strokeWidth="2"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                >
+                                  <path d="M3 6h18M19 6l-1 14H6L5 6M10 11v6M14 11v6M9 6V4h6v2" />
+                                </svg>
+                              </g>
+                            </svg>
+                          </button>
+                        );
+                      })()}
                     {toolMode === "creditCards" && (
                       <button
                         onClick={creditCardsEditState.toggleEdit}
-                        aria-label={creditCardsEditState.editMode ? "Done editing" : "Edit credit card balances"}
+                        aria-label={
+                          creditCardsEditState.editMode
+                            ? "Done editing"
+                            : "Edit credit card balances"
+                        }
                         tabIndex={creditCardsEditState.hasRows ? 0 : -1}
                         style={{
                           width: creditCardsEditState.hasRows ? 36 : 0,
@@ -1935,7 +1789,9 @@ export default function Dashboard() {
                           borderRadius: "50%",
                           flexShrink: 0,
                           overflow: "hidden",
-                          cursor: creditCardsEditState.hasRows ? "pointer" : "default",
+                          cursor: creditCardsEditState.hasRows
+                            ? "pointer"
+                            : "default",
                           background: creditCardsEditState.editMode
                             ? `color-mix(in srgb, ${HOME_INCOME} 18%, ${surface})`
                             : surface,
@@ -1944,34 +1800,62 @@ export default function Dashboard() {
                           alignItems: "center",
                           justifyContent: "center",
                           position: "relative",
-                          color: creditCardsEditState.editMode ? HOME_INCOME : "#fff",
+                          color: creditCardsEditState.editMode
+                            ? HOME_INCOME
+                            : "#fff",
                           opacity: creditCardsEditState.hasRows ? 1 : 0,
-                          transform: creditCardsEditState.hasRows ? "scale(1)" : "scale(0.5)",
+                          transform: creditCardsEditState.hasRows
+                            ? "scale(1)"
+                            : "scale(0.5)",
                           marginLeft: creditCardsEditState.hasRows ? 0 : -10,
                           marginRight: creditCardsEditState.hasRows ? 0 : -10,
-                          pointerEvents: creditCardsEditState.hasRows ? "auto" : "none",
+                          pointerEvents: creditCardsEditState.hasRows
+                            ? "auto"
+                            : "none",
                           transition:
                             "width 220ms ease, margin 220ms ease, opacity 180ms ease, transform 220ms ease, background 200ms ease, border-color 200ms ease, color 200ms ease",
                         }}
                       >
                         <svg
-                          xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+                          xmlns="http://www.w3.org/2000/svg"
+                          width="18"
+                          height="18"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2.5"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
                           style={{
                             position: "absolute",
                             opacity: creditCardsEditState.editMode ? 1 : 0,
-                            transform: creditCardsEditState.editMode ? "scale(1) rotate(0deg)" : "scale(0.4) rotate(-45deg)",
-                            transition: "opacity 200ms ease, transform 200ms ease",
+                            transform: creditCardsEditState.editMode
+                              ? "scale(1) rotate(0deg)"
+                              : "scale(0.4) rotate(-45deg)",
+                            transition:
+                              "opacity 200ms ease, transform 200ms ease",
                           }}
                         >
                           <path d="M20 6 9 17l-5-5" />
                         </svg>
                         <svg
-                          xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                          xmlns="http://www.w3.org/2000/svg"
+                          width="17"
+                          height="17"
+                          viewBox="0 0 24 24"
+                          fill="none"
+                          stroke="currentColor"
+                          strokeWidth="2"
+                          strokeLinecap="round"
+                          strokeLinejoin="round"
                           style={{
                             position: "absolute",
                             opacity: creditCardsEditState.editMode ? 0 : 1,
-                            transform: creditCardsEditState.editMode ? "scale(0.4) rotate(45deg)" : "scale(1) rotate(0deg)",
-                            transition: "opacity 200ms ease, transform 200ms ease",
+                            transform: creditCardsEditState.editMode
+                              ? "scale(0.4) rotate(45deg)"
+                              : "scale(1) rotate(0deg)",
+                            transition:
+                              "opacity 200ms ease, transform 200ms ease",
                           }}
                         >
                           <path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
@@ -1981,16 +1865,18 @@ export default function Dashboard() {
                     {/* Same circular "+" mobile uses; the add UI lives in the panel. */}
                     <button
                       onClick={() => {
-                        if (toolMode === "recurring") setRecurringAddSignal((n) => n + 1);
-                        else if (toolMode === "installments") setInstallmentsAddSignal((n) => n + 1);
+                        if (toolMode === "recurring")
+                          setRecurringAddSignal((n) => n + 1);
+                        else if (toolMode === "installments")
+                          setInstallmentsAddSignal((n) => n + 1);
                         else setCreditCardsAddSignal((n) => n + 1);
                       }}
                       aria-label={
                         toolMode === "recurring"
                           ? "Add recurring payment"
                           : toolMode === "installments"
-                          ? "Add installment"
-                          : "Split a transaction as a credit card payment"
+                            ? "Add installment"
+                            : "Split a transaction as a credit card payment"
                       }
                       style={{
                         width: 36,
@@ -2088,10 +1974,21 @@ export default function Dashboard() {
             </div>
           ) : (
             <main className="px-6 py-6 flex-1">
-              {/* Keyed so changing page replays tool-page-in. transform stays `none`
-            when idle - a non-none transform becomes a containing block. */}
+              {refreshFailed && (
+                <p style={{ fontSize: 12, color: HOME_EXPENSE, margin: "0 0 12px" }}>
+                  Couldn't refresh transactions — showing the last loaded data
+                </p>
+              )}
+              {/* Keyed so changing page - or stepping the month, on the main
+            dashboard or a category tab alike - replays tool-page-in.
+            transform stays `none` when idle - a non-none transform becomes
+            a containing block. */}
               <div
-                key={activeTab === "ALL" ? "dashboard" : activeTab}
+                key={`${activeTab === "ALL" ? "dashboard" : activeTab}${
+                  isSingleMonthRange(dateRange) && dateRange.from
+                    ? `-${dateRange.from.getFullYear()}-${dateRange.from.getMonth()}`
+                    : ""
+                }`}
                 className="space-y-5"
                 style={{
                   opacity: categoryClosing ? 0 : 1,
@@ -2615,18 +2512,70 @@ export default function Dashboard() {
                             >
                               {fmt(summary.categoryTotal)}
                             </p>
-                            <div className="flex items-center gap-2" style={{ marginTop: 8 }}>
-                              <div style={tipsStatTile(activeColor)}><IconHandCash /></div>
+                            <div
+                              className="flex items-center gap-2"
+                              style={{ marginTop: 8 }}
+                            >
+                              <div style={tipsStatTile(activeColor)}>
+                                <IconHandCash size={12} />
+                              </div>
                               <div>
-                                <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: text, fontVariantNumeric: "tabular-nums" }}>{fmt(tipsCashOnHand)}</p>
-                                <p style={{ margin: "1px 0 0", fontSize: 11, fontWeight: 500, color: muted }}>cash on hand</p>
+                                <p
+                                  style={{
+                                    margin: 0,
+                                    fontSize: 14,
+                                    fontWeight: 700,
+                                    color: text,
+                                    fontVariantNumeric: "tabular-nums",
+                                  }}
+                                >
+                                  {fmt(tipsCashOnHand)}
+                                </p>
+                                <p
+                                  style={{
+                                    margin: "1px 0 0",
+                                    fontSize: 11,
+                                    fontWeight: 500,
+                                    color: muted,
+                                  }}
+                                >
+                                  cash on hand
+                                </p>
                               </div>
                             </div>
-                            <div className="flex items-center gap-2" style={{ position: "absolute", right: 20, bottom: 14 }}>
-                              <div style={tipsStatTile(TIPS_DEPOSITED, true)}><IconBank color={TIPS_DEPOSITED} /></div>
+                            <div
+                              className="flex items-center gap-2"
+                              style={{
+                                position: "absolute",
+                                right: 20,
+                                bottom: 14,
+                              }}
+                            >
+                              <div style={tipsStatTile(TIPS_DEPOSITED, true)}>
+                                <IconBank color={TIPS_DEPOSITED} size={11} />
+                              </div>
                               <div>
-                                <p style={{ margin: 0, fontSize: 14, fontWeight: 700, color: TIPS_DEPOSITED, fontVariantNumeric: "tabular-nums" }}>{fmt(tipsMonthDepositedTotal)}</p>
-                                <p style={{ margin: "1px 0 0", fontSize: 11, fontWeight: 500, color: muted }}>deposited</p>
+                                <p
+                                  style={{
+                                    margin: 0,
+                                    fontSize: 14,
+                                    fontWeight: 700,
+                                    color: TIPS_DEPOSITED,
+                                    fontVariantNumeric: "tabular-nums",
+                                  }}
+                                >
+                                  {fmt(tipsMonthDepositedTotal)}
+                                </p>
+                                <p
+                                  style={{
+                                    margin: "1px 0 0",
+                                    fontSize: 11,
+                                    fontWeight: 500,
+                                    color: muted,
+                                  }}
+                                >
+                                  deposited
+                                </p>
                               </div>
                             </div>
                           </>
@@ -3105,195 +3054,106 @@ export default function Dashboard() {
                         </ResponsiveContainer>
                       </div>
                     ) : (
-                      <Empty />
+                      <EmptyChartState />
                     )}
                   </div>
                 ) : (
-                  <div className="grid grid-cols-2 gap-4">
-                    <ChartCard
-                      title="Spending Over Time"
-                      activeColor={activeColor}
-                    >
-                      {areaData.length > 0 ? (
-                        <ResponsiveContainer
-                          width="100%"
-                          height={230}
-                          style={{ pointerEvents: "none" }}
-                        >
-                          <AreaChart data={areaData}>
-                            <defs>
-                              <linearGradient
-                                id="areaFill"
-                                x1="0"
-                                y1="0"
-                                x2="0"
-                                y2="1"
-                              >
-                                <stop
-                                  offset="5%"
-                                  stopColor={activeColor}
-                                  stopOpacity={0.3}
-                                />
-                                <stop
-                                  offset="95%"
-                                  stopColor={activeColor}
-                                  stopOpacity={0.02}
-                                />
-                              </linearGradient>
-                            </defs>
-                            <CartesianGrid
-                              strokeDasharray="3 3"
-                              vertical={false}
-                              stroke={"rgba(255,255,255,0.06)"}
-                            />
-                            <XAxis
-                              dataKey="date"
-                              type="number"
-                              scale="time"
-                              domain={["dataMin", "dataMax"]}
-                              axisLine={false}
-                              tickLine={false}
-                              tick={{ fontSize: 12, fill: text }}
-                              tickFormatter={(v) =>
-                                new Date(v).toLocaleDateString("en-US", {
-                                  month: "short",
-                                  day: "numeric",
-                                })
-                              }
-                            />
-                            <YAxis
-                              axisLine={false}
-                              tickLine={false}
-                              tickFormatter={(v) => `$${v}`}
-                              tick={{ fontSize: 12, fill: text }}
-                            />
-                            <Tooltip
-                              {...tooltipProps}
-                              cursor={{
-                                stroke: activeColor,
-                                strokeWidth: 1,
-                                strokeDasharray: "4 4",
-                              }}
-                              content={({ payload }) => {
-                                if (!payload?.length) return null;
-                                const { date, total } = payload[0].payload;
-                                return (
-                                  <div
+                  // Single timeline replacing the old "Spending Over Time" +
+                  // "Top _ by Name" pair (#159) - see categoryTimelineData.
+                  <ChartCard
+                    title={`${CATEGORY_CONFIG[activeTab].label} Over Time`}
+                    activeColor={activeColor}
+                  >
+                    {categoryTimelineData.some((m) => m.total !== 0) ? (
+                      <ResponsiveContainer width="100%" height={230}>
+                        <AreaChart data={categoryTimelineData}>
+                          <defs>
+                            <linearGradient
+                              id="areaFill"
+                              x1="0"
+                              y1="0"
+                              x2="0"
+                              y2="1"
+                            >
+                              <stop
+                                offset="5%"
+                                stopColor={activeColor}
+                                stopOpacity={0.3}
+                              />
+                              <stop
+                                offset="95%"
+                                stopColor={activeColor}
+                                stopOpacity={0.02}
+                              />
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid
+                            strokeDasharray="3 3"
+                            vertical={false}
+                            stroke={"rgba(255,255,255,0.06)"}
+                          />
+                          <XAxis
+                            dataKey="label"
+                            axisLine={false}
+                            tickLine={false}
+                            tick={{ fontSize: 12, fill: text }}
+                          />
+                          <YAxis
+                            axisLine={false}
+                            tickLine={false}
+                            tickFormatter={(v) => `$${v}`}
+                            tick={{ fontSize: 12, fill: text }}
+                          />
+                          <Tooltip
+                            {...tooltipProps}
+                            cursor={{
+                              stroke: activeColor,
+                              strokeWidth: 1,
+                              strokeDasharray: "4 4",
+                            }}
+                            content={({ payload }) => {
+                              if (!payload?.length) return null;
+                              const { label, total } = payload[0].payload;
+                              return (
+                                <div
+                                  style={{
+                                    ...tooltipProps.contentStyle,
+                                    padding: "8px 12px",
+                                  }}
+                                >
+                                  <p
                                     style={{
-                                      ...tooltipProps.contentStyle,
-                                      padding: "8px 12px",
+                                      margin: 0,
+                                      opacity: 0.7,
+                                      fontSize: 12,
                                     }}
                                   >
-                                    <p
-                                      style={{
-                                        margin: 0,
-                                        opacity: 0.7,
-                                        fontSize: 12,
-                                      }}
-                                    >
-                                      {new Date(date).toLocaleDateString(
-                                        "en-US",
-                                        {
-                                          month: "short",
-                                          day: "numeric",
-                                          year: "numeric",
-                                        },
-                                      )}
-                                    </p>
-                                    <p style={{ margin: 0, fontWeight: 600 }}>
-                                      {fmt(total)}
-                                    </p>
-                                  </div>
-                                );
-                              }}
-                            />
-                            <Area
-                              key={activeTab}
-                              type="monotone"
-                              dataKey="total"
-                              stroke={activeColor}
-                              strokeWidth={2}
-                              fill="url(#areaFill)"
-                              dot={{ fill: activeColor, r: 4, strokeWidth: 0 }}
-                              activeDot={{ r: 6, strokeWidth: 0 }}
-                              isAnimationActive={false}
-                            />
-                          </AreaChart>
-                        </ResponsiveContainer>
-                      ) : (
-                        <Empty />
-                      )}
-                    </ChartCard>
-
-                    <ChartCard
-                      title={`Top ${CATEGORY_CONFIG[activeTab].label} by Name`}
-                      activeColor={activeColor}
-                    >
-                      {barData.length > 0 ? (
-                        <ResponsiveContainer
-                          width="100%"
-                          height={230}
-                          style={{ pointerEvents: "none" }}
-                        >
-                          <BarChart data={barData}>
-                            <CartesianGrid
-                              strokeDasharray="3 3"
-                              vertical={false}
-                            />
-                            <XAxis
-                              dataKey="month"
-                              axisLine={false}
-                              tickLine={false}
-                              interval={0}
-                              height={60}
-                              tick={(props) => {
-                                const val = props.payload?.value ?? "";
-                                const label =
-                                  val.length > 12
-                                    ? val.slice(0, 12) + "…"
-                                    : val;
-                                return (
-                                  <text
-                                    x={props.x}
-                                    y={props.y}
-                                    dy={8}
-                                    textAnchor="end"
-                                    fontSize={12}
-                                    style={{ fill: text }}
-                                    transform={`rotate(-35, ${props.x}, ${props.y})`}
-                                  >
                                     {label}
-                                  </text>
-                                );
-                              }}
-                            />
-                            <YAxis
-                              axisLine={false}
-                              tickLine={false}
-                              tickFormatter={(v) => `$${v}`}
-                              tick={{ fontSize: 12, fill: text }}
-                            />
-                            <Tooltip
-                              {...tooltipProps}
-                              formatter={(v) => fmt(v)}
-                              cursor={false}
-                            />
-                            <Bar
-                              dataKey="total"
-                              radius={[6, 6, 0, 0]}
-                              barSize={32}
-                            >
-                              {barData.map((entry) => (
-                                <Cell key={entry.month} fill={entry.color} />
-                              ))}
-                            </Bar>
-                          </BarChart>
-                        </ResponsiveContainer>
-                      ) : (
-                        <Empty />
-                      )}
-                    </ChartCard>
-                  </div>
+                                  </p>
+                                  <p style={{ margin: 0, fontWeight: 600 }}>
+                                    {fmt(total)}
+                                  </p>
+                                </div>
+                              );
+                            }}
+                          />
+                          <Area
+                            key={activeTab}
+                            type="monotone"
+                            dataKey="total"
+                            stroke={activeColor}
+                            strokeWidth={2}
+                            fill="url(#areaFill)"
+                            dot={{ fill: activeColor, r: 4, strokeWidth: 0 }}
+                            activeDot={{ r: 6, strokeWidth: 0 }}
+                            isAnimationActive={false}
+                          />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <EmptyChartState />
+                    )}
+                  </ChartCard>
                 )}
 
                 {loading ? (
@@ -3451,10 +3311,16 @@ export default function Dashboard() {
                         dateRange={dateRange}
                       />
                     ) : (
-                      // Self-hides when the category has nothing scheduled (#127).
                       <div className="space-y-4">
                         <CategoryUpcomingPanel
                           category={activeTab}
+                          items={upcomingRecurring}
+                          paychecks={upcomingPaychecks}
+                          loading={
+                            activeTab === "INCOME"
+                              ? upcomingPaychecksLoading
+                              : upcomingRecurringLoading
+                          }
                           onRefresh={refreshTransactions}
                         />
                         <CategoryDetailPanel
@@ -3561,11 +3427,7 @@ export default function Dashboard() {
             <DevMenuRow
               label="Force next error"
               active={devForceError}
-              onToggle={() => {
-                const next = !devForceError;
-                setDevForceError(next);
-                devForceErrorRef.current = next;
-              }}
+              onToggle={toggleDevForceError}
               muted={muted}
               text={text}
               border={border}
@@ -3732,8 +3594,8 @@ export default function Dashboard() {
         </div>
       )}
 
-      {editingTransaction && (
-        editingTransaction.credit_card_payment_id ? (
+      {editingTransaction &&
+        (editingTransaction.credit_card_payment_id ? (
           <CreditCardPaymentPanel
             key={editingTransaction.id}
             desktop
@@ -3761,170 +3623,7 @@ export default function Dashboard() {
             onDelete={handleDelete}
             onLocate={editingFromSearch ? handleLocateTransaction : undefined}
           />
-        )
-      )}
-    </div>
-  );
-}
-
-function DevMenuSection({ label, border, muted }) {
-  return (
-    <div
-      style={{
-        padding: "8px 14px 4px",
-        borderTop: `1px solid ${border}`,
-        marginTop: 4,
-      }}
-    >
-      <span
-        style={{
-          fontSize: 9,
-          fontWeight: 700,
-          letterSpacing: "0.1em",
-          color: muted,
-        }}
-      >
-        {label}
-      </span>
-    </div>
-  );
-}
-
-function DevMenuInfo({ label, value, muted, text }) {
-  return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        padding: "4px 14px",
-        gap: 12,
-      }}
-    >
-      <span style={{ fontSize: 12, color: muted }}>{label}</span>
-      <span
-        style={{
-          fontSize: 11,
-          fontWeight: 600,
-          color: text,
-          fontFamily: "monospace",
-          textAlign: "right",
-          maxWidth: 140,
-          overflow: "hidden",
-          textOverflow: "ellipsis",
-          whiteSpace: "nowrap",
-        }}
-      >
-        {value}
-      </span>
-    </div>
-  );
-}
-
-function DevMenuButton({
-  label,
-  description,
-  onClick,
-  muted,
-  text,
-  border,
-  danger,
-}) {
-  return (
-    <div style={{ padding: "3px 14px" }}>
-      <button
-        onClick={onClick}
-        style={{
-          width: "100%",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          padding: "5px 8px",
-          borderRadius: 8,
-          border: `1px solid ${border}`,
-          background: "transparent",
-          cursor: "pointer",
-          transition: "background-color 150ms ease",
-        }}
-        onMouseEnter={(e) =>
-          (e.currentTarget.style.backgroundColor = danger
-            ? `color-mix(in srgb, ${HOME_EXPENSE} 8%, transparent)`
-            : `color-mix(in srgb, ${text} 6%, transparent)`)
-        }
-        onMouseLeave={(e) =>
-          (e.currentTarget.style.backgroundColor = "transparent")
-        }
-      >
-        <span
-          style={{
-            fontSize: 12,
-            fontWeight: 500,
-            color: danger ? HOME_EXPENSE : text,
-          }}
-        >
-          {label}
-        </span>
-        <span style={{ fontSize: 10, color: muted }}>{description}</span>
-      </button>
-    </div>
-  );
-}
-
-function DevMenuRow({ label, active, onToggle, muted, text, border }) {
-  return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        padding: "6px 14px",
-        gap: 12,
-      }}
-    >
-      <span style={{ fontSize: 12, fontWeight: 500, color: text }}>
-        {label}
-      </span>
-      <button
-        onClick={onToggle}
-        style={{
-          width: 38,
-          height: 22,
-          borderRadius: 999,
-          border: "none",
-          cursor: "pointer",
-          flexShrink: 0,
-          backgroundColor: active
-            ? HOME_INCOME
-            : `color-mix(in srgb, ${text} 18%, transparent)`,
-          position: "relative",
-          transition: "background-color 180ms ease",
-        }}
-      >
-        <div
-          style={{
-            position: "absolute",
-            top: 3,
-            left: active ? "calc(100% - 19px)" : 3,
-            width: 16,
-            height: 16,
-            borderRadius: "50%",
-            backgroundColor: "#fff",
-            transition: "left 180ms ease",
-            boxShadow: "0 1px 3px rgba(0,0,0,0.25)",
-          }}
-        />
-      </button>
-    </div>
-  );
-}
-
-function Empty() {
-  return (
-    <div
-      className="h-70 flex items-center justify-center text-base"
-      style={{ color: HOME_TEXT }}
-    >
-      No data yet
+        ))}
     </div>
   );
 }

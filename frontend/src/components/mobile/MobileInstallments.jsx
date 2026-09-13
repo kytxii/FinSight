@@ -12,7 +12,7 @@ import {
   deleteInstallment,
 } from "../../api/installments";
 import { getSpendableSurplus } from "../../api/paychecks";
-import { useSheetDrag, SHEET_EASE } from "../../hooks/useSheetDrag";
+import { useSheetDrag, SHEET_EASE } from "../../hooks/shared/useSheetDrag";
 import {
   HOME_TEXT, HOME_MUTED, HOME_SURFACE, HOME_DIVIDER, HOME_EXPENSE, HOME_INCOME, HOME_ACCENT,
   GAUGE_DARK_GREEN, GAUGE_GREEN, GAUGE_YELLOW, GAUGE_ORANGE, GAUGE_RED, TILE_COLOR, ACCENT,
@@ -427,11 +427,12 @@ export default function MobileInstallments({ onSaved, openAddSignal }) {
   useEffect(loadInstallments, []);
 
   const [availableCash, setAvailableCash] = useState(null);
+  const [surplusFailed, setSurplusFailed] = useState(false);
   useEffect(() => {
     let cancelled = false;
     getSpendableSurplus()
       .then(res => { if (!cancelled) setAvailableCash(parseFloat(res.data.free_to_allocate)); })
-      .catch(() => {});
+      .catch(() => { if (!cancelled) setSurplusFailed(true); });
     return () => { cancelled = true; };
   }, []);
 
@@ -540,6 +541,9 @@ export default function MobileInstallments({ onSaved, openAddSignal }) {
 
       {listError && (
         <p style={{ fontSize: 12, color: HOME_EXPENSE, margin: "0 4px 10px" }}>{listError}</p>
+      )}
+      {surplusFailed && (
+        <p style={{ fontSize: 12, color: HOME_MUTED, margin: "0 4px 10px" }}>Couldn't load available cash — impact estimates unavailable</p>
       )}
 
       {loading ? (

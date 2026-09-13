@@ -228,6 +228,81 @@ async def test_remove_charge_not_allocated_to_payment_returns_404(test_user: dic
     assert res.status_code == 404
 
 
+async def test_delete_anchor_transaction_directly_runs_same_cleanup_as_delete_payment(
+    test_user: dict, client: AsyncClient, db: AsyncSession, clean_credit_card,
+):
+    """Deleting a payment's anchor transaction through the normal transaction
+    delete endpoint - not the Credit Cards panel - used to bypass
+    delete_payment's cleanup entirely, orphaning the CreditCardPayment and
+    any charges it funded (#140). It now runs the same cleanup delete_payment
+    does before the transaction itself goes."""
+    token = test_user["token"]
+
+    res = await client.post("/transactions/", json={
+        "name": "Online Banking Payment to CRD", "amount": "100.00",
+        "transaction_date": "2026-08-15", "category": "BILL",
+    }, headers=auth_headers(token))
+    anchor_transaction_id = res.json()["id"]
+    res = await client.post(f"/credit-card-payments/from-transaction/{anchor_transaction_id}", headers=auth_headers(token))
+    payment = res.json()
+
+    res = await client.post(f"/credit-card-payments/{payment['id']}/allocate", json={
+        "name": "Coffee", "total_amount": "10.00", "category": "EXPENSE", "charge_date": "2026-08-10",
+    }, headers=auth_headers(token))
+    charge_id = res.json()["charges"][0]["id"]
+
+    res = await client.delete(f"/transactions/{anchor_transaction_id}", headers=auth_headers(token))
+    assert res.status_code == 204
+
+    # Same end state as deleting the payment itself would produce: the
+    # payment is gone, and its sole funded charge (now with nothing funding
+    # it) is deleted outright rather than left dangling.
+    res = await client.get(f"/credit-card-payments/{payment['id']}", headers=auth_headers(token))
+    assert res.status_code == 404
+    result = await db.execute(select(CreditCardCharge).where(CreditCardCharge.id == UUID(charge_id)))
+    assert result.scalar_one_or_none() is None
+
+
+async def test_delete_settled_charge_transaction_unsettles_it(
+    test_user: dict, client: AsyncClient, db: AsyncSession, clean_credit_card,
+):
+    """Deleting a settled charge's promoted transaction directly used to
+    leave the charge's CreditCardChargeAllocation in place while the charge
+    itself had no transaction to derive "settled" from - money recorded as
+    paid, charge showing otherwise (#140). It now releases the allocation(s)
+    and deletes the charge outright (same zero-allocations convention
+    delete_payment/remove_charge already use), so the payment's money is
+    freed up to be allocated again instead of stuck against a ghost charge."""
+    token = test_user["token"]
+    payment = await _create_payment(client, token, amount="100.00")
+    res = await client.post(f"/credit-card-payments/{payment['id']}/allocate", json={
+        "name": "Gas", "total_amount": "55.00", "category": "EXPENSE", "charge_date": "2026-08-10",
+    }, headers=auth_headers(token))
+    charge_id = res.json()["charges"][0]["id"]
+    settled_txn_id = res.json()["charges"][0]["settled_transaction_id"]
+
+    res = await client.delete(f"/transactions/{settled_txn_id}", headers=auth_headers(token))
+    assert res.status_code == 204
+
+    res = await client.get(f"/transactions/{settled_txn_id}", headers=auth_headers(token))
+    assert res.status_code == 404
+
+    result = await db.execute(select(CreditCardCharge).where(CreditCardCharge.id == UUID(charge_id)))
+    assert result.scalar_one_or_none() is None
+    result = await db.execute(
+        select(CreditCardChargeAllocation).where(CreditCardChargeAllocation.charge_id == UUID(charge_id))
+    )
+    assert result.scalar_one_or_none() is None
+
+    # The $55 is free again - the payment shows no charges and its full
+    # amount available, not $55 permanently stuck against a ghost charge.
+    res = await client.get(f"/credit-card-payments/{payment['id']}", headers=auth_headers(token))
+    data = res.json()
+    assert data["charges"] == []
+    assert data["paid"] == "0.00"
+    assert data["left"] == "100.00"
+
+
 async def test_allocate_existing_transaction_reuses_it_as_settled_charge(test_user: dict, client: AsyncClient, clean_credit_card):
     """Picking an already-recorded, unlinked transaction to cover part of a
     payment reuses that transaction as the settled charge directly - no
@@ -277,3 +352,46 @@ async def test_allocate_existing_transaction_rejects_amount_exceeding_payment(te
     }, headers=auth_headers(token))
     assert res.status_code == 400
     assert "left on this payment" in res.json()["detail"]
+
+
+async def test_list_payments_matches_detail_and_orders_by_date(test_user: dict, client: AsyncClient, clean_credit_card):
+    """The list view is built in bulk rather than by re-deriving each payment
+    one at a time (#171), so it needs to agree with the single-payment detail
+    endpoint exactly - including payments with no charges at all, which the
+    batched path has to fill in rather than read from a row that isn't there."""
+    token = test_user["token"]
+
+    with_charges = await _create_payment(client, token, amount="250.00")
+    empty = await _create_payment(client, token, amount="80.00")
+
+    for name, amount, charge_date in [("Gas", "55.00", "2026-08-10"), ("Coffee", "20.00", "2026-08-02")]:
+        res = await client.post(f"/credit-card-payments/{with_charges['id']}/allocate", json={
+            "name": name, "total_amount": amount, "category": "EXPENSE", "charge_date": charge_date,
+        }, headers=auth_headers(token))
+        assert res.status_code == 200
+
+    res = await client.get("/credit-card-payments/", headers=auth_headers(token))
+    assert res.status_code == 200
+    listed = res.json()
+    assert len(listed) == 2
+
+    by_id = {p["id"]: p for p in listed}
+
+    # A payment with no allocations still reports zeroed totals, not nulls.
+    assert by_id[empty["id"]]["charges"] == []
+    assert by_id[empty["id"]]["paid"] == "0.00"
+    assert by_id[empty["id"]]["left"] == "80.00"
+
+    funded = by_id[with_charges["id"]]
+    assert funded["paid"] == "75.00"
+    assert funded["left"] == "175.00"
+    # Charges come back oldest-first by charge_date, not allocation order.
+    assert [c["name"] for c in funded["charges"]] == ["Coffee", "Gas"]
+    assert all(c["settled"] is True for c in funded["charges"])
+    assert all(c["settled_transaction_id"] is not None for c in funded["charges"])
+
+    # Every payment in the list is identical to fetching it on its own.
+    for payment in listed:
+        res = await client.get(f"/credit-card-payments/{payment['id']}", headers=auth_headers(token))
+        assert res.status_code == 200
+        assert res.json() == payment

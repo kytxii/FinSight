@@ -224,6 +224,7 @@ export default function RecurringPaymentsModal({ onClose, inline = false, deskto
   const [saveStatus, setSaveStatus] = useState("idle");
   const [deleted, setDeleted]       = useState(new Set());
   const [deleteError, setDeleteError] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [hoverRow, setHoverRow]     = useState(null);
   const originalRowsRef             = useRef([]);
   const rowsRef                     = useRef([]);
@@ -253,12 +254,15 @@ export default function RecurringPaymentsModal({ onClose, inline = false, deskto
     }
   }, [addSignal]);
 
-  useEffect(() => {
+  function load() {
+    setLoading(true);
+    setLoadFailed(false);
     getRecurringPayments()
       .then(r => { setRows(r.data); originalRowsRef.current = r.data; })
-      .catch(() => {})
+      .catch(() => setLoadFailed(true))
       .finally(() => setLoading(false));
-  }, []);
+  }
+  useEffect(load, []);
 
   // Inline edit
 
@@ -405,7 +409,14 @@ export default function RecurringPaymentsModal({ onClose, inline = false, deskto
       setSaveStatus("saved");
       setTimeout(() => setSaveStatus("idle"), 2500);
       onSaved?.();
-    } catch {}
+    } catch {
+      // Edits stay in place (dirty rows aren't reverted) so nothing is lost -
+      // this surfaces through the same onSaveStateChange channel the "saved"
+      // status already uses (Dashboard.jsx's toolbar renders it), instead of
+      // silently leaving saveStatus at "idle" with no sign the save failed (#175).
+      setSaveStatus("error");
+      setTimeout(() => setSaveStatus("idle"), 3000);
+    }
     finally { setIsSaving(false); }
   };
 
@@ -697,7 +708,17 @@ export default function RecurringPaymentsModal({ onClose, inline = false, deskto
   const desktopCardsContent = (
     <div style={{ display: "flex", flexDirection: "column", gap: 28 }}>
       {keyframesStyle}
-      {rows.length === 0 && drafts.length === 0 && !loading ? (
+      {loadFailed ? (
+        <div style={{ textAlign: "center", padding: "28px 16px", border: `1px dashed ${border}`, borderRadius: 16 }}>
+          <p style={{ fontSize: 13, color: muted, marginBottom: 10 }}>Couldn't load recurring payments</p>
+          <button
+            onClick={load}
+            style={{ fontSize: 13, fontWeight: 700, padding: "7px 16px", borderRadius: 10, border: "none", color: "#fff", backgroundColor: HOME_INCOME, cursor: "pointer" }}
+          >
+            Try again
+          </button>
+        </div>
+      ) : rows.length === 0 && drafts.length === 0 && !loading ? (
         <div style={{ textAlign: "center", padding: "28px 16px", border: `1px dashed ${border}`, borderRadius: 16 }}>
           <p style={{ fontSize: 13, color: muted, margin: 0 }}>No recurring payments yet</p>
         </div>

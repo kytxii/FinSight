@@ -1,5 +1,5 @@
 import { useState, useEffect, useLayoutEffect, useRef } from "react";
-import { CATEGORY_CONFIG, INCOME_TYPES, fmt } from "../../utils/finance";
+import { CATEGORY_CONFIG, INCOME_TYPES, fmt, MIN_TABLE_ROWS, ROW_HEIGHT } from "../../utils/finance";
 import { HOME_SURFACE, HOME_DIVIDER, HOME_TEXT, HOME_MUTED, HOME_INCOME, HOME_EXPENSE, CATEGORY_ACCENT, ACCENT, ACCENT_TEXT } from "../shared/categoryVisuals";
 
 function SortIcon({ active, dir, activeColor, muted }) {
@@ -26,10 +26,6 @@ function SortIcon({ active, dir, activeColor, muted }) {
     </svg>
   );
 }
-
-const MIN_TABLE_ROWS = 10;
-// Matches a real row's height, same 60px the delete-sweep cell already uses.
-const ROW_HEIGHT = 60;
 
 export default function TransactionTable({ rows, onAdd, onEdit, onDelete, activeColor, page, perPage, total, onPageChange, onPerPageChange, highlightId, typeFilter, onTypeFilterChange, sortColumn, sortDir, onSort, query = "", onQueryChange }) {
   const [addHovered, setAddHovered] = useState(false);
@@ -381,11 +377,17 @@ export default function TransactionTable({ rows, onAdd, onEdit, onDelete, active
                 key={t.id}
                 className="border-t"
                 style={{
-                  borderColor: border,
+                  // The row already has a real border-top (border-t) - adding
+                  // a white box-shadow ring on top of that doubled up the top
+                  // edge's thickness versus the other three sides. Making the
+                  // real border transparent when highlighted, so the
+                  // box-shadow ring is the only thing drawing that edge too.
+                  borderColor: t.id === highlightId && !deleting.has(t.id) ? "transparent" : border,
+                  boxShadow: t.id === highlightId && !deleting.has(t.id) ? "inset 0 0 0 1px #fff" : undefined,
                   backgroundColor: t.id === highlightId && !deleting.has(t.id)
                     ? `color-mix(in srgb, ${CATEGORY_ACCENT[t.category]} 12%, transparent)`
                     : undefined,
-                  transition: "background-color 0.6s ease",
+                  transition: "background-color 0.6s ease, border-color 0.6s ease, box-shadow 0.6s ease",
                   pointerEvents: deleting.has(t.id) ? "none" : undefined,
                 }}
               >
@@ -418,7 +420,7 @@ export default function TransactionTable({ rows, onAdd, onEdit, onDelete, active
                       </span>
                     </div>
                   </td>
-                  <td className="px-6 py-4 text-right text-lg font-bold" style={{ paddingRight: "24px", color: INCOME_TYPES.has(t.category) ? HOME_INCOME : HOME_EXPENSE }}>
+                  <td className="px-6 py-4 text-right text-lg font-bold" style={{ paddingRight: "24px", color: INCOME_TYPES.has(t.category) ? HOME_INCOME : HOME_EXPENSE, fontVariantNumeric: "tabular-nums" }}>
                     {INCOME_TYPES.has(t.category) ? "+" : "-"}{fmt(t.amount)}
                   </td>
                   <td className="px-6 py-4 text-base whitespace-nowrap" style={{ color: muted }}>

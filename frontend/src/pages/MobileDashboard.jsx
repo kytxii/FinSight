@@ -11,9 +11,10 @@ import {
   createTransaction,
   deleteTransaction,
 } from "../api/transactions";
-import { getSpendableSurplus, getEstimatedSavings } from "../api/paychecks";
 import { getUpcomingRecurringPayments } from "../api/recurringPayments";
-import { getTipDeposits, deleteTipDeposit, createTipDeposit } from "../api/tipDeposits";
+import { getPaychecks } from "../api/paychecks";
+import { deleteTipDeposit, createTipDeposit } from "../api/tipDeposits";
+import { setCached } from "../utils/pageCache";
 import CurrencyInput from "../components/shared/CurrencyInput";
 import Toggle from "../components/shared/Toggle";
 import MobileTransactionModal from "../components/mobile/MobileTransactionModal";
@@ -25,26 +26,36 @@ import {
   MONEY_OUT_TYPES,
   lockedNameFor,
 } from "../utils/finance";
-import { useTheme } from "../hooks/useTheme";
+import { useTheme } from "../hooks/mobile/useTheme";
 import { useAuth } from "../context/AuthContext";
-import { getPresetRange } from "../components/mobile/DateRangeFilter";
-import { getToday, getNow } from "../utils/time";
+import { getMonthRange } from "../components/mobile/DateRangeFilter";
+import { getToday } from "../utils/time";
+import { useMonthPeriod, yearOptionsFromTransactions } from "../hooks/mobile/useMonthPeriod";
 import { errorMessage } from "../utils/errors";
 import MobilePageSlide from "../components/mobile/MobilePageSlide";
 import MobileScreen from "../components/mobile/MobileScreen";
-import { useSheetDrag } from "../hooks/useSheetDrag";
+import { useSheetDrag } from "../hooks/shared/useSheetDrag";
+import { useDevMenu } from "../hooks/shared/useDevMenu";
+import { useDashboardData } from "../hooks/shared/useDashboardData";
+import {
+  useHoldToDelete,
+  HOLD_DELETE_MS,
+  HOLD_DELETE_RING_R,
+  HOLD_DELETE_RING_C,
+} from "../hooks/shared/useHoldToDelete";
 import Footer from "../components/shared/Footer";
 import AccountPanel from "../components/shared/AccountPanel";
 import OverviewBreakdownSheet from "../components/desktop/OverviewBreakdownSheet";
 import MobileHome from "../components/mobile/MobileHome";
 import MobileTopbar from "../components/mobile/MobileTopbar";
-import MobileCategory from "../components/mobile/MobileCategory";
+import MobileCategory, { INCOME_UPCOMING_CACHE_KEY } from "../components/mobile/MobileCategory";
 import MobileTips from "../components/mobile/MobileTips";
 import MobilePaychecks from "../components/mobile/MobilePaychecks";
 import MobileRecurring from "../components/mobile/MobileRecurring";
 import MobileInstallments from "../components/mobile/MobileInstallments";
 import MobileCreditCards from "../components/mobile/MobileCreditCards";
 import MobileAnalytics from "../components/mobile/MobileAnalytics";
+import MobileAssistant from "../components/mobile/MobileAssistant";
 import ImportPanel from "../components/desktop/ImportPanel";
 import { HOME_BG, HOME_TEXT, HOME_MUTED, HOME_DIVIDER, HOME_SURFACE, HOME_INCOME, HOME_EXPENSE, ACCENT, TILE_COLOR } from "../components/shared/categoryVisuals";
 import CategoryPicker from "../components/mobile/CategoryPicker";
@@ -107,19 +118,12 @@ function IconPlus({ size = 24 }) {
   );
 }
 
+// Matches the sparkle glyph in the AI tab's own header (MobileAssistant/AssistantPanel) -
+// same mark in the nav as on the surface it opens, instead of an unrelated star outline.
 function IconAI({ size = 20 }) {
   return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z" />
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12 2.5c.3 3.4 1 5.6 2.1 6.7 1.1 1.1 3.3 1.8 6.7 2.1-3.4.3-5.6 1-6.7 2.1-1.1 1.1-1.8 3.3-2.1 6.7-.3-3.4-1-5.6-2.1-6.7-1.1-1.1-3.3-1.8-6.7-2.1 3.4-.3 5.6-1 6.7-2.1 1.1-1.1 1.8-3.3 2.1-6.7z" />
     </svg>
   );
 }
@@ -199,12 +203,20 @@ export default function MobileDashboard() {
   const [entrySheetOpen, setEntrySheetOpen] = useState(false);
 
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [devOpen, setDevOpen] = useState(false);
-  const [devForceEmpty, setDevForceEmpty] = useState(false);
-  const [devDelay, setDevDelay] = useState(0);
-  const [devForceError, setDevForceError] = useState(false);
-  const [devLastFetch, setDevLastFetch] = useState(null);
-  const devForceErrorRef = useRef(false);
+  // #177/#190: identical state + forced-fetch logic used to be duplicated
+  // here and in Dashboard.jsx - see hooks/shared/useDevMenu.
+  const devMenu = useDevMenu();
+  const {
+    open: devOpen,
+    setOpen: setDevOpen,
+    forceEmpty: devForceEmpty,
+    setForceEmpty: setDevForceEmpty,
+    delay: devDelay,
+    setDelay: setDevDelay,
+    forceError: devForceError,
+    toggleForceError: toggleDevForceError,
+    lastFetch: devLastFetch,
+  } = devMenu;
   const [recurringOpen, setRecurringOpen] = useState(false);
   const [installmentsOpen, setInstallmentsOpen] = useState(false);
   const [creditCardsOpen, setCreditCardsOpen] = useState(false);
@@ -217,25 +229,14 @@ export default function MobileDashboard() {
     selectionCount: 0,
     deleteSelected: () => {},
   });
-  // Hold-to-delete on the Credit Cards header button: press and hold fills
-  // the ring around the trash icon; releasing early cancels, holding the
-  // full duration commits the delete. Mirrors the desktop header button.
-  const HOLD_DELETE_MS = 1200;
-  const HOLD_DELETE_RING_R = 16;
-  const HOLD_DELETE_RING_C = 2 * Math.PI * HOLD_DELETE_RING_R;
-  const [holdingDelete, setHoldingDelete] = useState(false);
-  function startDeleteHold() {
-    if (!(creditCardsEditState.editMode && creditCardsEditState.hasSelection)) return;
-    setHoldingDelete(true);
-  }
-  function cancelDeleteHold() {
-    setHoldingDelete(false);
-  }
-  function onDeleteRingTransitionEnd(e) {
-    if (e.propertyName !== "stroke-dashoffset" || !holdingDelete) return;
-    setHoldingDelete(false);
-    creditCardsEditState.deleteSelected();
-  }
+  // #190: was byte-identical here and in Dashboard.jsx - see
+  // hooks/shared/useHoldToDelete.
+  const {
+    holding: holdingDelete,
+    start: startDeleteHold,
+    cancel: cancelDeleteHold,
+    onRingTransitionEnd: onDeleteRingTransitionEnd,
+  } = useHoldToDelete(creditCardsEditState);
   const [installmentsAddSignal, setInstallmentsAddSignal] = useState(0);
   const [recurringAddSignal, setRecurringAddSignal] = useState(0);
   const [paychecksOpen, setPaychecksOpen] = useState(false);
@@ -257,85 +258,48 @@ export default function MobileDashboard() {
     onSave: null,
   });
 
-  const [transactions, setTransactions] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [tipDeposits, setTipDeposits] = useState([]);
-  const [safeToSpend, setSafeToSpend] = useState(null);
-  const [safeToSpendStatus, setSafeToSpendStatus] = useState("loading"); // loading | ok | no-balance | no-schedule | error
-  const [savings, setSavings] = useState(null);
-  const [savingsStatus, setSavingsStatus] = useState("loading"); // loading | ok | no-schedule | no-amounts | no-history | error
   const [upcomingItems, setUpcomingItems] = useState([]);
+  const [upcomingLoadFailed, setUpcomingLoadFailed] = useState(false);
 
-  async function devFetch() {
-    if (devForceErrorRef.current) {
-      devForceErrorRef.current = false;
-      setDevForceError(false);
-      throw new Error("Forced error");
-    }
-    if (devDelay > 0) await new Promise(r => setTimeout(r, devDelay));
-    return getTransactions();
+  function devFetch() {
+    return devMenu.devFetch(getTransactions);
   }
 
-  function loadSafeToSpend() {
-    getSpendableSurplus().then((res) => {
-      setSafeToSpend(res.data);
-      setSafeToSpendStatus("ok");
-    }).catch((err) => {
-      const detail = err.response?.data?.detail;
-      setSafeToSpend(null);
-      if (detail === "No starting balance set") setSafeToSpendStatus("no-balance");
-      else if (detail === "No active paycheck schedule found") setSafeToSpendStatus("no-schedule");
-      else setSafeToSpendStatus("error");
-    });
-  }
-
-  function loadSavings() {
-    getEstimatedSavings().then((res) => {
-      setSavings(res.data);
-      setSavingsStatus("ok");
-    }).catch((err) => {
-      const detail = err.response?.data?.detail;
-      setSavings(null);
-      if (detail === "No active paycheck schedule found") setSavingsStatus("no-schedule");
-      else if (detail === "No paycheck amounts yet") setSavingsStatus("no-amounts");
-      else if (detail === "Not enough spending history") setSavingsStatus("no-history");
-      else setSavingsStatus("error");
-    });
-  }
-
-  function loadTipDeposits() {
-    getTipDeposits().then((res) => setTipDeposits(res.data)).catch(() => {});
-  }
-
+  // Mobile-only, so passed to useDashboardData as an extra loader rather
+  // than living in the shared hook (desktop's Upcoming panel fetches its
+  // own data per-category instead of at the dashboard level).
   function loadUpcoming() {
-    getUpcomingRecurringPayments().then((res) => setUpcomingItems(res.data)).catch(() => {});
+    getUpcomingRecurringPayments()
+      .then((res) => { setUpcomingItems(res.data); setUpcomingLoadFailed(false); })
+      .catch(() => setUpcomingLoadFailed(true));
   }
 
-  useEffect(() => {
-    devFetch().then((res) => {
-      setTransactions(res.data);
-      setLoading(false);
-      setDevLastFetch(new Date());
-    }).catch(() => {
-    });
-    loadSafeToSpend();
-    loadSavings();
-    loadTipDeposits();
-    loadUpcoming();
-  }, []);
-
-  function refresh() {
-    // A no-op on a normal refresh - only matters for Dev Tools' Re-fetch.
-    devFetch().then((res) => {
-      setTransactions(res.data);
-      setLoading(false);
-      setDevLastFetch(new Date());
-    }).catch(() => {});
-    loadSafeToSpend();
-    loadSavings();
-    loadTipDeposits();
-    loadUpcoming();
+  // Warms MobileCategory's own paycheck cache ahead of time, so drilling
+  // into the Income category shows its "Upcoming" section instantly instead
+  // of popping in ~1s later like every other prop-fed section on that page -
+  // MobileCategory still does its own real fetch (with its own error state)
+  // when actually visited, this just means that fetch usually already has a
+  // cache hit to seed from. Silent on failure is fine here: it's purely a
+  // warm-up, not the source of truth for what the user sees.
+  function loadIncomeUpcoming() {
+    getPaychecks()
+      .then((res) => setCached(INCOME_UPCOMING_CACHE_KEY, res.data.paychecks ?? []))
+      .catch(() => {});
   }
+
+  const {
+    transactions,
+    setTransactions,
+    loading,
+    setLoading,
+    tipDeposits,
+    safeToSpend,
+    safeToSpendStatus,
+    savings,
+    savingsStatus,
+    refresh,
+    refreshFailed,
+  } = useDashboardData(devFetch, [loadUpcoming, loadIncomeUpcoming]);
 
   const [editingTransaction, setEditingTransaction] = useState(null);
   const [editingDeposit, setEditingDeposit] = useState(null);
@@ -464,8 +428,29 @@ export default function MobileDashboard() {
     }
   };
 
-  // Dashboard state (fixed to current month - no picker on the Home tab)
-  const dashDateRange = useMemo(() => getPresetRange("Current Month"), []);
+  // Dashboard state - steppable month/year shared by the Home tab's hero
+  // header and MobileCategory's summary header (#122/#196). Analytics keeps
+  // its own separate instance (#191).
+  const dashPeriod = useMonthPeriod();
+  const dashYearOptions = useMemo(() => yearOptionsFromTransactions(transactions), [transactions]);
+  const dashMonthStepper = useMemo(() => ({
+    year: dashPeriod.period.year,
+    month: dashPeriod.period.month,
+    onShiftMonth: dashPeriod.shiftMonth,
+    onSelectMonth: dashPeriod.setMonth,
+    onSelectYear: dashPeriod.setYear,
+    isCurrentMonth: dashPeriod.isCurrentMonth,
+    yearOptions: dashYearOptions,
+    // Not consumed by MonthStepperHeader itself - passed through so
+    // MobileCategory can key/animate its own month-change transition.
+    periodKey: dashPeriod.periodKey,
+    slideDir: dashPeriod.slideDir,
+  }), [dashPeriod, dashYearOptions]);
+
+  const dashDateRange = useMemo(
+    () => getMonthRange(dashPeriod.period.year, dashPeriod.period.month),
+    [dashPeriod.period],
+  );
 
   const [activityJump, setActivityJump] = useState(null);
 
@@ -642,14 +627,16 @@ export default function MobileDashboard() {
     [dashFiltered],
   );
 
+  // Cash-in-hand tips only (#197) - matches dashCashTips and desktop's model.
+  // Deposits are already-banked money, not additional income on top of this;
+  // OverviewBreakdownSheet counts them separately via periodDeposits/cashTips.
   const dashCategoryTotals = useMemo(() => {
     const totals = {};
     dashFiltered.forEach((t) => {
       totals[t.category] = (totals[t.category] ?? 0) + parseFloat(t.amount);
     });
-    if (dashMonthDeposits) totals.TIPS = (totals.TIPS ?? 0) + dashMonthDeposits;
     return totals;
-  }, [dashFiltered, dashMonthDeposits]);
+  }, [dashFiltered]);
 
   // This month's recurring items awaiting confirm/skip, shown in the Upcoming
   // Bills caption (#58).
@@ -658,9 +645,14 @@ export default function MobileDashboard() {
     [upcomingItems],
   );
 
-  // Last month (for the small +/-% badges on Home's Income/Expense cards,
-  // and MobileCategory's own vs-last-month card, #108)
-  const dashLastMonthRange = useMemo(() => getPresetRange("Last Month"), []);
+  // The month before whatever's selected (for the small +/-% badges on
+  // Home's Income/Expense cards, and MobileCategory's own vs-last-month
+  // card, #108) - anchored to dashPeriod, not always the real last month,
+  // now that the header can step to any month (#122/#196).
+  const dashLastMonthRange = useMemo(
+    () => getMonthRange(dashPeriod.period.year, dashPeriod.period.month - 1),
+    [dashPeriod.period],
+  );
   const dashLastMonthDeposits = useMemo(
     () => depositsInRange(dashLastMonthRange.from, dashLastMonthRange.to),
     [depositsInRange, dashLastMonthRange],
@@ -679,21 +671,23 @@ export default function MobileDashboard() {
     return { totalIn, totalOut };
   }, [dashLastMonthTransactions, dashLastMonthDeposits]);
 
-  // Rolling N-month window, oldest first, last entry the current month (#108).
+  // Rolling N-month window, oldest first, last entry the selected month -
+  // not always the real current month, now that the header can step
+  // (#108, #122/#196).
   const CATEGORY_HISTORY_MONTHS = 6;
   const dashCategoryHistory = useMemo(() => {
-    const now = getNow();
+    const { year, month } = dashPeriod.period;
     const buckets = [];
     for (let i = CATEGORY_HISTORY_MONTHS - 1; i >= 0; i--) {
-      const monthStart = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const monthEnd = new Date(now.getFullYear(), now.getMonth() - i + 1, 0, 23, 59, 59, 999);
+      const monthStart = new Date(year, month - i, 1);
+      const monthEnd = new Date(year, month - i + 1, 0, 23, 59, 59, 999);
       buckets.push(transactions.filter((t) => {
         const d = new Date(t.transaction_date + "T00:00:00");
         return d >= monthStart && d <= monthEnd;
       }));
     }
     return buckets;
-  }, [transactions]);
+  }, [transactions, dashPeriod.period]);
 
   useEffect(() => {
     document.body.style.overflow =
@@ -718,7 +712,7 @@ export default function MobileDashboard() {
   return (
     <div
       className="h-dvh flex flex-col overflow-hidden"
-      style={{ backgroundColor: navTab === "dashboard" || navTab === "activity" ? HOME_BG : bg, color: text }}
+      style={{ backgroundColor: navTab === "dashboard" || navTab === "activity" || navTab === "ai" ? HOME_BG : bg, color: text }}
     >
 
       <MobileTopbar
@@ -744,7 +738,13 @@ export default function MobileDashboard() {
         className="flex-1 px-4 pb-28 space-y-4 overflow-y-auto"
         style={{ paddingTop: "calc(env(safe-area-inset-top, 0px) + 1rem + 54px)", WebkitOverflowScrolling: "touch" }}
       >
-        <style>{`@keyframes skel-pulse { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }`}</style>
+        <style>{`@keyframes skel-pulse { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
+        @keyframes mob-month-slide { from { opacity: 0; transform: translateX(var(--mob-slide-from, 0)); } to { opacity: 1; transform: translateX(0); } }`}</style>
+        {(refreshFailed || upcomingLoadFailed) && (
+          <p style={{ fontSize: 12, color: HOME_EXPENSE, margin: 0 }}>
+            {refreshFailed ? "Couldn't refresh transactions" : "Couldn't load upcoming bills"} — showing the last loaded data
+          </p>
+        )}
         <MobilePageSlide pageKey={pageKey} order={pageOrder} layerClassName="space-y-4">
         {/* Dashboard tab */}
         {navTab === "dashboard" && (
@@ -766,6 +766,7 @@ export default function MobileDashboard() {
                 monthlyHistory={dashCategoryHistory}
                 loading={loading}
                 upcomingItems={upcomingItems}
+                monthStepper={dashMonthStepper}
                 onBack={() => setCategoryView(null)}
                 onEditTransaction={setEditingTransaction}
                 onDeleteTransaction={handleDelete}
@@ -773,7 +774,13 @@ export default function MobileDashboard() {
                 onRefresh={refresh}
               />
             ) : (
-              <>
+              <div
+                key={`dash-${dashPeriod.periodKey}`}
+                style={{
+                  animation: dashPeriod.slideDir ? "mob-month-slide 260ms ease" : undefined,
+                  "--mob-slide-from": dashPeriod.slideDir > 0 ? "24px" : "-24px",
+                }}
+              >
                 <MobileHome
                     loading={loading}
                     dashSummary={dashSummary}
@@ -785,6 +792,7 @@ export default function MobileDashboard() {
                     pendingBillsCount={pendingBillsCount}
                     dashSorted={dashSorted}
                     dashCategoryTotals={dashCategoryTotals}
+                    monthStepper={dashMonthStepper}
                     onOpenRecurring={() => setRecurringOpen(true)}
                     onOpenInstallments={() => setInstallmentsOpen(true)}
                     onOpenPaychecks={() => setPaychecksOpen(true)}
@@ -794,7 +802,7 @@ export default function MobileDashboard() {
                     onSeeAllTransactions={() => setNavTab("activity")}
                     onEditTransaction={setEditingTransaction}
                   />
-              </>
+              </div>
             )}
           </>
         )}
@@ -809,28 +817,15 @@ export default function MobileDashboard() {
             onDeleteTransaction={handleDelete}
             onEditDeposit={setEditingDeposit}
             onDeleteDeposit={handleDeleteDeposit}
+            onOpenPaychecks={() => setPaychecksOpen(true)}
+            onRefresh={refresh}
             jump={activityJump}
+            onJumpHandled={() => setActivityJump(null)}
           />
         )}
 
-        {/* AI tab */}
-        {navTab === "ai" && (
-          <div className="flex flex-col h-[calc(100dvh-12rem)]">
-            <div
-              className="flex-1 flex flex-col items-center justify-center gap-3 rounded-2xl border"
-              style={{ backgroundColor: surface, borderColor: border }}
-            >
-              <IconAI size={36} />
-              <p className="text-base font-semibold" style={{ color: text }}>
-                Finsight AI
-              </p>
-              <p className="text-sm text-center px-8" style={{ color: muted }}>
-                AI assistant coming soon. Ask questions about your spending, get
-                insights, and more.
-              </p>
-            </div>
-          </div>
-        )}
+        {/* AI tab (#13) */}
+        {navTab === "ai" && <MobileAssistant />}
         </MobilePageSlide>
       </main>
 
@@ -1054,13 +1049,16 @@ export default function MobileDashboard() {
         style={{
           backgroundColor: HOME_SURFACE,
           borderRadius: keyboardOpen ? "16px 16px 16px 16px" : "16px 16px 0 0",
-          transition: "border-radius 150ms ease, border-bottom 150ms ease",
           paddingBottom: "env(safe-area-inset-bottom)",
           transform: `translateY(${entrySheetOpen ? dragY : 100}${entrySheetOpen && dragY > 0 ? "" : "%"})`,
+          // One combined value - this was previously two `transition` keys in
+          // the same object, so the transform-only one silently won and the
+          // corners snapped instead of easing when the keyboard opened (#179).
+          // Still drops to "none" mid-drag so the sheet tracks the finger 1:1.
           transition:
             dragY > 0
               ? "none"
-              : "transform 300ms cubic-bezier(0.32, 0.72, 0, 1)",
+              : "transform 300ms cubic-bezier(0.32, 0.72, 0, 1), border-radius 150ms ease",
         }}
         onTouchStart={onSheetTouchStart}
         onTouchMove={onSheetTouchMove}
@@ -2188,10 +2186,10 @@ export default function MobileDashboard() {
                 <DevToggle active={devForceEmpty} onToggle={() => setDevForceEmpty(v => !v)} />
               </DevRow>
               <DevRow label="Force next error" description="Next fetch throws">
-                <DevToggle active={devForceError} onToggle={() => { const n = !devForceError; setDevForceError(n); devForceErrorRef.current = n; }} />
+                <DevToggle active={devForceError} onToggle={toggleDevForceError} />
               </DevRow>
               <DevRow label="Re-fetch" description="Reload transactions">
-                <button onClick={() => { setLoading(true); refresh(); }} className="px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer border" style={{ color: HOME_TEXT, borderColor: HOME_DIVIDER, backgroundColor: "rgba(255,255,255,0.06)" }}>Run</button>
+                <button onClick={() => { setLoading(true); refresh(); setTimeout(() => setLoading(false), devDelay + 200); }} className="px-3 py-1 rounded-lg text-xs font-semibold cursor-pointer border" style={{ color: HOME_TEXT, borderColor: HOME_DIVIDER, backgroundColor: "rgba(255,255,255,0.06)" }}>Run</button>
               </DevRow>
 
               <MDevSection label="NETWORK" border={HOME_DIVIDER} muted={HOME_MUTED} />

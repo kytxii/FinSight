@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect } from "react";
 import { initDemo, clearDemo } from "../api/demoStore";
+import { clearAllCached } from "../utils/pageCache";
 import client from "../api/client";
 
 const AuthContext = createContext(null);
@@ -41,6 +42,7 @@ export function AuthProvider({ children }) {
 
   const login = (newToken, userData) => {
     clearDemo();
+    clearAllCached();
     _setSession(newToken, userData);
   };
 
@@ -51,6 +53,7 @@ export function AuthProvider({ children }) {
       // clear client state
     }
     clearDemo();
+    clearAllCached();
     localStorage.removeItem("token");
     localStorage.removeItem("user");
     setToken(null);
@@ -59,6 +62,7 @@ export function AuthProvider({ children }) {
 
   const enterDemoMode = () => {
     clearDemo();
+    clearAllCached();
     localStorage.setItem("demo", "true");
     initDemo();
     setToken("demo");
@@ -86,7 +90,11 @@ export function AuthProvider({ children }) {
           setUser(res.data);
           localStorage.setItem("user", JSON.stringify(res.data));
         })
-        .catch(() => {})
+        .catch(() => {
+          // No valid refresh cookie is the normal case for a logged-out
+          // visitor, not a failure to surface (#175) - falling through to
+          // the login page (via finally below) is already the right outcome.
+        })
         .finally(() => setInitializing(false));
     } else {
       // Sync user profile from server on startup
@@ -96,7 +104,14 @@ export function AuthProvider({ children }) {
           setUser(res.data);
           localStorage.setItem("user", JSON.stringify(res.data));
         })
-        .catch(() => {});
+        .catch((err) => {
+          // Unlike the branch above, a token existing but this failing is a
+          // genuine error (network blip, 500, ...), not an expected outcome.
+          // There's no panel to show it in this early in bootstrap, so this
+          // logs rather than staying fully silent (#175) - the app keeps
+          // running on the localStorage-cached profile set at mount above.
+          console.error("Failed to sync user profile on startup:", err);
+        });
     }
   }, []);
 

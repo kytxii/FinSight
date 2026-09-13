@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { fmt, CATEGORY_CONFIG } from "../../utils/finance";
-import { useSheetDrag, SHEET_EASE } from "../../hooks/useSheetDrag";
+import { useSheetDrag, SHEET_EASE } from "../../hooks/shared/useSheetDrag";
 import { HOME_TEXT, HOME_MUTED, HOME_SURFACE, HOME_DIVIDER, HOME_INCOME, HOME_EXPENSE, TILE_COLOR } from "../shared/categoryVisuals";
 
 const EXIT_MS = 260; // matches the breakdown-up entry duration
