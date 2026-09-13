@@ -89,6 +89,7 @@ export default function PaychecksPanel({ mobile = false, desktop = false, onSave
   const [editingId, setEditingId] = useState(null);
   const [editValue, setEditValue] = useState("");
   const [rowErrorId, setRowErrorId] = useState(null);
+  const [refreshError, setRefreshError] = useState(false);
 
   const [balanceAnchor, setBalanceAnchorState] = useState(null);
   const [editingBalance, setEditingBalance]   = useState(false);
@@ -131,7 +132,15 @@ export default function PaychecksPanel({ mobile = false, desktop = false, onSave
     getPaychecks().then(r => {
       setPaychecks(r.data.paychecks);
       setPending(r.data.pending_paychecks);
-    }).catch(() => {});
+    }).catch(() => {
+      // The write that triggered this already succeeded - only the re-fetch
+      // to reflect its side effects (a new/regenerated paycheck, a recomputed
+      // guess) failed, so surface it as a brief note rather than a full error
+      // state (#175): nothing here needs a retry button, the list is just
+      // momentarily stale until the next load.
+      setRefreshError(true);
+      setTimeout(() => setRefreshError(false), 4000);
+    });
   }
 
   const filteredPaychecks = useMemo(() => {
@@ -757,6 +766,7 @@ export default function PaychecksPanel({ mobile = false, desktop = false, onSave
     const activeSchedule = schedules[0];
     return (
       <div style={{ padding: "24px 28px 40px", display: "flex", flexDirection: "column", gap: 24, color: text }}>
+        {refreshError && <p style={{ fontSize: 12, color: HOME_EXPENSE, margin: 0 }}>Couldn't refresh - showing the last loaded data</p>}
         {loading ? (
           <div className="grid grid-cols-4 gap-4">
             {[...Array(4)].map((_, i) => (
@@ -818,6 +828,8 @@ export default function PaychecksPanel({ mobile = false, desktop = false, onSave
   // Sidebar/mobile: toggled list vs settings, unchanged from before
   return (
     <div ref={scrollRef} onScroll={handleScroll} style={{ flex: 1, overflowY: "auto", overscrollBehavior: "contain", padding: "16px 20px 32px", display: "flex", flexDirection: "column", gap: "24px", color: text }}>
+
+      {refreshError && <p style={{ fontSize: 11, color: HOME_EXPENSE, margin: 0 }}>Couldn't refresh - showing the last loaded data</p>}
 
       {/* Loading */}
       {loading && (

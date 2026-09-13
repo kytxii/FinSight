@@ -12,7 +12,9 @@ import {
   deleteTransaction,
 } from "../api/transactions";
 import { getUpcomingRecurringPayments } from "../api/recurringPayments";
+import { getPaychecks } from "../api/paychecks";
 import { deleteTipDeposit, createTipDeposit } from "../api/tipDeposits";
+import { setCached } from "../utils/pageCache";
 import CurrencyInput from "../components/shared/CurrencyInput";
 import Toggle from "../components/shared/Toggle";
 import MobileTransactionModal from "../components/mobile/MobileTransactionModal";
@@ -46,7 +48,7 @@ import AccountPanel from "../components/shared/AccountPanel";
 import OverviewBreakdownSheet from "../components/desktop/OverviewBreakdownSheet";
 import MobileHome from "../components/mobile/MobileHome";
 import MobileTopbar from "../components/mobile/MobileTopbar";
-import MobileCategory from "../components/mobile/MobileCategory";
+import MobileCategory, { INCOME_UPCOMING_CACHE_KEY } from "../components/mobile/MobileCategory";
 import MobileTips from "../components/mobile/MobileTips";
 import MobilePaychecks from "../components/mobile/MobilePaychecks";
 import MobileRecurring from "../components/mobile/MobileRecurring";
@@ -257,6 +259,7 @@ export default function MobileDashboard() {
   });
 
   const [upcomingItems, setUpcomingItems] = useState([]);
+  const [upcomingLoadFailed, setUpcomingLoadFailed] = useState(false);
 
   function devFetch() {
     return devMenu.devFetch(getTransactions);
@@ -266,7 +269,22 @@ export default function MobileDashboard() {
   // than living in the shared hook (desktop's Upcoming panel fetches its
   // own data per-category instead of at the dashboard level).
   function loadUpcoming() {
-    getUpcomingRecurringPayments().then((res) => setUpcomingItems(res.data)).catch(() => {});
+    getUpcomingRecurringPayments()
+      .then((res) => { setUpcomingItems(res.data); setUpcomingLoadFailed(false); })
+      .catch(() => setUpcomingLoadFailed(true));
+  }
+
+  // Warms MobileCategory's own paycheck cache ahead of time, so drilling
+  // into the Income category shows its "Upcoming" section instantly instead
+  // of popping in ~1s later like every other prop-fed section on that page -
+  // MobileCategory still does its own real fetch (with its own error state)
+  // when actually visited, this just means that fetch usually already has a
+  // cache hit to seed from. Silent on failure is fine here: it's purely a
+  // warm-up, not the source of truth for what the user sees.
+  function loadIncomeUpcoming() {
+    getPaychecks()
+      .then((res) => setCached(INCOME_UPCOMING_CACHE_KEY, res.data.paychecks ?? []))
+      .catch(() => {});
   }
 
   const {
@@ -280,7 +298,8 @@ export default function MobileDashboard() {
     savings,
     savingsStatus,
     refresh,
-  } = useDashboardData(devFetch, [loadUpcoming]);
+    refreshFailed,
+  } = useDashboardData(devFetch, [loadUpcoming, loadIncomeUpcoming]);
 
   const [editingTransaction, setEditingTransaction] = useState(null);
   const [editingDeposit, setEditingDeposit] = useState(null);
@@ -721,6 +740,11 @@ export default function MobileDashboard() {
       >
         <style>{`@keyframes skel-pulse { 0%, 100% { opacity: 0.5; } 50% { opacity: 1; } }
         @keyframes mob-month-slide { from { opacity: 0; transform: translateX(var(--mob-slide-from, 0)); } to { opacity: 1; transform: translateX(0); } }`}</style>
+        {(refreshFailed || upcomingLoadFailed) && (
+          <p style={{ fontSize: 12, color: HOME_EXPENSE, margin: 0 }}>
+            {refreshFailed ? "Couldn't refresh transactions" : "Couldn't load upcoming bills"} — showing the last loaded data
+          </p>
+        )}
         <MobilePageSlide pageKey={pageKey} order={pageOrder} layerClassName="space-y-4">
         {/* Dashboard tab */}
         {navTab === "dashboard" && (
@@ -1025,13 +1049,16 @@ export default function MobileDashboard() {
         style={{
           backgroundColor: HOME_SURFACE,
           borderRadius: keyboardOpen ? "16px 16px 16px 16px" : "16px 16px 0 0",
-          transition: "border-radius 150ms ease, border-bottom 150ms ease",
           paddingBottom: "env(safe-area-inset-bottom)",
           transform: `translateY(${entrySheetOpen ? dragY : 100}${entrySheetOpen && dragY > 0 ? "" : "%"})`,
+          // One combined value - this was previously two `transition` keys in
+          // the same object, so the transform-only one silently won and the
+          // corners snapped instead of easing when the keyboard opened (#179).
+          // Still drops to "none" mid-drag so the sheet tracks the finger 1:1.
           transition:
             dragY > 0
               ? "none"
-              : "transform 300ms cubic-bezier(0.32, 0.72, 0, 1)",
+              : "transform 300ms cubic-bezier(0.32, 0.72, 0, 1), border-radius 150ms ease",
         }}
         onTouchStart={onSheetTouchStart}
         onTouchMove={onSheetTouchMove}

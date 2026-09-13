@@ -11,10 +11,19 @@ import MonthStepperHeader from "./shared/MonthStepperHeader";
 import { getToday } from "../../utils/time";
 import { getPaychecks } from "../../api/paychecks";
 import { confirmRecurringPayment, skipRecurringPayment } from "../../api/recurringPayments";
+import { getCached, hasCached, setCached } from "../../utils/pageCache";
 import {
   HOME_TEXT, HOME_MUTED, HOME_SURFACE, HOME_DIVIDER, HOME_INCOME, HOME_EXPENSE, HOME_ACCENT,
   TILE_COLOR, CATEGORY_ICON,
 } from "../shared/categoryVisuals";
+
+// Seeded from the last-known result (#119, same pattern as MobileInstallments/
+// MobileRecurring) so re-visiting the Income category page shows its
+// paychecks instantly instead of popping in ~1s later while every other
+// prop-driven section on this page (transactions, non-income "upcoming")
+// paints immediately - loadPaycheckUpcoming below still revalidates in the
+// background on every visit.
+export const INCOME_UPCOMING_CACHE_KEY = "mobile-category-income-upcoming";
 
 function IconBack() {
   return (
@@ -176,17 +185,28 @@ export default function MobileCategory({
   const [visibleCount, setVisibleCount] = useState(TX_PAGE_SIZE);
   const loadMoreRef = useRef(null);
   const [dismissedIds, setDismissedIds] = useState(new Set()); // resolved this render, hidden ahead of the next upcomingItems refresh
-  const [paycheckUpcoming, setPaycheckUpcoming] = useState([]);
+  const [paycheckUpcoming, setPaycheckUpcoming] = useState(() => getCached(INCOME_UPCOMING_CACHE_KEY) ?? []);
+  const [paycheckUpcomingLoading, setPaycheckUpcomingLoading] = useState(() => !hasCached(INCOME_UPCOMING_CACHE_KEY));
+  const [paycheckLoadFailed, setPaycheckLoadFailed] = useState(false);
   const Icon = CATEGORY_ICON[category];
   const tileColor = TILE_COLOR[category] ?? HOME_MUTED;
   const isIncome = INCOME_TYPES.has(category);
   const today = getToday();
 
   // INCOME has no recurring schedule, so upcoming items come from paychecks instead.
-  useEffect(() => {
+  function loadPaycheckUpcoming() {
     if (category !== "INCOME") return;
-    getPaychecks().then((res) => setPaycheckUpcoming(res.data.paychecks ?? [])).catch(() => {});
-  }, [category]);
+    getPaychecks()
+      .then((res) => {
+        const paychecks = res.data.paychecks ?? [];
+        setPaycheckUpcoming(paychecks);
+        setPaycheckLoadFailed(false);
+        setCached(INCOME_UPCOMING_CACHE_KEY, paychecks);
+      })
+      .catch(() => setPaycheckLoadFailed(true))
+      .finally(() => setPaycheckUpcomingLoading(false));
+  }
+  useEffect(loadPaycheckUpcoming, [category]);
 
   const monthEnd = useMemo(() => monthEndOf(today), [today]);
 
@@ -363,16 +383,26 @@ export default function MobileCategory({
 
       {/* Scheduled items awaiting due date or confirm/skip (#60), dotted dividers to mark them as not-yet-real. */}
       {category === "INCOME" ? (
-        upcomingPaychecks.length > 0 && (
-          <div>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "0 4px 12px" }}>
-              <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, letterSpacing: "-0.4px", color: HOME_TEXT }}>Upcoming</h2>
-              <button onClick={onOpenPaychecks} aria-label="Open Paychecks"
-                style={{ color: HOME_MUTED, background: "none", border: "none", cursor: "pointer", padding: 3, display: "inline-flex" }}
-              >
-                <IconArrowUpRight />
-              </button>
+        <div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", margin: "0 4px 12px" }}>
+            <h2 style={{ margin: 0, fontSize: 20, fontWeight: 800, letterSpacing: "-0.4px", color: HOME_TEXT }}>Upcoming</h2>
+            <button onClick={onOpenPaychecks} aria-label="Open Paychecks"
+              style={{ color: HOME_MUTED, background: "none", border: "none", cursor: "pointer", padding: 3, display: "inline-flex" }}
+            >
+              <IconArrowUpRight />
+            </button>
+          </div>
+          {paycheckUpcomingLoading ? (
+            <div style={{ ...UPCOMING_CARD_STYLE, marginBottom: 20 }}>
+              <ListRowSkeleton count={2} trailing />
             </div>
+          ) : paycheckLoadFailed ? (
+            <p style={{ margin: "0 4px 20px", fontSize: 13, color: HOME_MUTED }}>Couldn't load upcoming paychecks</p>
+          ) : upcomingPaychecks.length === 0 ? (
+            <div style={{ ...UPCOMING_CARD_STYLE, marginBottom: 20, padding: "22px 0" }}>
+              <p style={{ margin: 0, fontSize: 13, color: HOME_MUTED, textAlign: "center" }}>No paychecks expected this month</p>
+            </div>
+          ) : (
             <div style={{ ...UPCOMING_CARD_STYLE, marginBottom: 20 }}>
               {upcomingPaychecks.map((p, i) => (
                 <div key={p.id} style={{
@@ -400,12 +430,18 @@ export default function MobileCategory({
                 </div>
               ))}
             </div>
-          </div>
-        )
+          )}
+        </div>
       ) : (
-        categoryUpcoming.length > 0 && (
-          <div>
-            <h2 style={{ margin: "0 4px 12px", fontSize: 20, fontWeight: 800, letterSpacing: "-0.4px", color: HOME_TEXT }}>Upcoming</h2>
+        <div>
+          <h2 style={{ margin: "0 4px 12px", fontSize: 20, fontWeight: 800, letterSpacing: "-0.4px", color: HOME_TEXT }}>Upcoming</h2>
+          {categoryUpcoming.length === 0 ? (
+            <div style={{ ...UPCOMING_CARD_STYLE, marginBottom: 20, padding: "22px 0" }}>
+              <p style={{ margin: 0, fontSize: 13, color: HOME_MUTED, textAlign: "center" }}>
+                Nothing upcoming for {CATEGORY_CONFIG[category]?.label ?? category}
+              </p>
+            </div>
+          ) : (
             <div style={{ ...UPCOMING_CARD_STYLE, marginBottom: 20 }}>
               {categoryUpcoming.map((item, i) => (
                 <UpcomingRow
@@ -420,8 +456,8 @@ export default function MobileCategory({
                 />
               ))}
             </div>
-          </div>
-        )
+          )}
+        </div>
       )}
 
       {/* Transactions */}
