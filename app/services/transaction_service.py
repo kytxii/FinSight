@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from uuid import UUID
 from typing import NamedTuple
 import calendar
-from app.models import Transaction, RecurringPayment, Paycheck, Installment, CreditCardCharge, CreditCardChargeAllocation
+from app.models import Transaction, RecurringPayment, Paycheck, Installment, CreditCardCharge
 from app.models.category import Category
 from app.schemas import CreateTransaction, UpdateTransaction
 from app.services import recurring_payment_service, credit_card_service
@@ -102,11 +102,11 @@ async def delete_transaction(transaction_id: UUID, current_user: UUID, db: Async
             select(CreditCardCharge).where(CreditCardCharge.id == transaction.credit_card_charge_id)
         )
         if charge is not None:
-            allocations = (await db.scalars(
-                select(CreditCardChargeAllocation).where(CreditCardChargeAllocation.charge_id == charge.id)
-            )).all()
-            for allocation in allocations:
-                await db.delete(allocation)
+            # The allocations funding it go with it via the FK's own
+            # ON DELETE CASCADE (see CreditCardChargeAllocation.charge_id),
+            # same as delete_payment relies on - deleting them explicitly
+            # here just raced the cascade and warned about deleting rows
+            # Postgres had already removed.
             await db.delete(charge)
 
     await db.delete(transaction)
